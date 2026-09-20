@@ -13,7 +13,16 @@
         el('enable').disabled = changing || !state.installed || !state.validated || (state.enabled && state.route_enabled);
         el('pause').disabled = changing || !(state.enabled || state.route_enabled);
         var savings = state.savings || {}, requests = state.requests || {};
-        el('saved').textContent = savings.available ? number(savings.saved_tokens) : 'Unavailable';
+        var recent = state.recent_savings, key = el('window').value || 'fifteen_minutes';
+        var selected = key !== 'lifetime' ? ((recent && recent.windows) || {})[key] || {} : savings;
+        var available = key !== 'lifetime' ? recent && recent.available : savings.available;
+        var label = key !== 'lifetime' ? ({fifteen_minutes:'last 15 minutes', today:'today', seven_days:'last 7 days'}[key]) : 'lifetime';
+        el('saved').textContent = available ? number(selected.saved_tokens) : 'Unavailable';
+        el('scope').textContent = 'Estimated input tokens avoided · ' + label + ' · all tasks. Individual-task attribution is unavailable.';
+        el('window-detail').textContent = available ? number(selected.requests) + ' requests in this window'
+            + (selected.reduction_pct == null ? '' : ' · ' + number(selected.reduction_pct) + '% text reduction') : 'No readable records for this window.';
+        el('coverage').textContent = key !== 'lifetime' && recent && recent.available && !recent.complete
+            ? 'Partial ledger coverage: older or invalid records were omitted. These are totals from available records only.' : '';
         el('counts').textContent = 'Requests recorded by Headroom: ' + number(savings.requests)
             + '. Completed connections: ' + number(requests.optimized) + ' optimized; ' + number(requests.direct)
             + ' direct; ' + number(requests.failed) + ' failed. Active connections: ' + number(requests.active);
@@ -76,6 +85,7 @@
     }
     el('enable').addEventListener('click', function () { change('enable'); });
     el('pause').addEventListener('click', function () { change('pause'); });
+    el('window').addEventListener('change', render);
     setInterval(loadStatus, 5000);
     render();
     loadStatus();

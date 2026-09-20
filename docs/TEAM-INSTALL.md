@@ -105,7 +105,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File packaging\Build-Package.ps1 
 powershell -NoProfile -ExecutionPolicy Bypass -File packaging\Smoke-Package.ps1 -PackageDirectory .scratch\packages\Codex-Token-Saver-0.1.0-windows-x64
 ```
 
-The smoke test installs into a new temporary directory, uses a synthetic Codex profile, checks real library imports and local compression, and verifies repeated installation and settings preservation. It does not register startup or touch the maintainer's live bundle. Add `-CoreOnly` for the smaller Headroom/RTK/dashboard check. The temporary directory is retained as evidence; delete that specific directory after review.
+The smoke test installs into a new temporary directory, uses a synthetic Codex profile, checks real library imports and local compression, and verifies repeated installation and settings preservation. Its offline benchmark also requires important facts and exact originals to survive the test fixtures before an artifact is published. See [performance checks](PERFORMANCE-CHECK.md) for scope, latency reporting and optional matched-task comparisons. It does not register startup or touch the maintainer's live bundle. Add `-CoreOnly` for the smaller Headroom/RTK/dashboard check. The temporary directory is retained as evidence; delete that specific directory after review.
 
 `Install.ps1 -Plan` verifies package files and prints the proposed destination without writing. `Install.ps1 -CoreOnly` omits optional libraries; `-SkipIntegration -InstallDirectory <empty-directory>` is for isolated tests and skips PATH, shortcuts, startup and real Codex registration.
 

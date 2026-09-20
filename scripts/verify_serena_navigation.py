@@ -136,7 +136,12 @@ async def verify(bridge_python=None):
                     assert 'combine' in resumed
                     activity = json.loads((bundle / 'serena/activity.json').read_text(encoding='utf-8'))
                     assert activity['completed'] >= 14 and activity['failed'] == 2 and activity['blocked'] == 1, activity
-                    assert set(activity) == {'completed', 'failed', 'blocked', 'last_activity_at', 'last_outcome'}, activity
+                    assert set(activity) == {'completed', 'failed', 'blocked', 'last_activity_at', 'last_outcome',
+                                             'per_tool', 'last_tool', 'last_elapsed_ms', 'last_failure'}, activity
+                    assert activity['last_failure']['kind'] == 'missing_path', activity
+                    assert activity['last_tool'] == 'find_symbol' and activity['last_elapsed_ms'] >= 0, activity
+                    assert set(activity['per_tool']) == set(NAVIGATION_TOOLS), activity
+                    assert 'missing.py' not in json.dumps(activity), activity
                     report = {"ok": True, "version": importlib.metadata.version("serena-agent"), "tools": sorted(NAVIGATION_TOOLS), "checks": checks,
                               "live_toggle": True, "exact_bodies_protected": True, 'checkout_switch': True,
                               'native_fallback': fallbacks, 'activity': activity, 'stderr_log': str(errors_path)}

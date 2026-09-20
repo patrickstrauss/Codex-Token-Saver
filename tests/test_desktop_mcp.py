@@ -35,6 +35,9 @@ class DesktopMCPTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual({tool.name for tool in listing.tools},
                             {'headroom_read_file', 'headroom_retrieve', 'headroom_stats'})
                         self.assertTrue(all(tool.annotations.readOnlyHint for tool in listing.tools))
+                        retrieval_tool = next(tool for tool in listing.tools if tool.name == 'headroom_retrieve')
+                        self.assertIn('content_hash', retrieval_tool.description)
+                        self.assertIn('{"content_hash":', retrieval_tool.description)
                         read_result = await session.call_tool('headroom_read_file', {'path': str(source)})
                         self.assertFalse(read_result.isError)
                         content = '\n'.join(item.text for item in read_result.content if item.type == 'text')
@@ -47,6 +50,33 @@ class DesktopMCPTests(unittest.IsolatedAsyncioTestCase):
                         exact_text = '\n'.join(item.text for item in exact.content if item.type == 'text')
                         self.assertTrue(exact_text.endswith(source.read_bytes().decode('utf-8')),
                                         'Retrieved original must preserve the file text and CRLF endings')
+                        for arguments in (
+                            {'id': key.group()},
+                            {'hash': key.group()},
+                            {'content_hash': key.group(), 'id': 'abcdef123456'},
+                            {'content_hash': '<<ccr:abcdef123456,string,1KB>>'},
+                            {'content_hash': key.group(), 'start_line': 0},
+                            {'content_hash': key.group(), 'max_lines': True},
+                            {'content_hash': key.group(), 'max_lines': 10001},
+                            {'content_hash': key.group(), 'end_line': 10},
+                        ):
+                            with self.subTest(arguments=arguments):
+                                rejected = await session.call_tool('headroom_retrieve', arguments)
+                                self.assertTrue(rejected.isError)
+                                message = rejected.content[0].text
+                                self.assertIn('Invalid headroom_retrieve arguments', message)
+                                self.assertIn('{"content_hash":', message)
+                                self.assertIn('max_lines', message)
+                                self.assertNotIn('unavailable', message)
+                        for name, arguments in (
+                            ('headroom_read_file', {'path': str(source), 'compress': 'false'}),
+                            ('headroom_read_file', {'path': str(source), 'unexpected': True}),
+                            ('headroom_stats', {'unexpected': True}),
+                        ):
+                            with self.subTest(name=name, arguments=arguments):
+                                rejected = await session.call_tool(name, arguments)
+                                self.assertTrue(rejected.isError)
+                                self.assertIn(f'Invalid {name} arguments', rejected.content[0].text)
                         invalid = await session.call_tool('headroom_read_file', {'path': str(base/'missing.json')})
                         self.assertTrue(invalid.isError)
                         stats_result = await session.call_tool('headroom_stats', {})

@@ -52,7 +52,7 @@ function view(){return {status:node('request-proxy-status').textContent,saved:no
                             capture_output=True, check=True, timeout=10)
     data = json.loads(result.stdout)
     assert data['initial']['enable'] and not data['initial']['pause']
-    assert data['initial']['saved'] == '4,321'
+    assert data['initial']['saved'] == 'Unavailable'  # No recent ledger supplied.
     assert not data['initial']['restart']
     assert data['prepared']['enable'] and data['prepared']['pause']
     assert data['enabled']['pause'] and not data['enabled']['enable']
@@ -67,3 +67,61 @@ function view(){return {status:node('request-proxy-status').textContent,saved:no
     assert data['recovered']['error'] == ''
     assert data['recovered']['saved'] == 'Unavailable'
     assert data['interval'] == 5000 and data['hiddenPolls'] == 0
+
+
+@pytest.mark.skipif(shutil.which('node') is None, reason='Requires Node for shipped JavaScript')
+def test_recent_windows_are_read_only_and_never_substitute_lifetime():
+    script = (Path(__file__).parents[1] / 'static' / 'proxy.js').read_text(encoding='utf-8')
+    harness = r'''
+const vm=require('node:vm'), source=JSON.parse(require('node:fs').readFileSync(0,'utf8'));
+const nodes={}, calls=[], responses=[], timers=[];
+function node(id){return nodes[id]||=( {textContent:'',hidden:false,disabled:false,value:'',listeners:{},
+ addEventListener(t,fn){this.listeners[t]=fn;}});}
+const recent={available:true,complete:true,windows:{
+ fifteen_minutes:{saved_tokens:123,requests:4,reduction_pct:12.3},
+ today:{saved_tokens:456,requests:10,reduction_pct:23.4},
+ seven_days:{saved_tokens:789,requests:20,reduction_pct:34.5}}};
+const state={mode:'optimized',savings:{available:true,saved_tokens:99999,requests:1000},recent_savings:recent};
+responses.push(state);
+const context={document:{getElementById:node,querySelector:()=>({content:'fixture'}),hidden:false},
+ setInterval(fn){timers.push(fn);},fetch:async(url,options={})=>{calls.push({url,...options});
+ return {ok:true,json:async()=>responses.shift()};}};
+vm.createContext(context);vm.runInContext(source,context);
+async function flush(){for(let i=0;i<10;i++)await Promise.resolve();}
+function view(){return {saved:node('request-proxy-saved').textContent,scope:node('request-proxy-scope').textContent,
+ detail:node('request-proxy-window-detail').textContent,coverage:node('request-proxy-coverage').textContent};}
+function select(value){node('request-proxy-window').value=value;node('request-proxy-window').listeners.change();return view();}
+(async()=>{
+ await flush();const initial=view(),before=calls.length;
+ const today=select('today'),week=select('seven_days'),lifetime=select('lifetime'),restored=select('fifteen_minutes');
+ const switchCalls=calls.length-before;
+ responses.push({...state,recent_savings:{...recent,complete:false,truncated:true}});
+ await timers[0]();await flush();const partial=view();
+ responses.push({...state,recent_savings:{...recent,available:false,complete:false}});
+ await timers[0]();await flush();const unavailable=view();
+ responses.push({mode:'optimized',savings:state.savings});
+ await timers[0]();await flush();const missing=view(),manualLifetime=select('lifetime');
+ process.stdout.write(JSON.stringify({initial,today,week,lifetime,restored,switchCalls,partial,unavailable,missing,manualLifetime,calls}));
+})().catch(e=>{process.stderr.write(e.stack);process.exitCode=1;});
+'''
+    result = subprocess.run(['node', '-e', harness], input=json.dumps(script), text=True,
+                            capture_output=True, check=True, timeout=10)
+    data = json.loads(result.stdout)
+    assert data['initial']['saved'] == '123'
+    assert 'last 15 minutes' in data['initial']['scope']
+    assert 'all tasks' in data['initial']['scope']
+    assert '4 requests' in data['initial']['detail']
+    assert '12.3%' in data['initial']['detail']
+    assert data['today']['saved'] == '456' and data['week']['saved'] == '789'
+    assert data['lifetime']['saved'] == '99,999'
+    assert 'lifetime' in data['lifetime']['scope']
+    assert data['restored'] == data['initial']
+    assert data['switchCalls'] == 0
+    assert all(call.get('method', 'GET') == 'GET' for call in data['calls'])
+    assert data['partial']['saved'] == '123'
+    assert 'Partial ledger coverage' in data['partial']['coverage']
+    for key in ('unavailable', 'missing'):
+        assert data[key]['saved'] == 'Unavailable'
+        assert 'last 15 minutes' in data[key]['scope']
+        assert 'No readable records' in data[key]['detail']
+    assert data['manualLifetime']['saved'] == '99,999'

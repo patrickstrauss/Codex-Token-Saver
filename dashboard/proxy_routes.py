@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flask import jsonify, request
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
+from request_metrics import request_windows
 
 
 PANEL_HTML = '''
@@ -12,8 +13,11 @@ PANEL_HTML = '''
     <div class="updates-body">
         <h2 id="request-proxy-heading" style="font-size:16px;margin:0">Headroom request savings</h2>
         <p id="request-proxy-status" role="status">Checking desktop connection...</p>
+        <label for="request-proxy-window">Window <select class="bundle-select" id="request-proxy-window"><option value="fifteen_minutes">Last 15 minutes</option><option value="today">Today</option><option value="seven_days">7 days</option><option value="lifetime">Lifetime</option></select></label>
         <div style="font-size:30px;color:#67c9ff;font-weight:bold" id="request-proxy-saved">Unavailable</div>
-        <p class="updates-muted">Estimated input tokens avoided across model requests</p>
+        <p class="updates-muted" id="request-proxy-scope">Estimated input tokens avoided across all tasks; individual-task attribution is unavailable.</p>
+        <p id="request-proxy-window-detail" class="updates-muted"></p>
+        <p id="request-proxy-coverage" class="updates-muted"></p>
         <p id="request-proxy-counts" class="updates-muted"></p>
         <p id="request-proxy-routing" class="updates-muted"></p>
         <p id="request-proxy-backend" class="updates-muted"></p>
@@ -24,7 +28,7 @@ PANEL_HTML = '''
         </div>
         <p id="request-proxy-error" class="updates-error" role="alert" hidden></p>
         <p id="request-proxy-restart" class="updates-restart" hidden></p>
-        <p class="updates-muted">Request savings are measured separately from RTK and local file or command savings; the totals are not added together.</p>
+        <p class="updates-muted">Request savings are measured separately from RTK and local file or command savings; the totals are not added together. These text estimates are not measured Codex quota savings. A connection can carry multiple model requests.</p>
     </div>
 </section>
 '''
@@ -74,6 +78,7 @@ def register_proxy_routes(app, root, security, control_factory=None):
                 return security.error('Choose Enable or Pause request compression.', 400)
         try:
             snapshot = manager().status() if enabled is None else manager().set_enabled(enabled)
+            snapshot['recent_savings'] = request_windows(root / 'proxy/backend-state/savings_events.jsonl')
             response = jsonify(snapshot)
             response.headers['Cache-Control'] = 'no-store'
             return response

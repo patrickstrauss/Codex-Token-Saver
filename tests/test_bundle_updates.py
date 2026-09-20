@@ -135,6 +135,36 @@ class BundleUpdateTests(unittest.TestCase):
         self.assertEqual([x["current"] for x in snapshot["components"][:2]], ["0.38.0", "0.50.0"])
         self.assertFalse(any(x["update_available"] or x["refresh_available"] for x in snapshot["components"]))
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows sharing contention')
+    def test_status_replace_retries_transient_windows_reader_contention(self):
+        path = self.root / 'updates/contention.json'
+        path.write_text('{"value":"old"}')
+        original_replace = updates.os.replace
+        attempts = []
+        def replace(source, destination):
+            attempts.append(destination)
+            if len(attempts) <= 2:
+                self.assertEqual(json.loads(path.read_text()), {'value': 'old'})
+                raise PermissionError('file is temporarily held by a reader')
+            original_replace(source, destination)
+        with patch.object(updates.os, 'replace', side_effect=replace), patch.object(updates.time, 'sleep') as delay:
+            updates._atomic_json(path, {'value': 'new'})
+        self.assertEqual(json.loads(path.read_text()), {'value': 'new'})
+        self.assertEqual(len(attempts), 3)
+        self.assertEqual(delay.call_count, 2)
+        self.assertEqual(list(path.parent.glob('contention.json.*.tmp')), [])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows sharing contention')
+    def test_status_replace_persistent_denial_still_fails_and_preserves_original(self):
+        path = self.root / 'updates/contention.json'
+        path.write_text('{"value":"old"}')
+        with patch.object(updates.os, 'replace', side_effect=PermissionError('permanent denial')) as replace, \
+             patch.object(updates.time, 'sleep'), self.assertRaises(PermissionError):
+            updates._atomic_json(path, {'value': 'new'})
+        self.assertEqual(replace.call_count, 5)
+        self.assertEqual(json.loads(path.read_text()), {'value': 'old'})
+        self.assertEqual(list(path.parent.glob('contention.json.*.tmp')), [])
+
     def test_runtime_fallback_descriptor_uses_effective_baseline(self):
         (self.root / "updates/active.json").write_text(json.dumps({"schema":1, "headroom": {
             "version":"0.99.0", "runtime":"updates/runtimes/headroom-0.99.0-missing"}}))

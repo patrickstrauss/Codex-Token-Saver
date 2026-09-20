@@ -78,3 +78,38 @@ def test_selected_component_failure_reaches_dashboard_health(monkeypatch):
     assert snapshot['rtk']['health'] == 'ok'
     assert snapshot['rtk']['active'] is False
     assert snapshot['overall_health'] == 'error'
+
+
+@pytest.mark.skipif(shutil.which('node') is None, reason='Requires Node for shipped JavaScript')
+def test_serena_diagnostics_render_as_historical_text_and_clear_after_refresh():
+    source = (Path(__file__).parents[1] / 'static/components.js').read_text(encoding='utf-8')
+    harness = r'''
+const vm = require('node:vm'), nodes = {}, timers = [];
+const source = JSON.parse(require('node:fs').readFileSync(0, 'utf8')).source;
+function node(id) { return nodes[id] ||= {children:[],dataset:{},listeners:{},textContent:'',
+ set innerHTML(value){throw new Error('Diagnostics must be text')},
+ setAttribute(k,v){this[k]=v}, append(...children){this.children.push(...children);children.forEach(x=>{x.parent=this;if(x.id)nodes[x.id]=x;})},
+ addEventListener(k,v){this.listeners[k]=v}}; }
+let count=0, diagnostics={last_elapsed_ms:0,last_tool:'find_symbol',
+ last_failure:'<img src=x onerror=alert(1)> historical missing path',last_failure_at:'2026-09-20T14:22:40Z'};
+const context={document:{getElementById:node,querySelector:()=>({content:'csrf'}),createElement:()=>node('node-'+count++),hidden:false},
+ setInterval(fn){timers.push(fn)},fetch:async()=>({ok:true,json:async()=>({overall_health:'ok',selected_count:1,
+ components:[{id:'serena',available:true,requested_enabled:true,state:'configured',last_error:null,diagnostics}]})})};
+vm.createContext(context);vm.runInContext(source,context);
+async function flush(){for(let i=0;i<20;i++)await Promise.resolve()}
+(async()=>{await flush();const box=node('component-serena').parent.parent.parent;
+ const diagnostic=box.children[4],problem=box.children[5];
+ const first={text:diagnostic.textContent,hidden:diagnostic.hidden,problem:problem.textContent};
+ diagnostics={};timers[0]();await flush();
+ process.stdout.write(JSON.stringify({first,next:{text:diagnostic.textContent,hidden:diagnostic.hidden}}));
+})().catch(e=>{process.stderr.write(e.stack);process.exitCode=1});
+'''
+    result = subprocess.run(['node', '-e', harness], input=json.dumps({'source': source}), text=True,
+                            capture_output=True, check=True, timeout=10)
+    data = json.loads(result.stdout)
+    assert data['first']['hidden'] is False
+    assert 'Last tool duration: 0 ms (find_symbol)' in data['first']['text']
+    assert 'Last recorded failure: <img src=x onerror=alert(1)> historical missing path' in data['first']['text']
+    assert 'Not recorded' not in data['first']['text']
+    assert data['first']['problem'] == ''
+    assert data['next'] == {'text': '', 'hidden': True}

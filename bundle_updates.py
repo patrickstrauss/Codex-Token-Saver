@@ -155,7 +155,16 @@ def _atomic_json(path, value):
             json.dump(value, handle, ensure_ascii=False, indent=2)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        # Windows readers may briefly deny replacement while polling status.
+        # Keep the original intact and fail normally if access stays denied.
+        for attempt in range(5):
+            try:
+                os.replace(temporary, path)
+                break
+            except PermissionError:
+                if os.name != 'nt' or attempt == 4:
+                    raise
+                time.sleep(.01 * (attempt + 1))
     finally:
         if temporary.exists():
             temporary.unlink()

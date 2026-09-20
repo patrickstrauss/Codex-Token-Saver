@@ -17,6 +17,8 @@ if (-not $?) { throw 'Fresh package install failed.' }
 $taskPython = Join-Path $taskInstall 'headroom\.venv\Scripts\python.exe'
 & $taskPython (Join-Path $taskInstall 'packaging\test_configure_install.py')
 if ($LASTEXITCODE -ne 0) { throw 'Configuration rollback fault test failed.' }
+& $taskPython (Join-Path $taskInstall 'scripts\benchmark_modules.py') --installed $taskInstall --output (Join-Path $taskSandbox 'performance-benchmark.json') --repeats 3
+if ($LASTEXITCODE -ne 0) { throw 'Offline compression quality benchmark failed. See the benchmark output above.' }
 $taskPreviousCodex = $env:CODEX_HOME
 try {
     $env:CODEX_HOME = $taskProfile
@@ -32,4 +34,4 @@ try {
 } finally { $env:CODEX_HOME = $taskPreviousCodex }
 & (Join-Path $PackageDirectory 'Install.ps1') -InstallDirectory $taskInstall -SkipIntegration -CoreOnly:$CoreOnly
 if (-not $?) { throw 'Repeated package install failed.' }
-Write-Output "PASS: fresh install, runtime checks, repeated install, and isolated Codex settings preservation. Evidence: $taskSandbox"
+Write-Output "PASS: fresh install, runtime checks, compression quality benchmark, repeated install, and isolated Codex settings preservation. Evidence: $taskSandbox"
