@@ -22,6 +22,8 @@ This is a **regression check**, not proof of unchanged LLM answer quality, actua
 
 ## Optional matched-task comparison
 
+The dashboard's recent request windows use Headroom 0.37's savings ledger, which records only positive-savings events. Their event counts and reduction percentages exclude zero-savings requests and expansions; they are not an overall traffic reduction rate or net Codex consumption. Complete ledger coverage means all available records were readable, not that every model request was measured. Lifetime request counters use a separate cumulative source. Never compare these denominators as if they were the same.
+
 Do this only when you choose to spend Codex usage on a quality comparison. The benchmark above never starts these tasks automatically.
 
 1. Choose a small, representative bug fix or navigation task with a known answer and executable acceptance checks. Prepare two clean disposable checkouts of the same commit. Keep the prompt, model, reasoning level and available tools identical.

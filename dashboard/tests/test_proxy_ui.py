@@ -110,8 +110,12 @@ function select(value){node('request-proxy-window').value=value;node('request-pr
     assert data['initial']['saved'] == '123'
     assert 'last 15 minutes' in data['initial']['scope']
     assert 'all tasks' in data['initial']['scope']
-    assert '4 requests' in data['initial']['detail']
+    assert '4 savings events' in data['initial']['detail']
     assert '12.3%' in data['initial']['detail']
+    assert 'within recorded events' in data['initial']['detail']
+    assert 'zero-savings requests and expansions are excluded' in data['initial']['coverage']
+    assert 'not an overall traffic reduction rate' in data['initial']['coverage']
+    assert 'positive-savings' not in data['lifetime']['coverage']
     assert data['today']['saved'] == '456' and data['week']['saved'] == '789'
     assert data['lifetime']['saved'] == '99,999'
     assert 'lifetime' in data['lifetime']['scope']
