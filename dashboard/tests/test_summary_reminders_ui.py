@@ -29,7 +29,8 @@ const context={document:{getElementById:node,querySelector:()=>({content:'csrf-f
  fetch:async(url,options={})=>{calls.push({url,...options});let data;
  if(url==='/api/components')data={components:names.map(id=>({id,requested_enabled:true,effective_enabled:true,available:true,state:'ready'}))};
  else if(url==='/api/summary-reminders'){if(options.method==='POST'){const body=JSON.parse(options.body);reminders={...reminders,...body}}data=reminders}
- else if(url.includes('?task_id='))data={summary:'Saved summary',status:'summarized',coverage:{total_messages:2,summarized_messages:2}};
+ else if(url.includes('/lookup?'))data={task:{task_id:task,title:'Fixture task'}};
+ else if(url.includes('?task_id='))data={task_id:task,summary:'Saved summary',status:'summarized',coverage:{total_messages:2,summarized_messages:2}};
  else data={status:{available:true,running:false},tasks:[{task_id:task,project:'fixture'}]};
  return{ok:true,json:async()=>data}}};
 vm.createContext(context);vm.runInContext(fixture.source,context);
@@ -40,7 +41,7 @@ async function flush(){for(let i=0;i<35;i++)await Promise.resolve()}
  const initialStatus=node('summary-reminder-status').textContent;
  const listed=node('summary-reminder-tasks').children.map(row=>({title:row.children[0].children[0].textContent,context:row.children[0].children[1].textContent}));
  if(fixture.active){await node('summary-reminder-tasks').children[0].children[1].listeners.click();await flush()}
- const selected=node('local-summary-task').value,focused=!!node('local-summary-task').focused;
+ const selected=node('local-summary-task').value,focused=!!node('local-summary-link').focused;
  const inferenceReady=!node('local-summary-refresh').disabled,summary=node('local-summary-text').textContent;
  const postsBeforeSave=calls.filter(c=>c.method==='POST');
  node('summary-reminder-threshold').value='80';node('summary-reminder-threshold').listeners.input();

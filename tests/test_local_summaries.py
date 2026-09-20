@@ -90,6 +90,19 @@ class LocalSummariesTests(unittest.TestCase):
             'has_summary': False}])
         self.assertFalse(c.status()['available'])
 
+    def test_lookup_resolves_an_old_task_without_reading_its_conversation(self):
+        c = self.controller()
+        self.rollout([{'type': 'message', 'role': 'user', 'content': [{'text': 'PRIVATE TRANSCRIPT'}]}])
+        with patch.object(c, 'list_tasks', return_value=[]), patch.object(c, '_read_rollout', side_effect=AssertionError('must not read text')):
+            value = c.lookup_task(TASK)
+        self.assertEqual(value['task_id'], TASK)
+        self.assertEqual(value['project'], 'project')
+        self.assertNotIn('PRIVATE TRANSCRIPT', json.dumps(value))
+        with self.assertRaises(FileNotFoundError):
+            c.lookup_task(OTHER)
+        with self.assertRaises(ValueError):
+            c.lookup_task('../sessions')
+
     def test_invalid_and_unknown_task_ids_are_not_inferred(self):
         c = self.controller()
         self.rollout()
@@ -241,6 +254,53 @@ class LocalSummariesTests(unittest.TestCase):
             c._run_job(TASK, job['job_id'])
         self.assertEqual(engine.call_count, 1)
         self.assertEqual(c.status()['job']['status'], 'failed')
+        self.assertFalse(c._saved_path(TASK).exists())
+
+    def test_timeout_retries_only_pending_content_in_a_smaller_batch(self):
+        c = self.controller()
+        self.ready()
+        self.rollout([{'type': 'message', 'role': 'user', 'content': [{'text': f'part {i}'}]} for i in range(4)])
+        with patch.object(c, '_launch_worker', return_value=1234):
+            job = c.start(TASK)
+        requests = []
+        def engine(request, *args):
+            requests.append(json.loads(json.dumps(request)))
+            if len(requests) == 1:
+                return {'status': 'failed', 'error_code': 'model_timeout', 'error_stage': 'model', 'retryable': True}
+            return self.fake_engine(request, *args)
+        with patch.object(c, '_engine', side_effect=engine), patch.object(c, '_close_engine') as close:
+            c._run_job(TASK, job['job_id'])
+        self.assertEqual([len(r['messages']) for r in requests], [4, 2, 2])
+        self.assertEqual(close.call_count, 2)
+        self.assertEqual(c.status()['job']['recoveries'], 1)
+        self.assertEqual(c.get_summary(TASK)['coverage']['pending_messages'], 0)
+
+    def test_repeated_timeout_stops_with_actionable_error_and_preserved_checkpoint(self):
+        c = self.controller()
+        self.ready()
+        self.rollout([{'type': 'message', 'role': 'user', 'content': [{'text': 'First'}]}])
+        with patch.object(c, '_launch_worker', return_value=1234):
+            job = c.start(TASK)
+        with patch.object(c, '_engine', return_value={'status': 'failed', 'error_code': 'model_timeout',
+                'error_type': 'APITimeoutError', 'retryable': True}) as engine:
+            c._run_job(TASK, job['job_id'])
+        self.assertEqual(engine.call_count, 2)
+        self.assertEqual(c.status()['job']['error_code'], 'model_timeout')
+        self.assertEqual(c.status()['job']['error_type'], 'APITimeoutError')
+        self.assertIn('timed out', c.status()['job']['error'])
+        self.assertFalse(c._saved_path(TASK).exists())
+
+    def test_cancel_during_retry_cleanup_does_not_restart_model(self):
+        c = self.controller()
+        self.ready()
+        self.rollout([{'type': 'message', 'role': 'user', 'content': [{'text': 'First'}]}])
+        with patch.object(c, '_launch_worker', return_value=1234):
+            job = c.start(TASK)
+        with patch.object(c, '_engine', return_value={'status': 'failed', 'error_code': 'model_timeout'}) as engine, \
+             patch.object(c, '_close_engine', side_effect=lambda: c.cancel(TASK)):
+            c._run_job(TASK, job['job_id'])
+        engine.assert_called_once()
+        self.assertEqual(c.status()['job']['status'], 'cancelled')
         self.assertFalse(c._saved_path(TASK).exists())
 
     def test_engine_process_is_reused_then_closed(self):

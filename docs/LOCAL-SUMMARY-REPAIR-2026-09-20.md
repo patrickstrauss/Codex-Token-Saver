@@ -21,3 +21,11 @@ Focused tests cover automatic draining, cancellation and resumption, no-progress
 `scripts/verify_local_summary.py --installed <bundle> --regression-batches` runs the real installed local model against an isolated multi-batch fixture with a failed command, checks preservation and evidence, then cancels another job and checks shutdown. Local reports are retained under `logs/`; runtime state and conversations are excluded from Git.
 
 Native Codex compaction, provider routing, model/reasoning selection and original conversations remain untouched. Full coverage does not guarantee a lossless summary or measured Codex quota savings.
+
+## Follow-up: interrupted local model batch
+
+The next real-task run saved three batches, then reported only `RuntimeError`. The failure was recorded approximately 152 seconds after the last checkpoint, consistent with the previous 150-second model timeout. Replaying the exact next batch against its saved checkpoint succeeded in isolation. A timeout is therefore the likely cause, not a proven reconstruction of the original exception.
+
+The engine now allows 300 seconds per local model request and reports stable failure codes, stage, and exception type without exposing transcript or raw server responses. A transient timeout, connection interruption or stopped worker gets one retry of the unsaved batch with less input and a fresh owned model. Saved coverage is unchanged by failed attempts. Repeated failures stop with an actionable message. Cancel during retry cleanup prevents another model load.
+
+Controller and reader checks now pass 35 tests plus 5 subtests; engine checks pass 21 tests. Tests cover bounded retry, exact pending coverage, cancellation during recovery, empty model responses, sanitized errors and explicit lookup of a local task older than the recent picker. A successful isolated batch is not a completed full-conversation summary; the saved task still needs to finish all pending content before it is suitable for review as a handoff.

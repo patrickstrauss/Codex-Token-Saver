@@ -1604,9 +1604,9 @@ body {
     <h1 class="sr-only">Codex Token Saver</h1>
     <a class="header-left" href="https://github.com/patrickstrauss/Codex-Token-Saver" target="_blank" rel="noopener noreferrer" title="View source on GitHub">
         <div class="pulse-dot" id="health-pulse" title="All collectors healthy"></div>
-        <div class="header-title">CODEX TOKEN SAVER</div>
+        <div class="header-title">Codex Token Saver</div>
     </a>
-    <div class="header-centre" id="combined">LOCAL COMPRESSION ACTIVITY</div>
+    <div class="header-centre" id="combined">Local compression activity</div>
     <div class="header-right" id="clock">--:--:-- &blacksquare; -- --- ----</div>
 </header>
 <main role="main" aria-label="Tool savings dashboard">

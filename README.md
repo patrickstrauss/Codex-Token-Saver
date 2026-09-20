@@ -6,6 +6,10 @@ The bundle lives in `%USERPROFILE%\CodexTokenSaver`, a regular user folder. The 
 
 Open **Codex Token Saver** from the Windows Start menu, open the [dashboard](http://127.0.0.1:8095/), or click the **TS** tray icon. Windows may hide the icon under the tray's up-arrow.
 
+For a new team installation, use the checked Windows preview ZIP and double-click **Install.cmd**; see [Team installation and private releases](docs/TEAM-INSTALL.md). No developer tools are required. The preview installs RTK, local Headroom, Serena and local summaries; fresh request-compression setup is not yet supported. Existing managed connections are preserved. The installer will not overwrite an existing installation. [Test Serena](docs/SERENA-TESTING.md) against your own project after enabling it.
+
+In **Local summaries**, paste a `codex://threads/<task-id>` link and look up the task before starting. Completed batches are saved for resumption. Summary generation does **not** require restarting Codex or replace native compaction. Restart only when Codex needs to load newly installed or updated local tools.
+
 Expand **Library updates** to check Headroom, RTK, Serena, LangMem and llama.cpp releases, install a validated candidate, or roll back to the retained previous runtime. **Refresh dependencies** updates Headroom's compatible Python dependencies when its core is current. Model GGUF files are not automatically replaced. Checks and installations are manual; see [Updating the libraries](LIBRARY-UPDATES.md).
 
 ## Source checkout and development

@@ -1,0 +1,80 @@
+name: Windows package
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      draft_release:
+        description: Create a private-repository draft release after checks
+        type: boolean
+        default: false
+      tag:
+        description: Release tag for a manually requested draft (for example v0.1.0)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Select package version
+        id: version
+        shell: pwsh
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } elseif ($env:REQUESTED_TAG) { $env:REQUESTED_TAG } else { 'ci-' + $env:GITHUB_RUN_NUMBER }
+          if ($version -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,60}$') { throw 'Invalid version.' }
+          "value=$version" >> $env:GITHUB_OUTPUT
+      - name: Build source-only distributable and native launchers
+        shell: powershell
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.value }}
+        run: .\packaging\Build-Package.ps1 -Version $env:PACKAGE_VERSION -OutputDirectory "$env:RUNNER_TEMP\packages"
+      - name: Fresh install, runtimes and synthetic Codex preservation
+        shell: powershell
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.value }}
+        run: .\packaging\Smoke-Package.ps1 -PackageDirectory "$env:RUNNER_TEMP\packages\Codex-Token-Saver-$env:PACKAGE_VERSION-windows-x64"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-package
+          path: |
+            ${{ runner.temp }}/packages/*.zip
+            ${{ runner.temp }}/packages/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+  draft-release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.draft_release)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download checked package and create draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.package.outputs.version }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:GITHUB_REF_TYPE -ne 'tag' -and -not $env:REQUESTED_TAG) { throw 'A tag is required for a manual draft release.' }
+          gh run download $env:GITHUB_RUN_ID --name windows-package --dir release
+          if ($LASTEXITCODE -ne 0) { throw 'Artifact download failed.' }
+          $assets = @(Get-ChildItem -LiteralPath release -File | Select-Object -ExpandProperty FullName)
+          $body = 'Windows x64 per-user installer. Extract all files, then run Install.cmd. See docs/TEAM-INSTALL.md in the source repository. Unsigned; first install requires internet. Review this draft before publishing.'
+          [IO.File]::WriteAllText((Join-Path $pwd 'release-notes.txt'), $body)
+          gh release create $env:RELEASE_TAG @assets --draft --target $env:GITHUB_SHA --title "Codex Token Saver $env:RELEASE_TAG" --notes-file release-notes.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed.' }

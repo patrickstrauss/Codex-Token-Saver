@@ -31,7 +31,8 @@ const context={document:{getElementById:node,querySelector:()=>({content:'csrf'}
  Option:function(text,value){return{textContent:text,value}},setInterval(fn){timers.push(fn)},
  fetch:async(url,options={})=>{calls.push({url,...options});let data;
  if(url==='/api/components'){if(options.method==='POST'){const b=JSON.parse(options.body);state={...state,components:state.components.map(c=>c.id===b.component?{...c,requested_enabled:b.enabled,effective_enabled:b.enabled,state:b.enabled?'ready':'off'}:c)}}data={...state,...(options.method==='POST'?{change:{restart_required:true}}:{})};}
- else if(url.includes('?task_id='))data={status:fixture.status,summary:'<script>is displayed as text</script>',coverage:{summarized_messages:4,total_messages:4,pending_messages:0,...fixture.coverage}};
+ else if(url.includes('/lookup?'))data={task:{task_id:task,title:'Fixture task'}};
+ else if(url.includes('?task_id='))data={task_id:task,status:fixture.status,summary:'<script>is displayed as text</script>',coverage:{summarized_messages:4,total_messages:4,pending_messages:0,...fixture.coverage}};
  else {if(options.method==='POST' && url==='/api/local-summaries')started=true;
  data={status:{available:true,running:started,job:started?{task_id:task,phase:'summarizing',processed_messages:6,total_messages:14,batches_completed:1}:null},tasks:[{task_id:task,project:'fixture'}]};}
  return{ok:true,json:async()=>data};}};

@@ -48,8 +48,13 @@ class Summaries:
     def list_tasks(self):
         return [{'task_id': FIXTURE_TASK, 'project': 'UI fixture · no real conversation', 'updated_at': '2026-09-20T07:00:00Z'}]
 
+    def lookup_task(self, task_id):
+        if task_id not in (FIXTURE_TASK, '01a09946-380f-72f1-ab4a-29bb5da7b861'):
+            raise FileNotFoundError()
+        return {'task_id': task_id, 'title': 'Review the local toolkit', 'project': 'UI fixture', 'updated_at': '2026-09-20T07:00:00Z'}
+
     def get_summary(self, task_id):
-        return {'summary': 'Fixture summary. Original messages remain unchanged.' if self.generated else None,
+        return {'task_id': task_id, 'status': 'summarized' if self.generated else 'empty', 'summary': 'Fixture summary. Original messages remain unchanged.' if self.generated else None,
                 'coverage': {'summarized_messages': 4 if self.generated else 0, 'total_messages': 4,
                              'pending_messages': 0 if self.generated else 4}}
 

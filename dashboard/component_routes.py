@@ -1,5 +1,6 @@
 """Dashboard controls reuse the existing local Host/Origin/CSRF boundary."""
 import sys
+import re
 import threading
 from pathlib import Path
 from uuid import UUID
@@ -26,8 +27,18 @@ def _summaries(root):
 
 def _task_id(value):
     if not isinstance(value, str) or str(UUID(value)) != value:
-        raise ValueError('Select a task from the list.')
+        raise ValueError('Choose a local task.')
     return value
+
+
+def _task_reference(value):
+    """A local identifier, never a URL to fetch or a filesystem path."""
+    if not isinstance(value, str) or len(value) > 128:
+        raise ValueError()
+    match = re.fullmatch(r'(?:codex://threads/)?([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})', value.strip())
+    if not match:
+        raise ValueError()
+    return _task_id(match.group(1).lower())
 
 
 def register_component_routes(app, root, security, control_factory=None, summary_factory=None, observations=None):
@@ -87,6 +98,25 @@ def register_component_routes(app, root, security, control_factory=None, summary
         except Exception:
             return security.error('Component status is unavailable. Refresh before trying another change.', 503)
 
+    def lookup_summary_task():
+        denied = security.guard(mutation=False)
+        if denied is not None:
+            return denied
+        try:
+            if set(request.args) != {'task'} or len(request.args.getlist('task')) != 1:
+                raise ValueError()
+            task_id = _task_reference(request.args['task'])
+            task = manager('summaries').lookup_task(task_id)
+            if not isinstance(task, dict) or task.get('task_id') != task_id:
+                return security.error('The local task lookup returned a different task. Try looking it up again.', 503)
+            return respond({'task': task})
+        except (ValueError, BadRequest):
+            return security.error('Paste a Codex task link (codex://threads/ followed by a task ID) or a task ID only, without extra paths, queries, or fragments.', 400)
+        except FileNotFoundError:
+            return security.error('This task was not found on this device. Open it in Codex on this computer, then try again.', 404)
+        except Exception:
+            return security.error('Local task lookup is unavailable. Try again after checking the bundle status.', 503)
+
     def summaries():
         denied = security.guard(mutation=request.method == 'POST')
         if denied is not None:
@@ -109,7 +139,9 @@ def register_component_routes(app, root, security, control_factory=None, summary
             return respond(service.start(task_id) if payload['action'] == 'start' else service.cancel(task_id),
                            202 if payload['action'] == 'start' else 200)
         except (ValueError, BadRequest, RequestEntityTooLarge):
-            return security.error('Select a listed task and choose Refresh summary or Cancel.', 400)
+            return security.error('Look up a local task and choose Start summary or Cancel.', 400)
+        except FileNotFoundError:
+            return security.error('This task is no longer available locally. Look it up again in Codex.', 404)
         except RuntimeError:
             return security.error('Local summaries are not ready, disabled, or another job is running. Check component status.', 409)
         except Exception:
@@ -117,4 +149,5 @@ def register_component_routes(app, root, security, control_factory=None, summary
 
     app.add_url_rule('/api/components', 'bundle_components', components, methods=['GET', 'POST'])
     app.add_url_rule('/api/local-summaries', 'local_summaries', summaries, methods=['GET', 'POST'])
+    app.add_url_rule('/api/local-summaries/lookup', 'lookup_summary_task', lookup_summary_task, methods=['GET'])
     return snapshot

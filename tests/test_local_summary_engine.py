@@ -20,6 +20,21 @@ class LocalSummaryEngineTests(unittest.TestCase):
     def setUp(self):
         self.engine = importlib.import_module('local_summary_engine')
 
+    def test_timeout_failure_is_actionable_without_exposing_response_text(self):
+        class APITimeoutError(TimeoutError):
+            pass
+        result = self.engine.failed_result(APITimeoutError('PRIVATE PROMPT AND KEY'))
+        self.assertEqual(result['error_code'], 'model_timeout')
+        self.assertTrue(result['retryable'])
+        self.assertIn('timed out', result['error'])
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        self.assertEqual(result['error_type'], 'APITimeoutError')
+
+    def test_unknown_failure_is_not_retried_or_exposed_as_raw_model_text(self):
+        result = self.engine.failed_result(RuntimeError('PRIVATE RESPONSE'))
+        self.assertFalse(result['retryable'])
+        self.assertNotIn('PRIVATE', json.dumps(result))
+
     def test_session_reuses_model_and_unloads_at_eof(self):
         calls = []
 
@@ -217,6 +232,20 @@ class LocalSummaryEngineTests(unittest.TestCase):
         self.assertTrue(all(message.type == 'human' for message in model.calls[0][1:]))
         self.assertIn('untrusted', model.calls[0][0].content.lower())
         self.assertIn('PWNED', str(model.calls[0]))
+
+    def test_empty_model_response_has_specific_failure_code(self):
+        from langchain_core.messages import AIMessage
+
+        class Model:
+            def invoke(self, messages):
+                return AIMessage(content='')
+
+        with self.assertRaises(self.engine.SummaryJobError) as raised:
+            self.engine.summarize_messages_locally(
+                {'messages': [{'id': 'u1', 'role': 'user', 'content': 'Keep backups.'}],
+                 'max_summary_tokens': 256}, model=Model(), count_text=len,
+                context_size=8192, model_id='fixture')
+        self.assertEqual(raised.exception.code, 'invalid_summary')
 
     def test_nested_failure_and_truncation_survive_false_clean_model_summary(self):
         from langchain_core.messages import AIMessage

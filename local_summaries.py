@@ -17,7 +17,8 @@ import time
 import uuid
 
 from desktop_proxy_control import atomic_write
-from local_summary_engine import job_lock, isolated_environment, _windows_job
+from local_summary_engine import (job_lock, isolated_environment, _windows_job,
+                                 SummaryJobError, failure_details, MODEL_REQUEST_TIMEOUT)
 
 ROOT = Path(__file__).resolve().parent
 MAX_LINE_BYTES = 2 * 1024 * 1024
@@ -158,6 +159,29 @@ class LocalSummaries:
             if len(result) >= limit:
                 break
         return result
+
+    def lookup_task(self, task_id):
+        """Resolve an explicit local task independently of the recent-task picker."""
+        task_id = self._id(task_id)
+        matches = [p for p in self._files() if p.name.endswith(task_id + '.jsonl')]
+        if not matches:
+            raise FileNotFoundError('This task is not available in this device\'s local Codex history.')
+        if len(matches) != 1:
+            raise LookupError('More than one local history file matches this task.')
+        path = matches[0]
+        with path.open('rb') as stream:
+            meta = json.loads(stream.readline(65536))
+        if meta.get('type') != 'session_meta' or meta.get('payload', {}).get('id') != task_id:
+            raise ValueError('The local task metadata does not match this link.')
+        project = str(meta['payload'].get('cwd', '')).replace('\\', '/').rstrip('/').split('/')[-1]
+        stat = path.stat()
+        value = {'task_id': task_id, 'project': project, 'title': project or task_id,
+                 'updated_at': datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                 'bytes': stat.st_size, 'has_summary': self._saved_path(task_id).is_file()}
+        # Reuse the existing read-only title lookup; it never selects transcript content.
+        from summary_reminders import SummaryReminders
+        SummaryReminders(self.root, self.home)._titles([value])
+        return value
 
     def _read_rollout(self, path, task_id, *, on_progress=None):
         messages, calls = [], {}
@@ -350,19 +374,19 @@ class LocalSummaries:
             raise ValueError('Local summary request exceeds the limit.')
         process.stdin.write(data)
         process.stdin.flush()
-        deadline = time.monotonic() + 900
+        deadline = time.monotonic() + 4 * MODEL_REQUEST_TIMEOUT + 180
         while True:
             if self._cancelled(job_id):
                 raise RuntimeError('Summary cancelled.')
             if time.monotonic() > deadline:
-                raise TimeoutError('Local summary timed out.')
+                raise SummaryJobError('model_timeout')
             self._update_job(job_id)
             try:
                 output = self._engine_replies.get(timeout=1)
             except queue.Empty:
                 continue
             if output is None:
-                raise RuntimeError('Local summary engine stopped.')
+                raise SummaryJobError('engine_stopped')
             return json.loads(output)
 
     def _close_engine(self):
@@ -393,12 +417,14 @@ class LocalSummaries:
 
     def _run_job(self, task_id, job_id):
         with job_lock(self.state / 'worker.lock'):
-            terminal, failure = 'failed', None
+            terminal, failure, details = 'failed', None, {}
+            stage = 'reading'
+            recoveries = 0
             try:
                 if self._cancelled(job_id):
                     terminal = 'cancelled'
                     return
-                self._update_job(job_id, status='running', phase='reading', batches_completed=0)
+                self._update_job(job_id, status='running', phase='reading', batches_completed=0, recoveries=0)
                 def progress(scanned, total):
                     if self._cancelled(job_id):
                         raise RuntimeError('Summary cancelled.')
@@ -434,21 +460,44 @@ class LocalSummaries:
                     request = {'messages': pending, 'max_summary_tokens': 1024}
                     if saved.get('running_summary'):
                         request['previous_summary'] = saved['running_summary']
-                    value = self._engine(request, task_id, job_id)
+                    stage = 'model'
+                    for attempt in range(2):
+                        if self._cancelled(job_id):
+                            terminal = 'cancelled'
+                            return
+                        self._update_job(job_id, phase='summarizing')
+                        try:
+                            value = self._engine(request, task_id, job_id)
+                        except Exception as exc:
+                            value = {'status': 'failed', **failure_details(exc)}
+                        if value.get('status') != 'failed':
+                            break
+                        error = SummaryJobError(value.get('error_code', 'model_error'),
+                                                value.get('error_stage', 'model'), value.get('error_type'))
+                        if attempt or not failure_details(error)['retryable'] or self._cancelled(job_id):
+                            raise error
+                        # Retry only this unsaved local batch, using a fresh owned model
+                        # and less input. No external Codex requests are replayed.
+                        self._close_engine()
+                        pending = pending[:max(1, len(pending) // 2)]
+                        request = {**request, 'messages': pending}
+                        recoveries += 1
+                        self._update_job(job_id, phase='retrying', recoveries=recoveries,
+                                         notice='Retrying the unsaved batch with less input after a local model interruption.')
                     running = value.get('running_summary')
                     if value.get('status') == 'failed' or not isinstance(running, dict) or not value.get('summary'):
-                        raise RuntimeError('The local model returned no usable summary.')
+                        raise SummaryJobError('invalid_summary')
                     returned = set(running.get('summarized_message_ids', []))
                     allowed = covered + [m['id'] for m in pending]
                     if not returned.issubset(set(allowed)) or not set(covered).issubset(returned):
-                        raise RuntimeError('Summary coverage is inconsistent.')
+                        raise SummaryJobError('invalid_summary')
                     count = 0
                     for ident in allowed:
                         if ident not in returned:
                             break
                         count += 1
                     if set(allowed[:count]) != returned or count <= len(covered):
-                        raise RuntimeError('Summary did not cover a complete new message prefix.')
+                        raise SummaryJobError('invalid_summary')
                     status = ('summarized' if count == len(messages) and not incomplete else 'partial')
                     source_tokens = saved.get('metrics', {}).get('source_tokens', 0) + value.get('processed_input_tokens', value.get('input_tokens', 0))
                     output_tokens = value.get('output_tokens', 0)
@@ -460,6 +509,7 @@ class LocalSummaries:
                                     'estimated_size_reduction': source_tokens - output_tokens}}
                     # Each completed batch is a resumable checkpoint. Cancel wins
                     # against publishing the in-flight batch, not earlier checkpoints.
+                    stage = 'publishing'
                     with _control_lock(self.state / 'control.lock'):
                         job = _read(self.job_path, {})
                         if job.get('job_id') != job_id:
@@ -476,7 +526,8 @@ class LocalSummaries:
                 terminal = status
             except Exception as exc:
                 terminal = 'cancelled' if self._cancelled(job_id) else 'failed'
-                failure = f'Local job {terminal} ({type(exc).__name__}); originals retained.'
+                details = failure_details(exc, stage) if terminal == 'failed' else {}
+                failure = details.pop('error', None)
             finally:
                 cleanup_failed = False
                 try:
@@ -487,12 +538,13 @@ class LocalSummaries:
                     except Exception as exc:
                         cleanup_failed = True
                         terminal = 'failed'
-                        failure = f'Local model cleanup failed ({type(exc).__name__}).'
+                        details = failure_details(SummaryJobError('cleanup_failed', 'cleanup'))
+                        failure = details.pop('error')
                         raise
                     finally:
                         if not cleanup_failed and self._cancelled(job_id):
                             terminal = 'cancelled'
-                        self._update_job(job_id, status=terminal, phase='complete', error=failure)
+                        self._update_job(job_id, status=terminal, phase='complete', error=failure, **details)
 
 
 if __name__ == '__main__':

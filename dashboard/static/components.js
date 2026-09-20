@@ -5,7 +5,8 @@
     var token = document.querySelector('meta[name="bundle-update-token"]').content;
     var state = {}, rows = {}, changing = false, reading = false, generation = 0;
     var names = ['rtk', 'headroom_local', 'headroom_requests', 'serena', 'local_summaries', 'llama_cpp'];
-    var labels = ['RTK command filtering', 'Headroom local output', 'Headroom request compression', 'Serena symbol navigation', 'LangMem local summaries', 'llama.cpp local inference'];
+    var labels = ['Command output', 'Local file & output reading', 'Request compression', 'Code navigation', 'Task summaries', 'Local model'];
+    var engines = ['RTK', 'Headroom · local output', 'Headroom · model requests', 'Serena · symbol tools', 'LangMem', 'llama.cpp'];
     var states = {off:'Off', ready:'Ready', configured:'Configured · task loading unverified', in_use:'In use', bypassed:'Bypassed', needs_restart:'Needs setup / reload', error:'Error', unavailable:'Unavailable'};
     function el(id) { return document.getElementById(id); }
     function textNode(tag, className, text) {
@@ -16,6 +17,7 @@
     names.forEach(function (name, i) {
         var box = textNode('article', 'component-row'), top = textNode('div', 'component-top');
         var title = textNode('span', 'component-name', labels[i]), label = textNode('label', 'component-toggle');
+        title.append(textNode('span', 'component-engine', engines[i]));
         var input = document.createElement('input'); input.type = 'checkbox'; input.id = 'component-' + name;
         input.setAttribute('role', 'switch'); input.setAttribute('aria-label', labels[i]); input.disabled = true;
         var choice = textNode('span', '', 'Loading'); label.append(input, choice); top.append(title, label);
@@ -76,48 +78,115 @@
         } catch (_) { error('components-error', 'The response was interrupted. Refresh status before trying again.'); }
         finally { changing = false; render(); }
     }
-    var summaryBusy = false, summaryState = {}, selectedTask = '', summaryGeneration = 0;
-    function summaryButtons() {
-        var ready = ['local_summaries', 'llama_cpp'].every(function (name) {
+    var summaryBusy = false, summaryState = {}, selectedTask = '', selectedMetadata = null, summaryGeneration = 0;
+    var lookupBusy = false, lookupGeneration = 0, tasksReading = false, tasksGeneration = 0, recentTasks = [];
+    function taskReference(value) {
+        var match = /^(?:codex:\/\/threads\/)?([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$/.exec(value.trim());
+        return match ? match[1].toLowerCase() : '';
+    }
+    function summaryReady() {
+        return ['local_summaries', 'llama_cpp'].every(function (name) {
             return (state.components || []).some(function (component) { return component.id === name && component.effective_enabled; });
         });
-        el('local-summary-refresh').disabled = summaryBusy || !selectedTask || !summaryState.available || !!summaryState.running || !ready;
+    }
+    function summaryButtons() {
+        el('local-summary-refresh').disabled = summaryBusy || lookupBusy || !selectedTask || !summaryState.available || !!summaryState.running || !summaryReady();
         el('local-summary-cancel').disabled = summaryBusy || !summaryState.running || !(summaryState.job || {}).task_id;
-        el('local-summary-reload').disabled = summaryBusy;
+        el('local-summary-reload').disabled = summaryBusy || tasksReading;
+        el('local-summary-lookup').disabled = summaryBusy || lookupBusy;
+        el('local-summary-link').disabled = summaryBusy;
+        el('local-summary-task').disabled = summaryBusy;
+    }
+    function renderJob() {
+        var job = summaryState.job || {}, sameTask = job.task_id === selectedTask;
+        var progress = job.phase === 'reading' ? 'Reading the task history…'
+            : job.phase === 'loading' || job.phase === 'starting' ? 'Loading the local model. This can take a moment…'
+            : job.phase === 'unloading' ? 'Finishing the job and unloading the local model…'
+            : job.phase === 'retrying' ? 'Retrying the unfinished batch with less context. Completed batches are kept.'
+            : 'Local job: ' + (job.processed_messages || 0) + ' of ' + (job.total_messages || 0)
+                + ' segments; ' + (job.batches_completed || 0) + ' batches completed. Cancel keeps completed batches.';
+        el('local-summary-status').textContent = summaryState.running
+            ? (sameTask ? '' : 'Another task is running (' + (job.task_id || 'ID unavailable') + '). ') + progress
+            : summaryState.available ? (!summaryReady() ? 'Turn on Task summaries and Local model in Your toolkit to start a summary.'
+                : selectedTask ? 'Ready when you are. Start summary processes this task locally.' : 'Look up a task to get started.')
+            : 'Local summary runtime is unavailable. Check Task summaries and Local model in Your toolkit.';
+        if (sameTask && job.notice) el('local-summary-status').textContent += ' ' + job.notice;
+        el('local-summary-diagnostic').textContent = sameTask && job.error
+            ? [job.error_stage ? 'Stage: ' + job.error_stage : '', job.error_code ? 'Code: ' + job.error_code : ''].filter(Boolean).join(' · ') : '';
+        if (sameTask && job.error) error('local-summary-error', job.error);
+    }
+    function populateTasks(taskList) {
+        var select = el('local-summary-task'); select.replaceChildren(new Option('Choose a recent task…', ''));
+        if (selectedMetadata && !taskList.some(function (task) { return task.task_id === selectedTask; })) taskList = [selectedMetadata].concat(taskList);
+        taskList.forEach(function (task) { select.append(new Option((task.title || task.project || 'Local task') + ' · ' + task.task_id, task.task_id)); });
+        select.value = selectedTask;
     }
     async function tasks() {
-        if (summaryBusy || !el('local-summary-panel').open || document.hidden) return false;
+        if (summaryBusy || tasksReading || !el('local-summary-panel').open || document.hidden) return false;
+        tasksReading = true; var current = ++tasksGeneration; summaryButtons();
         try {
             var response = await fetch('/api/local-summaries', {credentials:'same-origin', cache:'no-store'}), data = await response.json();
-            if (!response.ok) throw new Error();
+            if (current !== tasksGeneration) return false;
+            if (!response.ok) throw new Error(data.error || 'Task list is unavailable. Try reloading recent tasks.');
             summaryState = data.status || {};
-            error('local-summary-error', summaryState.last_error || (summaryState.job || {}).error || '');
-            var select = el('local-summary-task'); select.replaceChildren(new Option('Choose a task...', ''));
-            (data.tasks || []).forEach(function (task) {
-                select.append(new Option((task.project || 'Task') + ' · ' + task.task_id + ' · ' + date(task.updated_at), task.task_id));
-            });
-            select.value = selectedTask;
-            if (select.value !== selectedTask) selectedTask = '';
-            var job = summaryState.job || {};
-            var progress = job.phase === 'reading' ? 'Reading the task history...'
-                : job.phase === 'unloading' ? 'Finishing the job and unloading the local model...'
-                : 'Local job: ' + (job.processed_messages || 0) + ' of ' + (job.total_messages || 0)
-                    + ' segments; ' + (job.batches_completed || 0) + ' batches completed. Cancel keeps completed batches.';
-            el('local-summary-status').textContent = summaryState.running ? progress
-                : summaryState.available ? 'Ready for an explicit summary request. Both LangMem and llama.cpp must be On.'
-                : 'Local summary runtime is unavailable. Check the component controls.';
-            summaryButtons();
+            recentTasks = data.tasks || []; populateTasks(recentTasks); renderJob();
             return true;
-        } catch (_) { error('local-summary-error', 'Task list is unavailable. Original conversations are unchanged.'); return false; }
+        } catch (problem) { if (current === tasksGeneration) error('local-summary-error', problem.message || 'Task list is unavailable. Original conversations are unchanged.'); return false; }
+        finally { tasksReading = false; summaryButtons(); }
+    }
+    function clearSelection() {
+        ++lookupGeneration; ++summaryGeneration; lookupBusy = false; selectedTask = ''; selectedMetadata = null;
+        el('local-summary-task').value = '';
+        el('local-summary-selection').hidden = true;
+        el('local-summary-title').textContent = ''; el('local-summary-meta').textContent = '';
+        el('local-summary-text').textContent = 'Look up a task to view its saved summary.';
+        el('local-summary-quality').textContent = ''; el('local-summary-coverage').textContent = '';
+        error('local-summary-error', ''); error('local-summary-lookup-error', '');
+        el('local-summary-link').setAttribute('aria-invalid', 'false');
+        el('local-summary-lookup-status').textContent = '';
+        renderJob(); summaryButtons();
+    }
+    async function lookupTask(reference) {
+        if (summaryBusy) return false;
+        clearSelection(); el('local-summary-link').value = reference;
+        var task = taskReference(reference), current = ++lookupGeneration;
+        if (!task) {
+            error('local-summary-lookup-error', 'Paste a Codex task link (codex://threads/ followed by a task ID) or a task ID only, without extra paths, queries, or fragments.');
+            el('local-summary-link').setAttribute('aria-invalid', 'true'); return false;
+        }
+        lookupBusy = true; summaryButtons(); el('local-summary-lookup-status').textContent = 'Looking up this task on your device…';
+        try {
+            var response = await fetch('/api/local-summaries/lookup?task=' + encodeURIComponent(reference.trim()), {credentials:'same-origin', cache:'no-store'});
+            var data = await response.json();
+            if (current !== lookupGeneration) return false;
+            if (!response.ok) throw new Error(data.error || 'Task lookup failed. Check the link and try again.');
+            if (!data.task || data.task.task_id !== task) throw new Error('The lookup returned a different task. Look up the task again before continuing.');
+            selectedTask = task; selectedMetadata = data.task;
+            el('local-summary-selection').hidden = false;
+            el('local-summary-title').textContent = data.task.title || data.task.project || 'Local task';
+            el('local-summary-meta').textContent = task + ' · Updated ' + date(data.task.updated_at);
+            // Keep a task outside the recent list selected when status is polled.
+            populateTasks(recentTasks);
+            el('local-summary-lookup-status').textContent = 'Task found. Looking up a task does not start a summary.';
+            renderJob(); await readSummary();
+            return current === lookupGeneration;
+        } catch (problem) {
+            if (current === lookupGeneration) {
+                error('local-summary-lookup-error', problem.message || 'Local task lookup is unavailable. Try again.');
+                el('local-summary-lookup-status').textContent = '';
+            }
+            return false;
+        } finally { if (current === lookupGeneration) { lookupBusy = false; summaryButtons(); } }
     }
     async function readSummary() {
         var task = selectedTask, current = ++summaryGeneration;
-        if (!task) { el('local-summary-text').textContent = 'Select a task to view its saved summary.'; el('local-summary-coverage').textContent = ''; el('local-summary-quality').textContent = ''; return; }
+        if (!task) return;
         try {
             var response = await fetch('/api/local-summaries?task_id=' + encodeURIComponent(task), {credentials:'same-origin', cache:'no-store'}), data = await response.json();
             if (current !== summaryGeneration || task !== selectedTask) return;
-            if (!response.ok) throw new Error();
-            el('local-summary-text').textContent = data.summary || 'No saved summary yet. Choose Refresh summary to generate one locally.';
+            if (!response.ok) throw new Error(data.error || 'Saved summary is unavailable. Try looking up the task again.');
+            if (data.task_id && data.task_id !== task) throw new Error('The saved summary belongs to a different task. Look up this task again.');
+            el('local-summary-text').textContent = data.summary || 'No saved summary yet. Choose Start summary to generate one locally.';
             var coverage = data.coverage || {}, metrics = data.metrics || {};
             var incomplete = [];
             if (coverage.source_incomplete) incomplete.push('An unfinished transcript record was not read.');
@@ -126,32 +195,39 @@
             if (coverage.skipped_lines) incomplete.push(coverage.skipped_lines + ' source records were skipped.');
             if (coverage.pending_messages) incomplete.push(coverage.pending_messages + ' readable segments remain unsummarized.');
             var quality = !data.summary ? 'No saved summary yet.'
-                : data.status === 'stale' ? 'Stale summary: source or summary format changed. Refresh and verify against originals.'
-                : data.status === 'partial' || incomplete.length ? 'Partial summary: coverage is incomplete.'
+                : data.status === 'stale' ? 'Stale summary: source or summary format changed. Start again and verify against originals.'
+                : data.status === 'partial' || incomplete.length ? 'Partial summary: coverage is incomplete. Not ready for a handoff.'
                 : data.status === 'summarized' ? 'Summary covers all currently readable segments. Verify important details against originals.'
-                : 'Saved summary; completion status is unavailable.';
+                : 'Saved summary; completion status is unavailable. Verify coverage before using it.';
             el('local-summary-quality').textContent = quality + (incomplete.length ? ' ' + incomplete.join(' ') : '');
             el('local-summary-coverage').textContent = 'Covered ' + (coverage.summarized_messages || 0) + ' of ' + (coverage.total_messages || 0)
                 + ' segments; ' + (coverage.pending_messages || 0) + ' pending.'
                 + (typeof metrics.source_tokens === 'number' && typeof metrics.summary_tokens === 'number'
                     ? ' Local text: ' + metrics.source_tokens + ' source tokens → ' + metrics.summary_tokens + ' summary tokens (estimate).' : '');
-        } catch (_) { if (current === summaryGeneration) {
-            error('local-summary-error', 'Saved summary is unavailable. Try reloading the task.');
+        } catch (problem) { if (current === summaryGeneration && task === selectedTask) {
+            error('local-summary-error', problem.message || 'Saved summary is unavailable. Try looking up the task again.');
+            el('local-summary-text').textContent = 'Saved summary could not be loaded for this task.';
+            el('local-summary-coverage').textContent = '';
             el('local-summary-quality').textContent = 'Summary status is unavailable for the selected task.';
         } }
     }
     async function summaryAction(action) {
-        if (summaryBusy) return;
+        if (summaryBusy || (action === 'start' && el('local-summary-refresh').disabled)) return;
         var task = action === 'cancel' ? (summaryState.job || {}).task_id : selectedTask;
         if (!task) return;
-        summaryBusy = true; summaryButtons(); error('local-summary-error', '');
+        summaryBusy = true; ++tasksGeneration; summaryButtons(); error('local-summary-error', '');
+        var actionError = '';
         try {
             var response = await fetch('/api/local-summaries', {method:'POST', credentials:'same-origin', cache:'no-store',
                 headers:{'Content-Type':'application/json', 'X-Codex-Update-Token':token}, body:JSON.stringify({action:action, task_id:task})});
             var data = await response.json();
-            if (!response.ok) error('local-summary-error', data.error || 'The job could not start.');
-        } catch (_) { error('local-summary-error', 'The response was interrupted. Check status before starting another job.'); }
-        finally { summaryBusy = false; await tasks(); await readSummary(); summaryButtons(); }
+            if (!response.ok) actionError = data.error || 'The job could not start.';
+            else if (action === 'start') summaryState = Object.assign({}, summaryState, {running:true, job:{task_id:task, phase:'starting'}});
+        } catch (_) { actionError = 'The response was interrupted. Check status before starting another job.'; }
+        finally {
+            summaryBusy = false; await tasks(); await readSummary(); summaryButtons();
+            if (actionError) error('local-summary-error', actionError);
+        }
     }
     var reminderState = {}, reminderReading = false, reminderSaving = false, reminderDirty = false, reminderGeneration = 0;
     function reminderControls() {
@@ -188,12 +264,7 @@
             select.disabled = summaryBusy;
             select.addEventListener('click', async function () {
                 if (summaryBusy) return;
-                selectedTask = task.task_id;
-                if (!await tasks()) return;
-                if (selectedTask !== task.task_id) { error('summary-reminder-error', 'This task is no longer available in the summary picker. Reload tasks.'); return; }
-                error('local-summary-error', '');
-                summaryButtons(); await readSummary();
-                el('local-summary-task').focus();
+                if (await lookupTask(task.task_id)) el('local-summary-link').focus();
             });
             row.append(description, select); list.append(row);
         });
@@ -230,7 +301,9 @@
     el('summary-reminder-threshold').addEventListener('input', function () { reminderDirty = true; reminderControls(); });
     el('summary-reminder-save').addEventListener('click', saveReminders);
     el('local-summary-panel').addEventListener('toggle', function () { tasks(); loadReminders(); });
-    el('local-summary-task').addEventListener('change', function () { selectedTask = this.value; error('local-summary-error', ''); summaryButtons(); readSummary(); });
+    el('local-summary-task').addEventListener('change', function () { if (this.value) lookupTask(this.value); else clearSelection(); });
+    el('local-summary-link').addEventListener('input', clearSelection);
+    el('local-summary-lookup-form').addEventListener('submit', function (event) { event.preventDefault(); lookupTask(el('local-summary-link').value); });
     el('local-summary-reload').addEventListener('click', function () { tasks(); loadReminders(); });
     el('local-summary-refresh').addEventListener('click', function () { summaryAction('start'); });
     el('local-summary-cancel').addEventListener('click', function () { summaryAction('cancel'); });
@@ -241,9 +314,10 @@
         var valid = params.getAll('summary_task').length === 1 && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(task);
         if (!valid && location.hash !== '#local-summary-panel') return;
         el('local-summary-panel').open = true;
-        if (valid) selectedTask = task;
         loadReminders();
-        if (await tasks() && valid && selectedTask === task) await readSummary();
+        var current = lookupGeneration;
+        await tasks();
+        if (valid && current === lookupGeneration) await lookupTask(task);
     }
     load();
     startupSummary();
