@@ -49,11 +49,51 @@ def by_id(control, observations=None):
     return {row['id']: row for row in control.status(observations)['components']}
 
 
+def test_serena_diagnostics_keep_historical_failure_separate_from_current_health(control):
+    import json
+    path = control.root / 'serena/activity.json'
+    path.parent.mkdir()
+    path.write_text(json.dumps({'last_outcome': 'completed', 'last_tool': 'find_symbol',
+        'last_elapsed_ms': 186.4, 'last_failure': {'kind': 'missing_path',
+        'tool': 'get_symbols_overview', 'at': '2026-09-20T12:00:00Z', 'private': 'source body'}}))
+    row = by_id(control)['serena']
+    assert row['last_error'] is None
+    assert row['diagnostics']['last_elapsed_ms'] == 186.4
+    assert 'path' in row['diagnostics']['last_failure'].lower()
+    assert 'source body' not in json.dumps(row)
+
+
+def test_invalid_serena_diagnostics_are_not_exposed(control):
+    import json
+    path = control.root / 'serena/activity.json'
+    path.parent.mkdir()
+    path.write_text(json.dumps({'last_outcome': 'failed', 'last_tool': 'private source text',
+        'last_elapsed_ms': float('nan'), 'last_failure': {'kind': 'private error', 'at': {}}}))
+    row = by_id(control)['serena']
+    assert row['diagnostics'] == {}
+    assert 'private' not in json.dumps(row)
+
+
+def test_serena_large_counters_and_non_timestamp_text_are_rejected():
+    from bundle_controls import serena_diagnostics
+    result = serena_diagnostics({'last_elapsed_ms': 10**400,
+        'last_failure': {'kind': 'missing_path', 'at': 'private source text'}})
+    assert 'last_elapsed_ms' not in result
+    assert 'last_failure_at' not in result
+
+
 def test_readable_history_does_not_claim_current_activity(control):
     rows = by_id(control, {'rtk': {'records_readable': True, 'recent_use': False, 'last_recorded_at': '2026-01-01T00:00:00Z'}})
     assert rows['rtk']['state'] == 'ready'
     assert rows['rtk']['last_use'] == '2026-01-01T00:00:00Z'
     assert 'No recent use' in rows['rtk']['reason']
+
+
+def test_new_headroom_file_activity_is_not_hidden_by_an_older_command(control):
+    row = by_id(control, {'desktop_headroom': {
+        'last_command_check': '2026-09-20T13:56:00Z',
+        'last_recorded_at': '2026-09-20T21:20:00+07:00'}})['headroom_local']
+    assert row['last_use'] == '2026-09-20T21:20:00+07:00'
 
 
 def test_rtk_off_keeps_local_filter_choice_and_request_routing_independent(control):

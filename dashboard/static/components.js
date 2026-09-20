@@ -22,9 +22,9 @@
         input.setAttribute('role', 'switch'); input.setAttribute('aria-label', labels[i]); input.disabled = true;
         var choice = textNode('span', '', 'Loading'); label.append(input, choice); top.append(title, label);
         var status = textNode('span', 'component-state', 'Checking'), reason = textNode('p', 'component-reason');
-        var used = textNode('p', 'component-use'), problem = textNode('p', 'component-reason component-error');
-        box.append(top, status, reason, used, problem); el('components-list').append(box);
-        rows[name] = {input:input, choice:choice, status:status, reason:reason, used:used, problem:problem};
+        var used = textNode('p', 'component-use'), diagnostic = textNode('p', 'component-use'), problem = textNode('p', 'component-reason component-error');
+        box.append(top, status, reason, used, diagnostic, problem); el('components-list').append(box);
+        rows[name] = {input:input, choice:choice, status:status, reason:reason, used:used, diagnostic:diagnostic, problem:problem};
         input.addEventListener('change', function () { change(name, input.checked); });
     });
     function render() {
@@ -39,6 +39,13 @@
             row.used.textContent = 'Last recorded use: ' + date(component.last_use);
             if (component.activity) row.used.textContent += ' · ' + (component.activity.completed || 0) + ' completed / '
                 + (component.activity.failed || 0) + ' failed / ' + (component.activity.blocked || 0) + ' blocked calls';
+            var diagnostic = component.diagnostics || {}, details = [];
+            if (diagnostic.last_elapsed_ms != null) details.push('Last tool duration: ' + diagnostic.last_elapsed_ms + ' ms'
+                + (diagnostic.last_tool ? ' (' + diagnostic.last_tool + ')' : ''));
+            if (diagnostic.last_failure) details.push('Last recorded failure: ' + diagnostic.last_failure
+                + ' · ' + date(diagnostic.last_failure_at));
+            row.diagnostic.textContent = details.join(' · ');
+            row.diagnostic.hidden = !details.length;
             row.problem.textContent = component.last_error || (component.restart_required ? 'Reload Codex for newly configured tools or connections. Already-loaded tasks can retain their old configuration.' : '');
         });
         el('components-health').textContent = changing ? 'Applying preference...' : state.overall_health === 'ok'

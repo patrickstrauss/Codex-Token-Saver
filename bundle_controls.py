@@ -1,8 +1,11 @@
 """A small view of requested settings and observed component readiness."""
 import json
+import math
+from datetime import datetime
 from pathlib import Path
 
 from bundle_preferences import preference_status, set_preference
+from desktop_proxy_control import _latest_timestamp
 
 LABELS = {
     'rtk': 'RTK command filtering',
@@ -12,6 +15,36 @@ LABELS = {
     'local_summaries': 'LangMem local summaries',
     'llama_cpp': 'llama.cpp local inference',
 }
+
+
+def serena_diagnostics(activity):
+    """Expose only bounded timings and fixed diagnostic categories, never upstream text."""
+    result = {}
+    elapsed = activity.get('last_elapsed_ms')
+    try:
+        if type(elapsed) in (int, float) and math.isfinite(elapsed) and elapsed >= 0:
+            result['last_elapsed_ms'] = round(elapsed, 1)
+    except OverflowError:
+        pass
+    tool = activity.get('last_tool')
+    if tool in ('activate_project', 'get_symbols_overview', 'find_symbol', 'find_referencing_symbols'):
+        result['last_tool'] = tool
+    failure = activity.get('last_failure')
+    messages = {'missing_path': 'Requested path was not found. Check the active checkout and relative path.',
+                'no_project': 'No project selected. Activate the intended checkout.',
+                'timeout': 'Lookup timed out. Use native source tools for this query.',
+                'upstream_error': 'Lookup failed. Use native source tools for this query.'}
+    if isinstance(failure, dict) and isinstance(failure.get('kind'), str) and failure['kind'] in messages:
+        result['last_failure'] = messages[failure['kind']]
+        at = failure.get('at')
+        if isinstance(at, str) and len(at) <= 64:
+            try:
+                stamp = datetime.fromisoformat(at.replace('Z', '+00:00'))
+                if stamp.tzinfo is not None:
+                    result['last_failure_at'] = stamp.isoformat()
+            except ValueError:
+                pass
+    return result
 
 
 class BundleControls:
@@ -73,7 +106,7 @@ class BundleControls:
             elif name == 'headroom_local':
                 data = observations.get('desktop_headroom', {})
                 row['available'] = all((self.root / file).is_file() for file in ('desktop_headroom.py', 'headroom/.venv/Scripts/python.exe'))
-                row['last_use'] = data.get('last_command_check') or data.get('last_recorded_at')
+                row['last_use'] = _latest_timestamp(data.get('last_command_check'), data.get('last_recorded_at'))
                 row['reason'] = 'Checks eligible local file and command output. Original-content retrieval stays available when Off.'
                 if data.get('data_status') == 'unavailable':
                     row['last_error'] = 'Local output records could not be read; activity is unknown.'
@@ -106,10 +139,11 @@ class BundleControls:
                 row['restart_required'] = integration.get('restart_required') is True
                 if name == 'serena':
                     row['last_use'] = activity.get('last_activity_at')
+                    row['diagnostics'] = serena_diagnostics(activity)
                     row['activity'] = {key: value for key in ('completed', 'failed', 'blocked')
                                        if type(value := activity.get(key)) is int and value >= 0}
                     if activity.get('last_outcome') == 'failed':
-                        row['last_error'] = 'The last Serena lookup failed. Exact source tools remain available.'
+                        row['last_error'] = row['diagnostics'].get('last_failure', 'The last Serena lookup failed. Exact source tools remain available.')
                     row['reason'] = 'Read-only symbol tools; activate a project explicitly. Reload Codex to discover newly configured tools.'
                 else:
                     row['available'] = row['available'] and summaries.get('available') is True

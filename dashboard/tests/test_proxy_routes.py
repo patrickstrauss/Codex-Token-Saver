@@ -1,5 +1,7 @@
 """Desktop routing changes are explicit, local, and never replayed by the UI."""
 import importlib.util
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -65,6 +67,30 @@ def test_status_is_read_only_and_reports_uncombined_proxy_savings(proxy_api):
     assert not control.calls
 
 
+@pytest.mark.parametrize('coverage', ['missing', 'complete', 'partial', 'corrupt'])
+def test_recent_ledger_coverage_is_explicit_and_read_only(proxy_api, tmp_path, coverage):
+    path = tmp_path / 'proxy/backend-state/savings_events.jsonl'
+    event = json.dumps({'ts': (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat(),
+                        'before': 100, 'after': 40, 'saved': 60}) + '\n'
+    if coverage != 'missing':
+        path.parent.mkdir(parents=True)
+        path.write_text({'complete': event, 'partial': event + '{broken\n',
+                         'corrupt': '{broken\n'}[coverage], encoding='utf-8')
+    original = path.read_bytes() if path.exists() else None
+    response = proxy_api[0].get('/api/request-proxy', base_url='http://127.0.0.1:8095')
+    assert response.status_code == 200
+    recent = response.json['recent_savings']
+    assert recent['scope'] == 'all_tasks'
+    assert recent['available'] == (coverage in ('complete', 'partial'))
+    assert recent['complete'] == (coverage == 'complete')
+    if recent['available']:
+        assert recent['windows']['fifteen_minutes']['requests'] == 1
+        assert recent['windows']['fifteen_minutes']['saved_tokens'] == 60
+    assert response.json['savings']['saved_tokens'] == 321  # Remains independent.
+    assert (path.read_bytes() if path.exists() else None) == original
+    assert not proxy_api[2].calls
+
+
 @pytest.mark.parametrize('headers', [
     {'Origin': 'http://evil.test'}, {'Origin': ''}, {'X-Codex-Update-Token': 'stale'},
     {'X-Codex-Update-Token': ''}, {'Sec-Fetch-Site': 'cross-site'},
@@ -123,3 +149,4 @@ def test_page_contains_request_controls_before_library_updates():
     assert page.index('id="request-proxy"') < page.index('id="library-updates"')
     assert '/static/proxy.js' in page
     assert '__REQUEST_PROXY_PANEL__' not in page
+    assert 'id="request-proxy-window"><option value="fifteen_minutes">Last 15 minutes</option>' in page

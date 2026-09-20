@@ -22,7 +22,7 @@ foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena'
 }
 $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'dashboard\static') -File -Recurse |
     Where-Object Extension -in @('.css','.js','.svg','.png','.ico','.woff2')
-foreach ($taskDoc in @('TEAM-INSTALL.md','USING-BUNDLE.md','SERENA-INTEGRATION.md','SERENA-TESTING.md','CONTROL-UI-VALIDATION.md')) {
+foreach ($taskDoc in @('TEAM-INSTALL.md','USING-BUNDLE.md','SERENA-INTEGRATION.md','SERENA-TESTING.md','CONTROL-UI-VALIDATION.md','PERFORMANCE-CHECK.md')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo ('docs\' + $taskDoc))
 }
 foreach ($taskFile in ($taskFiles | Sort-Object FullName -Unique)) {

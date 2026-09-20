@@ -1905,7 +1905,7 @@ function renderRtk(rtk) {
     document.getElementById('rtk-stats').textContent = !readable ? 'Unable to read RTK history'
         : selected.total_commands ? (selected.avg_savings_pct || 0) + '% output reduction · ' + selected.total_commands + ' commands · '
             + (selected.optimized_commands == null ? '' : selected.optimized_commands + ' reduced · ')
-            + formatTime(selected.total_time_ms / selected.total_commands) + ' average'
+            + formatTime(selected.total_time_ms / selected.total_commands) + ' average command duration (not filter overhead)'
         : 'No commands recorded in this window';
     document.getElementById('rtk-recent').textContent = rtk.last_recorded_at
         ? 'Last command: ' + new Date(rtk.last_recorded_at).toLocaleString() + (rtk.recent_use ? ' · used in the last 5 minutes' : ' · no recent use')
@@ -1913,7 +1913,7 @@ function renderRtk(rtk) {
     document.getElementById('rtk-lifetime').textContent = rtk.windows ? 'Lifetime estimate: ' + formatTokens(rtk.total_saved || 0)
         + ' across ' + (rtk.total_commands || 0) + ' commands.'
         + ((rtk.windows.lifetime || {}).largest_saved_share_pct >= 50 ? ' One record contributes ' + rtk.windows.lifetime.largest_saved_share_pct + '% of lifetime savings.' : '')
-        + ' Collector: ' + new Date(rtk.collected_at).toLocaleTimeString() : '';
+        + ' All tasks; individual-task attribution unavailable. Collector: ' + new Date(rtk.collected_at).toLocaleTimeString() : '';
     document.getElementById('rtk-outlier').textContent = selected.largest_saved_share_pct >= 50
         ? 'Largest single record contributes ' + selected.largest_saved_share_pct + '% of saved tokens in this window; it can dominate the rate.' : '';
 }
