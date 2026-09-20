@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$PackageDirectory, [switch]$CoreOnly)
 $ErrorActionPreference = 'Stop'
+& (Join-Path $PSScriptRoot 'Test-InstallPlan.ps1') -PackageDirectory $PackageDirectory
+if (-not $?) { throw 'Install plan regression check failed.' }
 $taskSandbox = Join-Path ([IO.Path]::GetTempPath()) ('token-saver-package-' + [guid]::NewGuid().ToString('N'))
 $taskInstall = Join-Path $taskSandbox 'bundle'
 $taskProfile = Join-Path $taskSandbox 'codex'
