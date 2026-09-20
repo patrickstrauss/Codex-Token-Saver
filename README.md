@@ -6,7 +6,7 @@ The bundle lives in `%USERPROFILE%\CodexTokenSaver`, a regular user folder. The 
 
 Open **Codex Token Saver** from the Windows Start menu, open the [dashboard](http://127.0.0.1:8095/), or click the **TS** tray icon. Windows may hide the icon under the tray's up-arrow.
 
-For a new team installation, use the checked Windows preview ZIP and double-click **Install.cmd**; see [Team installation and private releases](docs/TEAM-INSTALL.md). No developer tools are required. The preview installs RTK, local Headroom, Serena and local summaries; fresh request-compression setup is not yet supported. Existing managed connections are preserved. The installer will not overwrite an existing installation. [Test Serena](docs/SERENA-TESTING.md) against your own project after enabling it.
+**Team installation:** Follow [Download the workflow artifact and set up Codex](docs/TEAM-INSTALL.md#download-the-workflow-artifact). Choose an approved successful **Windows package** run in [GitHub Actions](https://github.com/patrickstrauss/Codex-Token-Saver/actions), download **windows-package**, extract both ZIP layers, then run **Install.cmd**. No developer tools are required. The guide covers enabling Serena, verification, troubleshooting and updates. Keep local summaries/local inference Off for now; fresh request-compression setup is unsupported. Existing managed connections are preserved, and the installer will not overwrite an existing installation.
 
 In **Local summaries**, paste a `codex://threads/<task-id>` link and look up the task before starting. Completed batches are saved for resumption. Summary generation does **not** require restarting Codex or replace native compaction. Restart only when Codex needs to load newly installed or updated local tools.
 
