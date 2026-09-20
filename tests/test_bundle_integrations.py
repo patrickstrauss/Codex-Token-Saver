@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import tomllib
+from unittest.mock import patch
 
 from bundle_integrations import BundleIntegrations
 
@@ -35,6 +36,32 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(config['mcp_servers']['existing'], {'command': 'existing.exe'})
         self.assertFalse(config['mcp_servers']['bundle_serena']['required'])
         self.assertEqual(len(config['mcp_servers']['bundle_serena']['enabled_tools']), 4)
+
+    def test_toggle_changes_live_preference_and_reenabling_keeps_table_order(self):
+        from bundle_preferences import load_preferences
+        self.control.set_enabled('serena', True)
+        self.control.set_enabled('local_summaries', True)
+        before = self.config.read_bytes()
+        self.control.set_enabled('serena', True)
+        self.assertEqual(before, self.config.read_bytes())
+        self.assertTrue(load_preferences(self.root)['serena'])
+        self.assertTrue(self.control.status()['serena']['requested_enabled'])
+        self.control.set_enabled('serena', False)
+        self.assertFalse(load_preferences(self.root)['serena'])
+
+    def test_concurrent_codex_config_change_is_preserved_and_preference_rolled_back(self):
+        from bundle_preferences import set_preference, load_preferences
+        concurrent = self.original + b'\n# external change\n'
+        def changed(root, name, enabled):
+            result = set_preference(root, name, enabled)
+            if enabled:
+                self.config.write_bytes(concurrent)
+            return result
+        with patch('bundle_integrations.set_preference', side_effect=changed):
+            with self.assertRaisesRegex(ValueError, 'changed'):
+                self.control.set_enabled('serena', True)
+        self.assertEqual(self.config.read_bytes(), concurrent)
+        self.assertFalse(load_preferences(self.root)['serena'])
 
     def test_disable_restores_original_and_preserves_other_bundle_component(self):
         self.control.set_enabled('serena', True)

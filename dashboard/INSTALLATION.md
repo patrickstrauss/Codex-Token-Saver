@@ -1,11 +1,11 @@
 # Codex Token Saver dashboard
 
-Installed September 13, 2026 from [Will-Luck/claude-tools-dashboard](https://github.com/Will-Luck/claude-tools-dashboard), MIT license, commit `289253de78116310d9e682e0680bd8db2a526f14`. Upstream LICENSE is retained. Local changes are visible with `git diff app.py`; this is a locally adapted checkout, with no automatic updates.
+Adapted from [Will-Luck/claude-tools-dashboard](https://github.com/Will-Luck/claude-tools-dashboard), MIT license, commit `289253de78116310d9e682e0680bd8db2a526f14`. Upstream LICENSE is retained. See the [root README](../README.md) for development setup and [Using the bundle](../docs/USING-BUNDLE.md) for the current component controls.
 
 Launch from PowerShell, hidden, without opening a browser:
 
 ```powershell
-$dashboardRoot = 'C:\Users\Patcharagit Strauss\AppData\Local\CodexTokenSaver\dashboard'
+$dashboardRoot = Join-Path $env:USERPROFILE 'CodexTokenSaver\dashboard'
 Start-Process -FilePath "$dashboardRoot\.venv\Scripts\pythonw.exe" -ArgumentList 'app.py' -WorkingDirectory $dashboardRoot -WindowStyle Hidden
 ```
 
@@ -19,15 +19,14 @@ The parent bundle's tray host owns the normal launch and shutdown workflow. Do n
 
 Configuration is loaded from the adjacent `.env`. The server binds only to `127.0.0.1`. Python 3.12 is isolated in `.venv`; `requirements-installed.txt` records installed package versions. The local service uses Flask for a single-user loopback dashboard.
 
-RTK reads `C:\Users\Patcharagit Strauss\AppData\Local\rtk\history.db` using a SQLite read-only URI. The retained 146-command history already existed before installation, with 10,665 estimated tokens avoided and a weighted output reduction of 11.5%. Installation test data is excluded. RTK values are approximate terminal-output tokens, not account quota or billed savings.
+The installed dashboard's `RTK_DB_PATH` points to `%USERPROFILE%\CodexTokenSaver\data\rtk\history.db`, opened through a read-only SQLite URI. Recent and lifetime windows are separate. `records_readable` reports collection success; `recent_use` reports a command within the last five minutes. Neither installation nor readable history establishes current command routing. Test data remains isolated from production telemetry.
 
-Headroom reads `http://127.0.0.1:8787/health` and `/stats`. Version 0.37 compatibility uses `persistent_savings.lifetime.tokens_saved` for durable compression counts, falling back to `tokens.proxy_compression_saved`, and uses `tokens.proxy_savings_percent` for the session reduction ratio. Tool-schema deferral, cache discounts, and API-equivalent dollars are not combined into the displayed compression number. Only requests routed through that proxy contribute; zero is a valid initial value.
+The legacy CLI Headroom card reads port 8787. Desktop request compression is a separate managed relay on 8788 with its backend on 8789; local file/command activity has its own SQLite ledger. These counters are intentionally separate and can overlap.
 
-The API returns separate `rtk` and `headroom` objects. For tray text use `rtk.total_saved`, `headroom.total_saved`, and each object's `active`/`health` flags. `headroom.requests_total` reports observed proxy requests. `combined_saved` and `combined_saved_usd` are deliberately null, because tool scopes may overlap. The visual dashboard hides upstream aggregate/Claude/account dollar widgets and unrelated tool cards. Claude credential access and collection are disabled in code, and no Codex credentials are read by this dashboard.
+The API returns `rtk`, `desktop_headroom`, legacy `headroom`, and `components` separately. Overall health includes selected components; a readable RTK database cannot hide an unavailable selected request compressor. Component and summary APIs reuse the update API's loopback Host/Origin/CSRF checks. Reads never change routing or start inference. `combined_saved` and `combined_saved_usd` remain null. The dashboard hides upstream aggregate/Claude/account-dollar widgets and does not read account credentials.
 
-Validation: five focused adapter tests passed, along with 33 upstream command-redaction tests. Live HTTP checks matched RTK CLI counts and verified loopback binding. Browser rendering, live SSE updates, and console errors were checked. Fixture values in the tests are isolated and never written to production telemetry.
+See [UI validation](../docs/CONTROL-UI-VALIDATION.md) for automated coverage and the isolated browser fixture. Run the complete dashboard suite from this directory:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_codex_install.py -q
-.\.venv\Scripts\python.exe -m pytest tests/test_app.py -q -k Sanitise
+& .\.venv\Scripts\python.exe -m pytest
 ```

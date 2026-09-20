@@ -20,6 +20,7 @@ import threading
 from typing import Any, Callable
 
 from exact_retrieval import sign_exact_response
+from bundle_preferences import load_preferences
 from proxy_retrieval import read_proxy_original
 from runtime_selection import activate_headroom_runtime
 activate_headroom_runtime(Path(__file__).resolve().parent)
@@ -76,7 +77,9 @@ class DesktopHeadroom:
         compressor: Callable[[str], str] | None = None,
         token_counter: Callable[[str], int] | None = None,
         cache: Any = None,
+        bundle_root: str | Path | None = None,
     ):
+        self.bundle_root = Path(bundle_root) if bundle_root is not None else Path(__file__).resolve().parent
         self.state_dir = Path(state_dir).resolve()
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.activity_path = self.state_dir / "activity.db"
@@ -265,6 +268,9 @@ class DesktopHeadroom:
         resolved, original = self._read_utf8(path)
         selected, total_lines, last_line = self._window(original, start_line, max_lines)
         source = json.dumps(str(resolved), ensure_ascii=False)
+        if not load_preferences(self.bundle_root)['headroom_local']:
+            return self._raw_response(source, selected, start_line, last_line, total_lines,
+                                      'Local Headroom is off; returning original text.')
         input_tokens = self._count(selected)
         response = self._raw_response(source, selected, start_line, last_line, total_lines)
         if compress and selected:

@@ -7,6 +7,7 @@ import tomllib
 from datetime import datetime, timezone
 
 from desktop_proxy_control import atomic_write, routing_lock
+from bundle_preferences import load_preferences, set_preference
 
 TOOLS = {
     'serena': ['activate_project', 'get_symbols_overview', 'find_symbol', 'find_referencing_symbols'],
@@ -41,7 +42,7 @@ class BundleIntegrations:
     @staticmethod
     def _pattern(component):
         label = component.upper()
-        return re.compile(r'\n# BEGIN CODEX TOKEN SAVER ' + label + r'\n.*?\n# END CODEX TOKEN SAVER ' + label + r'\n', re.S)
+        return re.compile(r'\r?\n# BEGIN CODEX TOKEN SAVER ' + label + r'\r?\n.*?\r?\n# END CODEX TOKEN SAVER ' + label + r'\r?\n', re.S)
 
     def _block(self, component):
         python, script, _ = self._paths(component)
@@ -53,17 +54,26 @@ class BundleIntegrations:
                 f'# END CODEX TOKEN SAVER {label}\n')
 
     def status(self):
-        parsed = tomllib.loads(_read(self.config).decode('utf-8-sig'))
-        text = _read(self.config).decode('utf-8')
+        raw = _read(self.config)
+        parsed = tomllib.loads(raw.decode('utf-8-sig'))
+        text = raw.decode('utf-8')
+        preferences = load_preferences(self.root)
         result = {}
         for name in TOOLS:
             entry = parsed.get('mcp_servers', {}).get('bundle_' + name)
             result[name] = {
+                'requested_enabled': preferences[name],
                 'installed': all(path.is_file() for path in self._paths(name)),
                 'configured': isinstance(entry, dict) and entry.get('enabled', True) is not False,
                 'managed': bool(self._pattern(name).search(text)),
                 'tools': TOOLS[name],
             }
+            if name == 'serena':
+                try:
+                    activity = json.loads(_read(self.root / 'serena/activity.json'))
+                    result[name]['last_use'] = activity.get('last_activity_at')
+                except (ValueError, OSError, AttributeError):
+                    result[name]['last_use'] = None
         return result
 
     def set_enabled(self, component, enabled):
@@ -83,15 +93,26 @@ class BundleIntegrations:
                 raise ValueError('Managed integration markers are damaged; configuration was left unchanged.')
             if 'bundle_' + component in parsed.get('mcp_servers', {}) and not matches:
                 raise ValueError('An unmanaged MCP entry uses this name; configuration was left unchanged.')
-            updated = pattern.sub('', text)
-            if enabled:
+            updated = pattern.sub(lambda _: self._block(component) if enabled else '', text)
+            if enabled and not matches:
                 updated += self._block(component)
             tomllib.loads(updated.lstrip('\ufeff'))
             after = updated.encode('utf-8')
+            previous_enabled = load_preferences(self.root)[component]
             if after != before:
                 if _read(self.config) != before:
                     raise ValueError('Codex configuration changed during this operation. Try again.')
                 stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
                 atomic_write(self.root / 'integrations/backups' / f'config-{stamp}.toml', before)
-                atomic_write(self.config, after)
+            # Disabling reaches loaded wrappers before removing future MCP configuration.
+            # A failed write rolls back this component while preserving unrelated settings.
+            set_preference(self.root, component, enabled)
+            try:
+                if after != before:
+                    if _read(self.config) != before:
+                        raise ValueError('Codex configuration changed during this operation. Try again.')
+                    atomic_write(self.config, after)
+            except Exception:
+                set_preference(self.root, component, previous_enabled)
+                raise
         return {'component': component, 'enabled': enabled, 'restart_required': True}

@@ -67,7 +67,7 @@ class ProxyRuntimeTests(unittest.TestCase):
 
     def test_command_uses_explicit_runtime_without_shell(self):
         from proxy_runtime import build_proxy_command
-        runtime = ROOT / 'headroom/.venv'
+        runtime = (ROOT / 'headroom/.venv').resolve()
         args = build_proxy_command({'runtime': str(runtime)}, port=8789)
         self.assertEqual(args[0], str(runtime / 'Scripts/python.exe'))
         self.assertEqual(args[1], str(ROOT / 'proxy_runtime.py'))

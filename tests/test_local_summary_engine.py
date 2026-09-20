@@ -41,6 +41,33 @@ class LocalSummaryEngineTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.engine.require_free_port(listener.getsockname()[1])
 
+    def test_candidate_binary_outside_managed_component_never_starts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            outside = root / 'other.exe'
+            outside.write_bytes(b'MZfixture')
+            with patch.object(self.engine.subprocess, 'Popen', side_effect=AssertionError('must not start')):
+                with self.assertRaises(ValueError):
+                    with self.engine.local_server(root, {'model_path': str(root / 'model.gguf')}, candidate_binary=outside):
+                        pass
+
+    def test_candidate_probe_uses_only_fixed_synthetic_messages(self):
+        import io
+        import json
+        import sys
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(sys, 'argv', ['engine', '--bundle-root', directory, '--probe-candidate-llama', str(Path(directory) / 'local-compaction/llama.exe')]), \
+             patch.object(sys, 'stdout', output), patch.dict(os.environ, {}, clear=False), \
+             patch.object(self.engine, 'run_job', return_value={'status': 'summarized'}) as run:
+            self.engine.main()
+            payload = run.call_args.args[0]
+            self.assertEqual(payload['max_summary_tokens'], 256)
+            self.assertIn('NEVER_DELETE_BACKUPS', json.dumps(payload))
+            self.assertIn('NATIVE_COMPACTION_ENABLED', json.dumps(payload))
+            self.assertIsNotNone(run.call_args.kwargs['candidate_llama'])
+        self.assertEqual(json.loads(output.getvalue())['status'], 'summarized')
+
     def test_real_langmem_runs_with_input_roles_encoded_as_data(self):
         from langchain_core.messages import AIMessage
 

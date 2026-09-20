@@ -84,10 +84,26 @@ class HeadroomHookTests(unittest.TestCase):
         self.assertEqual(result.stderr, b"")
         return json.loads(result.stdout.decode("utf-8-sig")), time.perf_counter() - started
 
+    def test_disabled_or_invalid_preferences_never_rewrite(self):
+        path = self.bundle / 'settings/components.json'
+        path.parent.mkdir(exist_ok=True)
+        try:
+            for data in ['{"schema_version":1,"components":{"headroom_local":false}}',
+                         '{broken', '{"schema_version":true,"components":{}}']:
+                path.write_text(data)
+                value, _ = self.run_hook(explicit(self.bundle, 'git status --short'))
+                self.assertEqual(value, {})
+            path.write_text('{"schema_version":1,"components":{"rtk":false,"headroom_local":true}}')
+            value, _ = self.run_hook(explicit(self.bundle, 'git status --short'))
+            self.assertIn('hookSpecificOutput', value)
+        finally:
+            path.unlink(missing_ok=True)
+
     def test_rewrites_safe_resolved_external_and_preserves_other_input(self):
         value, elapsed = self.run_hook(explicit(self.bundle, "git status --short"))
         specific = value["hookSpecificOutput"]
         self.assertEqual(specific["hookEventName"], "PreToolUse")
+
         self.assertEqual(specific["permissionDecision"], "allow")
         updated = specific["updatedInput"]
         self.assertEqual(updated["command"], "& " + ps_literal(self.bundle / "bin/headroom-run.exe") +
@@ -95,6 +111,25 @@ class HeadroomHookTests(unittest.TestCase):
         self.assertEqual(updated["timeout_ms"], 2500)
         self.assertEqual(updated["description"], "Keep me")
         self.assertLess(elapsed, 5)
+
+    def test_preferences_directory_is_invalid_not_missing(self):
+        path = self.bundle / 'settings/components.json'
+        path.mkdir(parents=True)
+        try:
+            value, _ = self.run_hook(explicit(self.bundle, 'git status --short'))
+            self.assertEqual(value, {})
+        finally:
+            path.rmdir()
+
+    def test_non_utf8_preferences_are_invalid_like_dashboard(self):
+        path = self.bundle / 'settings/components.json'
+        path.parent.mkdir(exist_ok=True)
+        path.write_text('{"schema_version":1,"components":{"headroom_local":true}}', encoding='utf-16')
+        try:
+            value, _ = self.run_hook(explicit(self.bundle, 'git status --short'))
+            self.assertEqual(value, {})
+        finally:
+            path.unlink()
 
     def test_accepts_bounded_build_test_search_commands(self):
         for command in ("rg --line-number 'a|b' .", "pytest tests", "cargo test --locked",

@@ -1,0 +1,24 @@
+.component-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.component-heading h2 { font-size:18px; margin:0; color:#eef3ee; }
+#components-health { font-size:12px; color:#afbcb4; }
+.component-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:18px 0; }
+.component-row { border:1px solid #313c35; border-radius:8px; background:#111612; padding:16px; }
+.component-top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.component-name { font-weight:600; color:#edf5ef; font-size:14px; }
+.component-toggle { display:flex; align-items:center; gap:8px; flex-shrink:0; font-size:12px; cursor:pointer; }
+.component-toggle input { width:18px; height:18px; accent-color:#80ec99; cursor:pointer; }
+.component-toggle:has(input:disabled) { opacity:.6; cursor:default; }
+.component-toggle input:focus-visible, .bundle-select:focus-visible { outline:2px solid #80ec99; outline-offset:4px; }
+.component-state { font-size:12px; display:inline-block; border-radius:4px; padding:3px 7px; margin:12px 0 4px; color:#b1b9b3; background:#242c26; }
+.component-state[data-state="ready"], .component-state[data-state="in_use"] { color:#97f5ad; background:#1c3522; }
+.component-state[data-state="error"], .component-state[data-state="unavailable"] { color:#ffb6aa; background:#3e2822; }
+.component-state[data-state="bypassed"], .component-state[data-state="needs_restart"] { color:#efd591; background:#38311e; }
+.component-reason, .component-use { font-size:12px; line-height:1.6; color:#b0bbb3; margin:7px 0 0; overflow-wrap:anywhere; }
+.component-error { color:#ffb6aa; }
+.bundle-select { font:inherit; color:#edf5ef; background:#172019; border:1px solid #4b5d50; border-radius:5px; padding:8px; max-width:100%; }
+#local-summary-task { display:block; width:100%; margin:8px 0 14px; }
+.summary-text { color:#dce9df; font:inherit; font-size:13px; line-height:1.65; background:#0c120e; border:1px solid #303c33; border-radius:6px; padding:16px; max-height:360px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+.rtk-window { display:flex; align-items:center; gap:8px; margin:8px 0 10px; font-size:12px; }
+.rtk-window select { padding:4px 6px; }
+.rtk-note { font-size:12px; line-height:1.6; color:#a9b5ad; margin-top:10px; }
+@media(max-width:760px) { .component-grid { grid-template-columns:1fr; } .component-top { align-items:flex-start; } }

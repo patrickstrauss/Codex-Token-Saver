@@ -1,12 +1,32 @@
 # Codex Token Saver
 
-**Headroom can now compress complete Codex model requests through the local request connection.** The dashboard provides explicit enable/pause controls and a separate request-savings counter. RTK output compression and local file tools remain available. See [Desktop request compression](DESKTOP-REQUEST-PROXY.md) for activation, restart, and recovery instructions.
+**A Windows tray app for controlling and measuring local token-saving tools used with Codex.** The dashboard provides independent controls for RTK, Headroom local output, Headroom request compression, Serena, LangMem summaries and llama.cpp. Requested settings, readiness and recent activity are shown separately. Start with [Using the bundle](docs/USING-BUNDLE.md).
 
 The bundle lives in `%USERPROFILE%\CodexTokenSaver`, a regular user folder. The earlier `%LOCALAPPDATA%` installation was affected by Codex MSIX filesystem virtualization: files visible inside Codex differed from those seen by Explorer and login startup.
 
 Open **Codex Token Saver** from the Windows Start menu, open the [dashboard](http://127.0.0.1:8095/), or click the **TS** tray icon. Windows may hide the icon under the tray's up-arrow.
 
-Expand **Library updates** in the dashboard to check stable Headroom and RTK releases, install a verified update, or roll back to the retained previous version. **Refresh dependencies** updates Headroom's compatible Python dependencies even when its core version is current. Checks and installations are manual; progress and restart guidance appear in the panel. See [Updating the libraries](LIBRARY-UPDATES.md).
+Expand **Library updates** to check Headroom, RTK, Serena, LangMem and llama.cpp releases, install a validated candidate, or roll back to the retained previous runtime. **Refresh dependencies** updates Headroom's compatible Python dependencies when its core is current. Model GGUF files are not automatically replaced. Checks and installations are manual; see [Updating the libraries](LIBRARY-UPDATES.md).
+
+## Source checkout and development
+
+This repository contains adapters, dashboard code, native launcher source and tests. It excludes installed environments, downloaded executables, models, credentials and local histories. Cloning it does not install runtimes or change Codex configuration. Keep the development checkout separate from the stable `%USERPROFILE%\CodexTokenSaver` installation used by Windows startup.
+
+For isolated dashboard development on Windows with Python 3.12 and Node.js available:
+
+```powershell
+git clone https://github.com/patrickstrauss/Codex-Token-Saver.git
+Set-Location Codex-Token-Saver
+py -3.12 -m venv dashboard/.venv
+& ./dashboard/.venv/Scripts/python.exe -m pip install -r dashboard/requirements.txt -r dashboard/requirements-dev.txt
+Push-Location dashboard
+& ./.venv/Scripts/python.exe -m pytest
+Pop-Location
+```
+
+The tests use isolated data. For a UI preview that cannot change live settings or launch a model, run `dashboard/tests/ui_fixture.py` with that interpreter and open `http://127.0.0.1:18795/`. Stop the fixture after testing. Build the RTK launcher from [native/](native/README.md); full SDK/MCP/model checks also require the separately installed, pinned runtimes. See [UI validation](docs/CONTROL-UI-VALIDATION.md), [Serena validation](docs/SERENA-INTEGRATION.md) and [request connection validation](DESKTOP-REQUEST-PROXY.md).
+
+Deploy only validated source into the stable installed bundle, retaining its runtime selections, histories and recovery backups. Do not replace its configuration with development fixture data or redirect startup to an unvalidated checkout.
 
 ## Components
 
@@ -17,6 +37,8 @@ Expand **Library updates** in the dashboard to check stable Headroom and RTK rel
 | Headroom desktop | Installed Headroom 0.37.0 SDK, exposed through the optional local `headroom_desktop` MCP server; `desktop_mcp.py`, `desktop_headroom.py` |
 | Headroom request compression | Stable loopback relay on 8788, separate Headroom backend on 8789, supervised by the **Codex Token Saver Proxy** login task; controls and state in `proxy\` |
 | Headroom CLI proxy | Separate experimental option; loopback port 8787 when explicitly started |
+| Serena | Optional read-only symbol/navigation MCP tools; a live preference gate also controls already-loaded tasks |
+| LangMem + llama.cpp | Experimental summaries for explicitly selected tasks, generated with a configured local model; native Codex compaction remains enabled |
 | Library updater | Manual dashboard controls; `bundle_updates.py`, `runtime_selection.py`, staged environments and rollback records in `updates\` |
 
 RTK works when supported `rtk` commands are invoked. Its native launcher also checks eligible stdout with Headroom when running inside Codex. The RTK command executes exactly once; optional compression happens afterward. The launcher keeps RTK history in the stable bundle data directory and preserves command arguments; `bin\rtk.cmd` remains for legacy use.
@@ -31,7 +53,7 @@ The hook handles supported standalone PowerShell calls with an explicit Windows 
 
 Command compression considers outputs starting at 1 KiB and 350 estimated tokens. A result is returned only when it is smaller in both bytes and tokens after including its recovery instructions. Outputs that do not benefit stay unchanged. The dashboard separates hook checks, rewritten calls, skipped calls, and actual reductions; skip reasons describe a bounded recent log window.
 
-The hook only rewrites the pending command. Codex's normal command execution, sandbox, and approval checks still apply. Add `# headroom: exact` to decline hook rewriting; use `HEADROOM_EXACT=1` in a command's environment to bypass native RTK compression for exact output. The command runner can also be invoked with `--exact`. The dashboard reports checked command outputs and their last outcome separately from token savings.
+The hook only rewrites the pending command. Codex's normal command execution, sandbox, and approval checks still apply. Add `# headroom: exact` to decline hook rewriting. `HEADROOM_EXACT=1` bypasses the launcher's additional Headroom stage; RTK's own filtering still applies. Run the original command, or turn RTK off, when you need its complete output. The command runner can also be invoked with `--exact`. The dashboard reports checked command outputs and their last outcome separately from token savings.
 
 ## Using Headroom in desktop
 
@@ -47,7 +69,7 @@ Original file text is cached locally for up to 24 hours in `headroom\desktop-sta
 
 Windows login startup runs the dashboard and tray. The separate **Codex Token Saver Proxy** task supervises the request relay and compression engine. Enabling request compression changes only the built-in OpenAI endpoint to the local relay, after validation; it preserves provider identity, authentication, model, reasoning, and task history. Codex manages its optional local file-tool process independently.
 
-Use **Headroom request savings → Enable request compression** or **Pause request compression** in the dashboard. Restart Codex when convenient after a connection change; resume your existing tasks afterward. Pausing restores the owned endpoint setting and retains the relay so already-loaded tasks can continue through a direct upstream connection. The app does not interrupt Codex automatically.
+Use **Bundle controls → Headroom request compression**, or the existing Enable/Pause controls under **Headroom request savings**. Restart Codex when convenient after a connection change and resume existing tasks. Pausing restores the owned endpoint setting and retains the relay. Already-open connections can retain their previous upstream until closed; the app does not interrupt or replay them.
 
 The user-logon scheduled task, Windows Startup fallback shortcut, and Start Menu shortcut are installed. Their paths and a successful scheduled launch were verified outside Codex through Explorer. `Install-Startup.ps1` can repair them; inspect `install-startup-result.json` for the result. **A true reboot/login test remains outstanding.**
 
@@ -57,7 +79,7 @@ The older `bin\codex-headroom.exe` experiment uses port 8787 only for its launch
 
 The dashboard keeps these counters separate:
 
-- **RTK:** estimated terminal-output tokens avoided by supported commands.
+- **RTK:** estimated terminal-output tokens avoided by supported commands, with Today / 7 days / Lifetime windows, last actual recorded command time and large-record contributions.
 - **Headroom desktop:** signed local file/stdout reduction estimate, including returned text headers and deducting later retrieval output. Command estimates are measured before Codex truncation and are not proof that the model's context shrank by that amount. RTK's own reduction is excluded from Headroom's input baseline. Checked commands can produce zero reduction. Expansion/retrieval can make net savings negative. MCP framing, model usage, and subsequent reasoning are outside this estimate.
 - **Headroom CLI proxy:** reductions reported by the separate optional proxy, including retained historical records.
 - **Headroom request savings:** Headroom-reported input reductions from model requests sent through the new relay. The backend records each request; relay counters measure completed HTTP/WebSocket connections and currently active connections. A long-lived WebSocket can record savings before its connection completes.
@@ -76,7 +98,7 @@ Use `Start-Services.ps1` to start or recover the dashboard. Dashboard failures d
 
 If Codex cannot connect, run **Restore-Codex-Direct.ps1** from this bundle folder, then restart Codex. It restores the endpoint owned by this integration. Do this before disabling **Codex Token Saver Proxy** startup. Backend failure normally lets new requests use the direct upstream connection; a stopped relay itself needs supervisor recovery. Login startup cannot guarantee the relay starts before Codex. Requests already dispatched are never replayed by the relay.
 
-To disable login startup, disable the **Codex Token Saver** scheduled task and remove its shortcut from `shell:startup`. This controls the dashboard and tray, not Codex's MCP tools. To disable desktop Headroom, set `enabled=false` for `mcp_servers.headroom_desktop` in your Codex configuration and restart Codex; do not change the model provider or API route.
+To disable login startup, disable the **Codex Token Saver** scheduled task and remove its shortcut from `shell:startup`. This controls the dashboard and tray, not Codex's MCP tools. For routine compression changes, use the independent dashboard controls. Turning Headroom local output Off retains original-content retrieval; use the managed request control separately for routing changes.
 
 Preserve `data\rtk`, `headroom\desktop-state\activity.db`, `headroom\state`, and `proxy\backend-state` when repairing or migrating savings history. Keep `proxy\route-receipt.json` and its config backups for endpoint restoration. The [September 13 repair report](REPAIR-REPORT.md) describes the earlier startup repair. A full reboot/login test remains outstanding.
 

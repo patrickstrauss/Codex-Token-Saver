@@ -12,6 +12,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 import signal
@@ -26,6 +28,7 @@ from service_control import ServiceController
 
 ROOT = Path(__file__).resolve().parent
 BACKOFF = (1, 2, 5, 15, 30)
+HEARTBEAT_SECONDS = 30
 
 
 @contextmanager
@@ -71,11 +74,94 @@ def _read_json(path, limit=16384):
     return value
 
 
+def process_identity(pid):
+    """Read process creation identity without signaling or claiming that PID."""
+    if type(pid) is not int or pid <= 0 or os.name != 'nt':
+        return None
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+    kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    handle = kernel.OpenProcess(0x1000, False, pid)
+    if not handle:
+        return None
+    try:
+        created, exited, system, user = (wintypes.FILETIME() for _ in range(4))
+        code = wintypes.DWORD()
+        if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)) or code.value != 259:
+            return None
+        if not kernel.GetProcessTimes(handle, *(ctypes.byref(v) for v in (created, exited, system, user))):
+            return None
+        return {'created': (created.dwHighDateTime << 32) | created.dwLowDateTime}
+    finally:
+        kernel.CloseHandle(handle)
+
+
 def read_status(root=ROOT):
     try:
-        return _read_json(Path(root) / 'proxy/service-status.json')
+        result = _read_json(Path(root) / 'proxy/service-status.json')
     except (OSError, ValueError, UnicodeError):
-        return {'service': 'codex-token-saver-proxy-supervisor', 'available': False}
+        result = {'service': 'codex-token-saver-proxy-supervisor', 'available': False}
+    try:
+        stamp = datetime.fromisoformat(result['timestamp'].replace('Z', '+00:00'))
+        age = (datetime.now(timezone.utc) - stamp).total_seconds()
+    except (KeyError, TypeError, ValueError, AttributeError):
+        age = None
+    identity = result.get('process_identity')
+    live = (identity is not None and process_identity(result.get('pid')) == identity
+            and age is not None and 0 <= age <= HEARTBEAT_SECONDS)
+    result.update(live=live, available=live, heartbeat_age_seconds=round(age, 1) if age is not None else None,
+                  last_error=None if live else 'Supervisor is missing or its heartbeat is stale.')
+    return result
+
+
+def ensure_supervisor(root=ROOT):
+    """Called by the existing tray refresh; never stops or adopts workers."""
+    root = Path(root)
+    status = read_status(root)
+    try:
+        if _read_json(root / 'proxy/settings.json').get('installed') is not True or status['live']:
+            return status
+        with lifetime_lock(root / 'proxy/recovery.lock') as recovering:
+            if not recovering:
+                return status
+            with lifetime_lock(root / 'proxy/supervisor.lock') as absent:
+                if not absent:
+                    status['last_error'] = 'Supervisor lock is held; heartbeat is stale. Existing processes were preserved.'
+                    return status
+            attempt_path = root / 'proxy/recovery-attempt.json'
+            try:
+                previous = _read_json(attempt_path).get('attempted_at', 0)
+            except (OSError, ValueError, UnicodeError):
+                previous = 0
+            now = time.time()
+            if type(previous) in (int, float) and 0 <= now - previous < 60:
+                return dict(status, starting=True)
+            runtime = root / 'headroom/.venv/Scripts/pythonw.exe'
+            if not runtime.is_file():
+                return dict(status, last_error='Managed supervisor runtime is unavailable.')
+            # Persist cooldown before spawning; the lifetime lock resolves logon/tray races.
+            _write_json(attempt_path, {'attempted_at': now})
+            logs = root / 'logs'
+            logs.mkdir(parents=True, exist_ok=True)
+            environment = os.environ.copy()
+            for key in ('PYTHONPATH', 'PYTHONHOME', 'OPENAI_BASE_URL'):
+                environment.pop(key, None)
+            with (logs / 'proxy-supervisor.stdout.log').open('ab') as stdout, \
+                 (logs / 'proxy-supervisor.stderr.log').open('ab') as stderr:
+                subprocess.Popen([str(runtime), str(root / 'desktop_proxy_service.py'), 'run'],
+                                 cwd=root, env=environment, stdin=subprocess.DEVNULL,
+                                 stdout=stdout, stderr=stderr,
+                                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+            return dict(status, starting=True)
+    except FileNotFoundError:
+        return status
+    except Exception as exc:
+        return dict(status, last_error=f'Supervisor recovery failed ({type(exc).__name__}); check local service files.')
 
 
 def _write_json(path, value):
@@ -110,6 +196,7 @@ class DesktopProxyService:
         self.clock = clock
         self._opener = build_opener(ProxyHandler({}))
         self._frontdoor_was_started = False
+        self._identity = process_identity(os.getpid())
 
     def _settings(self):
         try:
@@ -237,6 +324,7 @@ class DesktopProxyService:
         result = {
             'schema': 1, 'service': 'codex-token-saver-proxy-supervisor',
             'available': True, 'pid': os.getpid(),
+            'process_identity': self._identity,
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'installed': installed, 'enabled': enabled, 'settings_error': settings_error,
         }
@@ -274,12 +362,36 @@ class DesktopProxyService:
         with lifetime_lock(self.root / 'proxy/supervisor.lock') as acquired:
             if not acquired:
                 return 0
+            logger = logging.getLogger('codex-token-saver-supervisor.' + str(id(self)))
+            logger.setLevel(logging.INFO)
+            logger.propagate = False
+            handler = None
             try:
+                (self.root / 'logs').mkdir(parents=True, exist_ok=True)
+                handler = RotatingFileHandler(self.root / 'logs/proxy-supervisor.log',
+                                              maxBytes=262144, backupCount=2, encoding='utf-8')
+                handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+                logger.addHandler(handler)
+            except OSError:
+                pass  # A logging failure must not interrupt active connections.
+            try:
+                logger.info('Supervisor started pid=%s', os.getpid())
                 while not stop_event.is_set():
-                    self.step()
-                    stop_event.wait(1)
+                    try:
+                        self.step()
+                    except Exception as exc:
+                        # Only the exception class is safe to log, not arbitrary payloads.
+                        logger.error('Supervisor step failed (%s); retrying without stopping workers', type(exc).__name__)
+                        stop_event.wait(5)
+                    else:
+                        stop_event.wait(1)
             finally:
-                self.shutdown()
+                # Supervisor exit is not authorization to tear down active streams.
+                # A later owner reuses healthy listeners; shutdown() is explicit only.
+                logger.info('Supervisor stopped; existing worker processes preserved')
+                if handler:
+                    logger.removeHandler(handler)
+                    handler.close()
         return 0
 
 

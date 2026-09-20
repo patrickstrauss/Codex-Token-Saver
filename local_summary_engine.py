@@ -151,9 +151,15 @@ def _windows_job(process):
 
 
 @contextmanager
-def local_server(root, config):
+def local_server(root, config, *, candidate_binary=None):
     import httpx
-    binary = root / 'local-compaction/llama-b10809/llama-server.exe'
+    from component_runtime import runtime_path
+    descriptor = None
+    if candidate_binary is not None:
+        # Explicit updater probes may test a staged binary without selecting it.
+        relative = Path(candidate_binary).resolve().relative_to(Path(root).resolve())
+        descriptor = {'binary_path': relative.as_posix()}
+    binary = runtime_path(root, 'llama_cpp', descriptor)
     model = Path(config['model_path'])
     if not binary.is_file() or not model.is_absolute() or model.suffix.lower() != '.gguf' or not model.is_file():
         raise ValueError('Local model or managed llama.cpp installation is unavailable')
@@ -273,12 +279,14 @@ def summarize_messages_locally(payload, *, model, count_text, context_size, mode
             'measurement': 'Local model tokenized content size; not actual Codex usage or billing savings.'}
 
 
-def run_job(payload, *, root=ROOT):
+def run_job(payload, *, root=ROOT, candidate_llama=None):
     started = time.monotonic()
     try:
         normalized, source_hash = validate_request(payload)
         config = json.loads((root / 'local-compaction/model.json').read_text(encoding='utf-8'))
-        with job_lock(root / 'local-compaction/engine.lock'), local_server(root, config) as (client, key, context, model_id, process):
+        if candidate_llama is not None:
+            config = dict(config, max_context_tokens=8192)
+        with job_lock(root / 'local-compaction/engine.lock'), local_server(root, config, candidate_binary=candidate_llama) as (client, key, context, model_id, process):
             import httpx
             from langchain_openai import ChatOpenAI
             cache = {}
@@ -308,16 +316,29 @@ def run_job(payload, *, root=ROOT):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--bundle-root', type=Path, default=ROOT)
+    parser.add_argument('--probe-candidate-llama', type=Path, help=argparse.SUPPRESS)
+    args = parser.parse_args()
     # Explicitly remove inherited provider credentials and tracing before SDK import.
     clean = isolated_environment()
     os.environ.clear()
     os.environ.update(clean)
     try:
-        data = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
-        if len(data) > MAX_INPUT_BYTES:
-            raise ValueError('Input too large')
-        payload = json.loads(data.decode('utf-8'))
-        result = run_job(payload)
+        if args.probe_candidate_llama is not None:
+            payload = {'max_summary_tokens': 256, 'messages': [
+                {'id': 'probe-user', 'role': 'user', 'content':
+                 'Never delete backups. Preserve the exact constraint marker NEVER_DELETE_BACKUPS in the summary.'},
+                {'id': 'probe-assistant', 'role': 'assistant', 'content':
+                 'Native Codex compaction stays enabled. Preserve the exact marker NATIVE_COMPACTION_ENABLED in the summary.'},
+            ]}
+        else:
+            data = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
+            if len(data) > MAX_INPUT_BYTES:
+                raise ValueError('Input too large')
+            payload = json.loads(data.decode('utf-8'))
+        result = run_job(payload, root=args.bundle_root.resolve(), candidate_llama=args.probe_candidate_llama)
     except Exception:
         result = {'status': 'failed', 'summary': None, 'original_preserved': True,
                   'error': 'Invalid local summary input; original transcript retained.'}

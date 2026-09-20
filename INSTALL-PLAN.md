@@ -1,5 +1,7 @@
 # Codex Token Saver desktop architecture
 
+Historical plan from the initial local-output integration. Its routing restrictions and CLI assumptions were superseded by the user-authorized managed desktop request connection. Use [README](README.md) and [Using the bundle](docs/USING-BUNDLE.md) for the current controls, routing and installation layout.
+
 Use `%USERPROFILE%\CodexTokenSaver` as the stable installation root. A regular user folder avoids the Codex MSIX virtualization that affected the earlier `%LOCALAPPDATA%` installation. Recreate Python environments at the new location; preserve data and backups.
 
 - **Desktop connection:** keep the normal connection, model, reasoning settings, and authentication. Never install or automatically re-enable global Headroom routing.

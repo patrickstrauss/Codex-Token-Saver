@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 from flask import Flask, Response, jsonify
 from update_routes import register_update_routes
 from proxy_routes import PANEL_HTML as REQUEST_PROXY_PANEL_HTML, register_proxy_routes
+from component_routes import register_component_routes
+from rtk_metrics import window_metrics
 
 load_dotenv(Path(__file__).with_name('.env'))
 
@@ -162,6 +164,7 @@ def _sanitise_cmd(cmd):
 
 def collect_rtk():
     """Read rtk SQLite DB and return stats + history."""
+    conn = None
     try:
         db_path = RTK_DB_PATH
         if not os.path.exists(db_path):
@@ -209,13 +212,18 @@ def collect_rtk():
                 "saved_tokens": r["saved_tokens"],
             })
 
-        conn.close()
+        windows = window_metrics(conn)
 
         # Version (cached at startup)
         version = _cached_versions.get("rtk") or "unknown"
 
         return {
-            "active": True,
+            "active": windows['recent_use'],
+            "records_readable": True,
+            "recent_use": windows['recent_use'],
+            "last_recorded_at": windows['last_recorded_at'],
+            "collected_at": windows['collected_at'],
+            "windows": {key: windows[key] for key in ('today', 'seven_days', 'lifetime')},
             "total_saved": total_saved,
             "total_commands": total_commands,
             "total_input": row["total_input"],
@@ -228,9 +236,14 @@ def collect_rtk():
         }
     except Exception:
         return None
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 _HEADROOM_SKIP_LABELS = {
+    "disabled": "local output filtering is Off",
+    "invalid_preferences": "component preferences could not be read",
     "complex_syntax": "scripts, pipelines or unsupported syntax",
     "ambiguous_shell": "command path or shell is ambiguous",
     "dynamic_input": "variables or computed arguments",
@@ -248,6 +261,8 @@ _HEADROOM_SKIP_LABELS = {
 
 _update_routes = register_update_routes(app, Path(__file__).resolve().parent.parent, PORT, _cached_versions)
 register_proxy_routes(app, Path(__file__).resolve().parent.parent, _update_routes)
+collect_components = register_component_routes(app, Path(__file__).resolve().parent.parent, _update_routes,
+                                               observations=lambda: _collector.snapshot() or {})
 
 
 def collect_headroom_automation():
@@ -301,6 +316,7 @@ def collect_headroom_automation():
 
 
 _HEADROOM_COMMAND_STATUSES = {
+    'disabled',
     'compressed', 'small_output', 'no_reduction', 'command_failed',
     'compression_unavailable', 'exact_requested', 'size_limit', 'binary_output', 'non_utf8',
     'compression_timeout', 'streaming_timeout', 'inherited_pipe', 'interactive_passthrough',
@@ -996,12 +1012,13 @@ def collect_all():
         data = fn()
         if data is not None:
             results[name] = dict(data)
-            if data.get("active"):
+            if data.get("records_readable", data.get("active")):
                 _last_good[name] = dict(data)
                 _last_collect_success[name] = time.time()
         else:
             results[name] = dict(_last_good.get(name, {"version": "unknown", "total_saved": None, "history": []}))
             results[name]["active"] = False
+            results[name]["records_readable"] = False
             results[name]["data_status"] = "historical" if name in _last_good else "unavailable"
 
     now_ts = time.time()
@@ -1010,15 +1027,22 @@ def collect_all():
         if name == "headroom" and not results[name].get("active"):
             results[name]["health"] = "inactive"
             results[name]["optional"] = True
-        elif results[name].get("active") and last_ok > 0 and (now_ts - last_ok) < 60:
+        elif results[name].get("records_readable", results[name].get("active")) and last_ok > 0 and (now_ts - last_ok) < 60:
             results[name]["health"] = "ok"
         elif last_ok > 0:
             results[name]["health"] = "stale"
         else:
             results[name]["health"] = "error"
 
-    # RTK is required for this dashboard; Headroom is an optional experiment.
+    # Collector health describes readable measurements, not active compression.
     overall_health = results["rtk"].get("health", "error")
+    desktop_headroom = collect_desktop_headroom()
+    try:
+        components = collect_components({'rtk': results['rtk'], 'desktop_headroom': desktop_headroom})
+        overall_health = components.get('overall_health') or overall_health
+    except Exception:
+        components = {'components': [], 'overall_health': 'error', 'error': 'Component status could not be read.'}
+        overall_health = 'error'
 
     # Claude-account weekly tracking and combined sums are unsupported in Codex.
     # Keep the JSON fields null for older clients, without reading/writing a cache.
@@ -1081,9 +1105,10 @@ def collect_all():
         "measurement_note": "RTK output estimates and Headroom context reductions have different scopes and may overlap. Do not add them or interpret them as billed savings or subscription quota.",
         "connection_note": "Headroom request compression handles eligible content across Codex model requests when enabled below. RTK and local Headroom tools provide additional output reduction.",
         "overall_health": overall_health,
+        "components": components,
         "rtk": results["rtk"],
         "headroom": results["headroom"],
-        "desktop_headroom": collect_desktop_headroom(),
+        "desktop_headroom": desktop_headroom,
         "jcodemunch": {"active": False, "disabled": True},
         "jdocmunch": {"active": False, "disabled": True},
         "jdatamunch": {"active": False, "disabled": True},
@@ -1569,12 +1594,13 @@ body {
 @media (max-width: 650px) { .updates-libraries { grid-template-columns: 1fr; } .updates-panel summary span { float: none; display: block; margin: 4px 0 0 15px; } }
 </style>
 <meta name="bundle-update-token" content="__BUNDLE_UPDATE_CSRF__">
+<link rel="stylesheet" href="/static/components.css">
 </head>
 <body>
 <!-- Header -->
 <header class="header" role="banner">
     <h1 class="sr-only">Codex Token Saver</h1>
-    <a class="header-left" href="https://github.com/Will-Luck/claude-tools-dashboard" target="_blank" rel="noopener noreferrer" title="View source on GitHub">
+    <a class="header-left" href="https://github.com/patrickstrauss/Codex-Token-Saver" target="_blank" rel="noopener noreferrer" title="View source on GitHub">
         <div class="pulse-dot" id="health-pulse" title="All collectors healthy"></div>
         <div class="header-title">CODEX TOKEN SAVER</div>
     </a>
@@ -1605,6 +1631,7 @@ body {
 </div>
 
 <!-- Cards -->
+__COMPONENTS_PANEL__
 __REQUEST_PROXY_PANEL__
 <div class="cards">
     <!-- RTK -->
@@ -1614,6 +1641,7 @@ __REQUEST_PROXY_PANEL__
             <span class="card-version" id="rtk-version">--</span>
         </div>
         <div class="card-value clr-rtk" id="rtk-value">--</div>
+        <label class="rtk-window" for="rtk-window">Window <select class="bundle-select" id="rtk-window" onchange="renderRtk(lastRtk)"><option value="today">Today</option><option value="seven_days">7 days</option><option value="lifetime">Lifetime</option></select></label>
         <div class="card-sub" id="rtk-sub">estimated tokens avoided</div>
         <div class="progress-track"><div class="progress-fill fill-rtk" id="rtk-bar" style="width:0%"></div></div>
         <div class="card-stats" id="rtk-stats">
@@ -1621,6 +1649,9 @@ __REQUEST_PROXY_PANEL__
         </div>
         <div class="sparkline-container"><svg id="rtk-sparkline" viewBox="0 0 200 35" preserveAspectRatio="none"></svg></div>
         <div class="card-delta" id="rtk-delta"></div>
+        <p class="rtk-note" id="rtk-recent"></p>
+        <p class="rtk-note" id="rtk-lifetime"></p>
+        <p class="rtk-note" id="rtk-outlier"></p>
     </div>
 
     <!-- Headroom local output -->
@@ -1708,9 +1739,9 @@ __REQUEST_PROXY_PANEL__
 </div>
 
 <details class="updates-panel" id="library-updates">
-    <summary>Library updates <span id="updates-summary">Headroom + RTK</span></summary>
+    <summary>Library updates <span id="updates-summary">Bundle runtimes</span></summary>
     <div class="updates-body">
-        <p class="updates-muted">Update the Headroom compression engine and its Python dependencies, or RTK. The dashboard and Codex integration stay managed by this bundle.</p>
+        <p class="updates-muted">Update installed bundle runtimes with compatibility checks and rollback. Local model files are not automatically replaced.</p>
         <div class="updates-actions">
             <button type="button" class="updates-button" id="updates-check">Check for updates</button>
             <span class="updates-muted" id="updates-checked">No release check yet</span>
@@ -1740,6 +1771,24 @@ __REQUEST_PROXY_PANEL__
                     <a href="https://github.com/rtk-ai/rtk/releases" target="_blank" rel="noopener noreferrer">Releases</a>
                 </div>
                 <p id="update-rtk-error" class="updates-error"></p>
+            </section>
+            <section class="updates-library" aria-label="Serena library updates">
+                <h2>Serena</h2>
+                <p class="updates-versions"><span>Installed <strong id="update-serena-current">Loading</strong></span><span>Latest <strong id="update-serena-latest">Not checked</strong></span></p>
+                <div class="updates-actions"><button type="button" class="updates-button" id="update-serena-install" disabled>Update Serena</button><button type="button" class="updates-button" id="update-serena-rollback" disabled>Rollback</button><a href="https://github.com/oraios/serena/releases" target="_blank" rel="noopener noreferrer">Releases</a></div>
+                <p id="update-serena-error" class="updates-error"></p>
+            </section>
+            <section class="updates-library" aria-label="LangMem library updates">
+                <h2>LangMem</h2>
+                <p class="updates-versions"><span>Installed <strong id="update-langmem-current">Loading</strong></span><span>Latest <strong id="update-langmem-latest">Not checked</strong></span></p>
+                <div class="updates-actions"><button type="button" class="updates-button" id="update-langmem-install" disabled>Update LangMem</button><button type="button" class="updates-button" id="update-langmem-rollback" disabled>Rollback</button><a href="https://github.com/langchain-ai/langmem/releases" target="_blank" rel="noopener noreferrer">Releases</a></div>
+                <p id="update-langmem-error" class="updates-error"></p>
+            </section>
+            <section class="updates-library" aria-label="llama.cpp library updates">
+                <h2>llama.cpp</h2>
+                <p class="updates-versions"><span>Installed <strong id="update-llama_cpp-current">Loading</strong></span><span>Latest <strong id="update-llama_cpp-latest">Not checked</strong></span></p>
+                <div class="updates-actions"><button type="button" class="updates-button" id="update-llama_cpp-install" disabled>Update llama.cpp</button><button type="button" class="updates-button" id="update-llama_cpp-rollback" disabled>Rollback</button><a href="https://github.com/ggml-org/llama.cpp/releases" target="_blank" rel="noopener noreferrer">Releases</a></div>
+                <p id="update-llama_cpp-error" class="updates-error"></p>
             </section>
         </div>
         <p id="updates-restart" class="updates-restart" hidden></p>
@@ -1837,6 +1886,36 @@ function renderSparkline(svgEl, points, tool) {
         '<path d="' + pathParts.join(' ') + '" class="stroke-' + tool + '" fill="none" stroke-width="1.5"/>';
 }
 
+var lastRtk = {};
+function renderRtk(rtk) {
+    lastRtk = rtk;
+    var choice = document.getElementById('rtk-window');
+    var key = choice && choice.value ? choice.value : 'today';
+    var selected = rtk.windows && rtk.windows[key] ? rtk.windows[key] : rtk;
+    var readable = rtk.records_readable == null ? !!rtk.active : rtk.records_readable;
+    document.getElementById('rtk-card').className = rtk.total_saved != null ? 'card' : 'card inactive';
+    document.getElementById('rtk-health').className = 'health-dot health-' + (rtk.health || 'error');
+    document.getElementById('rtk-version').textContent = shortVersion(rtk.version);
+    document.getElementById('rtk-value').textContent = selected.total_saved != null ? formatTokens(selected.total_saved) : '--';
+    document.getElementById('rtk-sub').textContent = readable ? 'estimated output tokens avoided · ' + ({today:'today',seven_days:'last 7 days',lifetime:'lifetime'}[key])
+        : (rtk.total_saved != null ? 'last recorded estimate; records unavailable' : 'RTK records unavailable');
+    document.getElementById('rtk-bar').style.width = (readable ? Math.max(0, Math.min(100, selected.avg_savings_pct || 0)) : 0) + '%';
+    document.getElementById('rtk-stats').textContent = !readable ? 'Unable to read RTK history'
+        : selected.total_commands ? (selected.avg_savings_pct || 0) + '% output reduction · ' + selected.total_commands + ' commands · '
+            + (selected.optimized_commands == null ? '' : selected.optimized_commands + ' reduced · ')
+            + formatTime(selected.total_time_ms / selected.total_commands) + ' average'
+        : 'No commands recorded in this window';
+    document.getElementById('rtk-recent').textContent = rtk.last_recorded_at
+        ? 'Last command: ' + new Date(rtk.last_recorded_at).toLocaleString() + (rtk.recent_use ? ' · used in the last 5 minutes' : ' · no recent use')
+        : 'No command activity recorded. A readable database does not mean commands are using RTK.';
+    document.getElementById('rtk-lifetime').textContent = rtk.windows ? 'Lifetime estimate: ' + formatTokens(rtk.total_saved || 0)
+        + ' across ' + (rtk.total_commands || 0) + ' commands.'
+        + ((rtk.windows.lifetime || {}).largest_saved_share_pct >= 50 ? ' One record contributes ' + rtk.windows.lifetime.largest_saved_share_pct + '% of lifetime savings.' : '')
+        + ' Collector: ' + new Date(rtk.collected_at).toLocaleTimeString() : '';
+    document.getElementById('rtk-outlier').textContent = selected.largest_saved_share_pct >= 50
+        ? 'Largest single record contributes ' + selected.largest_saved_share_pct + '% of saved tokens in this window; it can dominate the rate.' : '';
+}
+
 function updateDashboard(d) {
     // Combined
     document.getElementById('combined').textContent = 'LOCAL COMPRESSION ACTIVITY';
@@ -1888,36 +1967,18 @@ function updateDashboard(d) {
         combinedUsdEl.className = 'tv';
     }
 
-    // RTK collector health; optional Headroom is reported separately.
+    // All requested components contribute to effective health.
     var pulseDot = document.getElementById('health-pulse');
     if (pulseDot) {
         var oh = d.overall_health || 'ok';
         pulseDot.className = 'pulse-dot' + (oh !== 'ok' ? ' health-' + oh : '');
         pulseDot.title = oh === 'ok'
-            ? 'Dashboard connected; RTK records readable'
-            : (oh === 'stale' ? 'RTK records unavailable; showing last recorded data' : 'RTK records unavailable');
+            ? ((d.components || {}).unverified_count ? 'No reported component faults; Codex task tool loading is unverified'
+                : 'Selected bundle components are ready; readiness is not proof of recent use')
+            : 'A selected component needs attention. Check Bundle controls.';
     }
 
-    // RTK
-    var rtk = d.rtk || {};
-    var rtkCard = document.getElementById('rtk-card');
-    rtkCard.className = rtk.total_saved != null ? 'card' : 'card inactive';
-    var rtkHealth = rtk.health || 'error';
-    var rtkDot = document.getElementById('rtk-health');
-    if (rtkDot) rtkDot.className = 'health-dot health-' + rtkHealth;
-    document.getElementById('rtk-version').textContent = shortVersion(rtk.version);
-    document.getElementById('rtk-value').textContent = rtk.total_saved != null ? formatTokens(rtk.total_saved) : '--';
-    document.getElementById('rtk-sub').textContent = rtk.active ? 'estimated tokens avoided (local records)' : (rtk.total_saved != null ? 'last recorded estimate; records unavailable' : 'RTK records unavailable');
-    document.getElementById('rtk-bar').style.width = (rtk.active ? (rtk.avg_savings_pct || 0) : 0) + '%';
-    if (rtk.active && rtk.total_commands) {
-        var avgMs = rtk.total_time_ms / rtk.total_commands;
-        document.getElementById('rtk-stats').innerHTML =
-            '<span><span class="label">output reduction</span> <span class="val">' + (rtk.avg_savings_pct || 0) + '%</span></span>' +
-            '<span><span class="label">cmds</span> <span class="val">' + rtk.total_commands + '</span></span>' +
-            '<span><span class="label">avg</span> <span class="val">' + formatTime(avgMs) + '</span></span>';
-    } else {
-        document.getElementById('rtk-stats').textContent = rtk.active ? 'No commands recorded yet' : 'Unable to read RTK history';
-    }
+    renderRtk(d.rtk || {});
 
     // Desktop tool counters are historical data, never a runtime-health claim.
     var desktop = d.desktop_headroom || {};
@@ -1944,6 +2005,7 @@ function updateDashboard(d) {
         ? formatTokens(desktop.gross_saved || 0) + ' gross reduction; ' + formatTokens(desktop.retrieval_tokens || 0) + ' retrieval tokens (before Codex truncation)'
         : '';
     var commandResults = {
+        disabled: ['filter Off', 'local filtering Off; original kept'],
         compressed: ['compressed', 'output reduced'],
         small_output: ['too small', 'original kept; output too small'],
         no_reduction: ['no further reduction', 'original kept; no further reduction'],
@@ -2188,6 +2250,7 @@ setInterval(function() {
 </script>
 <script src="/static/updates.js"></script>
 <script src="/static/proxy.js"></script>
+<script src="/static/components.js"></script>
 </body>
 </html>"""
 
@@ -2230,7 +2293,7 @@ def _render_metrics(snap):
 
     # Unsupported combined counters are omitted, never exposed as zero or 'None'.
 
-    block("ctd_overall_health", "Required RTK collector health (2=ok, 1=stale, 0=error).")
+    block("ctd_overall_health", "Selected bundle component health (2=ok, 1=degraded, 0=error).")
     lines.append(f"ctd_overall_health {_HEALTH_VALUE.get(snap.get('overall_health'), 0)}")
 
     block("ctd_tool_saved_tokens", "Lifetime estimated tokens avoided, per tool.")
@@ -2272,7 +2335,9 @@ def _render_metrics(snap):
 
 @app.route("/")
 def index():
-    return _update_routes.page(HTML.replace('__REQUEST_PROXY_PANEL__', REQUEST_PROXY_PANEL_HTML))
+    panel = Path(__file__).with_name('components.html').read_text(encoding='utf-8')
+    return _update_routes.page(HTML.replace('__REQUEST_PROXY_PANEL__', REQUEST_PROXY_PANEL_HTML)
+                              .replace('__COMPONENTS_PANEL__', panel))
 
 
 @app.route("/health")

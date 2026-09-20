@@ -1,0 +1,30 @@
+<section class="updates-panel component-panel" id="bundle-components" aria-labelledby="components-heading">
+  <div class="updates-body">
+    <div class="component-heading"><h2 id="components-heading">Bundle controls</h2><span id="components-health" role="status">Checking selected components...</span></div>
+    <p class="updates-muted">After this app update, restart Codex once so existing file tools load these controls and new Serena and summary tools become available. You can resume existing tasks afterward.</p>
+    <p class="updates-muted">Choose each layer independently. On is your preference; status shows whether it can currently help.</p>
+    <div id="components-list" class="component-grid"></div>
+    <p id="components-error" class="updates-error" role="alert" hidden></p>
+    <p id="components-notice" class="updates-muted" role="status" hidden></p>
+    <p class="updates-muted">Savings from these layers overlap and are never added together. Exact original content remains available when local filtering is Off.</p>
+  </div>
+</section>
+<details class="updates-panel" id="local-summary-panel">
+  <summary>Experimental local summaries <span class="updates-muted">LangMem + llama.cpp</span></summary>
+  <div class="updates-body">
+    <p class="updates-muted">Create a local summary for a task you select. Native Codex compaction remains enabled. This does not replace or edit your conversation.</p>
+    <label for="local-summary-task">Task to summarize</label>
+    <select id="local-summary-task" class="bundle-select"><option value="">Choose a task...</option></select>
+    <div class="updates-actions">
+      <button type="button" class="updates-button" id="local-summary-refresh" disabled>Refresh summary</button>
+      <button type="button" class="updates-button" id="local-summary-cancel" disabled>Cancel running job</button>
+      <button type="button" class="updates-button" id="local-summary-reload">Reload tasks</button>
+    </div>
+    <p id="local-summary-status" role="status">Open this panel to load available tasks.</p>
+    <p id="local-summary-error" class="updates-error" role="alert" hidden></p>
+    <p id="local-summary-quality" role="status"></p>
+    <p id="local-summary-coverage" class="updates-muted"></p>
+    <pre id="local-summary-text" class="summary-text">Select a task to view its saved summary.</pre>
+    <p class="updates-muted">Summary size reduction describes local text only. It is not measured Codex usage or quota savings. Review the summary against original messages before relying on exact details.</p>
+  </div>
+</details>

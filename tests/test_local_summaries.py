@@ -37,10 +37,18 @@ class LocalSummariesTests(unittest.TestCase):
         return p
 
     def ready(self):
+        from bundle_preferences import set_preference
+        set_preference(self.root, 'local_summaries', True)
+        set_preference(self.root, 'llama_cpp', True)
         runtime = self.root / 'local-compaction/.venv/Scripts'
         runtime.mkdir(parents=True)
         (runtime / 'python.exe').write_text('fixture')
-        (self.root / 'local-compaction/model.json').write_text('{}')
+        model = self.root / 'fixture.gguf'
+        model.touch()
+        binary = self.root / 'local-compaction/llama-b10809/llama-server.exe'
+        binary.parent.mkdir()
+        binary.touch()
+        (self.root / 'local-compaction/model.json').write_text(json.dumps({'model_path': str(model)}))
         (self.root / 'local_summary_engine.py').write_text('# fixture')
 
     def fake_engine(self, request, task_id, job_id):
@@ -54,6 +62,25 @@ class LocalSummariesTests(unittest.TestCase):
 
     def test_feature_exists(self):
         self.assertIsNotNone(module, 'Local summaries controller is missing.')
+
+    def test_disabled_dependency_prevents_a_job_but_preserves_saved_reads(self):
+        from bundle_preferences import set_preference
+        c = self.controller()
+        self.ready()
+        self.rollout()
+        set_preference(self.root, 'llama_cpp', False)
+        with self.assertRaisesRegex(RuntimeError, 'Enable'):
+            c.start(TASK)
+        self.assertEqual(c.get_summary(TASK)['status'], 'not_started')
+
+    def test_missing_model_is_reported_before_any_worker_launch(self):
+        c = self.controller()
+        self.ready()
+        self.rollout()
+        (self.root / 'fixture.gguf').unlink()
+        self.assertFalse(c.status()['runtime_available'])
+        with self.assertRaises(RuntimeError):
+            c.start(TASK)
 
     def test_lists_only_explicit_valid_local_task_metadata(self):
         c = self.controller()
@@ -191,6 +218,42 @@ class LocalSummariesTests(unittest.TestCase):
         with patch.object(c, '_engine') as engine:
             c._run_job(TASK, job['job_id'])
         engine.assert_not_called()
+        self.assertEqual(c.status()['job']['status'], 'cancelled')
+
+    def test_incomplete_source_is_never_reported_fully_summarized(self):
+        c = self.controller()
+        self.ready()
+        self.rollout([{'type': 'message', 'role': 'user', 'content': [{'text': 'Complete item'}]}],
+                     tail=b'{bad}\n' + b'{"incomplete":')
+        with patch.object(c, '_launch_worker', return_value=1234):
+            job = c.start(TASK)
+        with patch.object(c, '_engine', side_effect=self.fake_engine):
+            c._run_job(TASK, job['job_id'])
+        result = c.get_summary(TASK)
+        self.assertEqual(result['status'], 'partial')
+        self.assertTrue(result['coverage']['source_truncated'])
+        self.assertTrue(result['coverage']['source_incomplete'])
+        self.assertEqual(c.status()['job']['status'], 'partial')
+
+    def test_cancel_before_final_publication_preserves_previous_summary(self):
+        c = self.controller()
+        self.ready()
+        self.rollout([{'type': 'message', 'role': 'user', 'content': [{'text': 'New item'}]}])
+        with patch.object(c, '_launch_worker', return_value=1234):
+            job = c.start(TASK)
+        original_path = c._saved_path
+        lookups = []
+        def publication_path(task):
+            lookups.append(task)
+            # First lookup reads the prior artifact; second resolves the publication target.
+            # Cancel arriving between the model result check and its commit must win.
+            if len(lookups) == 2:
+                c.cancel(TASK)
+            return original_path(task)
+        with patch.object(c, '_engine', side_effect=self.fake_engine), \
+             patch.object(c, '_saved_path', side_effect=publication_path):
+            c._run_job(TASK, job['job_id'])
+        self.assertFalse(original_path(TASK).exists())
         self.assertEqual(c.status()['job']['status'], 'cancelled')
 
 

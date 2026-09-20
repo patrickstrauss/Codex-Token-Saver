@@ -15,7 +15,7 @@ from urllib.request import build_opener, ProxyHandler
 
 ROOT = Path(__file__).resolve().parent
 LOCAL_URL = 'http://127.0.0.1:8788/v1'
-CRITICAL_FILES = ('desktop_proxy.py', 'proxy_runtime.py', 'exact_retrieval.py', 'desktop_proxy_service.py', 'desktop_proxy_control.py')
+CRITICAL_FILES = ('desktop_proxy.py', 'proxy_runtime.py', 'exact_retrieval.py', 'desktop_proxy_service.py', 'desktop_proxy_control.py', 'service_control.py')
 MAX_BYTES = 4 * 1024 * 1024
 WARMUP_SECONDS = 30
 
@@ -139,6 +139,11 @@ def _timestamp(value):
         return None
 
 
+def _latest_timestamp(first, second):
+    before, after = _timestamp(first), _timestamp(second)
+    return second if after and (not before or after > before) else first
+
+
 def _savings(payload, historical=False):
     result = {'available': False, 'saved_tokens': None, 'input_tokens': None, 'output_tokens': None,
               'requests': None, 'estimated': True, 'last_recorded_at': None, 'historical': historical}
@@ -156,6 +161,9 @@ def _savings(payload, historical=False):
                 if _timestamp(stamp):
                     result['last_recorded_at'] = stamp
                     break
+        metrics = persistent.get('lifetime_metrics', payload.get('lifetime_metrics', {}))
+        activity = metrics.get('last_activity_at') if isinstance(metrics, dict) else None
+        result['last_recorded_at'] = _latest_timestamp(result['last_recorded_at'], activity)
         return result
     tokens = payload.get('tokens', {})
     requests = payload.get('requests', {})
@@ -247,19 +255,33 @@ class DesktopProxyControl:
         requests = {key: _count(request_values.get(key)) if isinstance(request_values, dict) else None
                     for key in ('optimized', 'direct', 'failed', 'active')}
         savings = _savings(backend) if backend_ready else _savings({})
+        try:
+            saved = _json(self.state / 'backend-state' / 'proxy_savings.json')
+        except (OSError, ValueError, UnicodeError):
+            saved = {}
         if not savings['available']:
-            try:
-                saved = _json(self.state / 'backend-state' / 'proxy_savings.json')
-                savings = _savings({'persistent_savings': {'lifetime': saved.get('lifetime', {}),
-                                      'recent_history': saved.get('history', [])}}, historical=True)
-            except (OSError, ValueError, UnicodeError):
-                pass
+            savings = _savings({'persistent_savings': {'lifetime': saved.get('lifetime', {}),
+                                  'recent_history': saved.get('history', []),
+                                  'lifetime_metrics': saved.get('lifetime_metrics', {})}}, historical=True)
+        elif isinstance(saved.get('lifetime_metrics'), dict):
+            # The SDK's live stats omit lifetime_metrics and may retain older capped history.
+            # Use the same ledger only for freshness; live request/token counters stay authoritative.
+            savings['last_recorded_at'] = _latest_timestamp(
+                savings['last_recorded_at'], saved['lifetime_metrics'].get('last_activity_at'))
         enabled = settings.get('enabled') is True
         route_enabled = config.get('openai_base_url') == LOCAL_URL
         validated = self.validation()
         if route_enabled and not self._owned(receipt):
             errors.append('The current local endpoint has no matching ownership record.')
+        from desktop_proxy_service import read_status
+        supervisor_status = read_status(self.root)
+        supervisor = {key: supervisor_status.get(key) for key in ('live', 'heartbeat_age_seconds', 'last_error')}
+        if enabled and not backend_ready:
+            errors.append('Request compression is enabled but the backend is unavailable; new connections use direct forwarding.')
+        if settings.get('installed') is True and not supervisor['live']:
+            errors.append(supervisor['last_error'])
         return {'installed': settings.get('installed') is True, 'enabled': enabled, 'route_enabled': route_enabled,
+                'supervisor': supervisor,
                 'ready': ready, 'backend_ready': backend_ready,
                 'mode': ('offline' if not ready else 'paused' if not enabled else 'optimized' if backend_ready else 'direct'),
                 'validated': validated, 'last_error': ' '.join(errors) or None,

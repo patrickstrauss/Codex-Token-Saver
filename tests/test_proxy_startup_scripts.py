@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -27,9 +28,10 @@ class ProxyStartupScriptsTests(unittest.TestCase):
             (self.bundle / name).write_text('# isolated fixture\n')
         runtime = self.bundle / 'headroom/.venv/Scripts'
         runtime.mkdir(parents=True)
-        shutil.copy2(ROOT / 'headroom/.venv/pyvenv.cfg', runtime.parent / 'pyvenv.cfg')
+        installed_venv = Path(sys.prefix)
+        shutil.copy2(installed_venv / 'pyvenv.cfg', runtime.parent / 'pyvenv.cfg')
         for name in ('python.exe', 'pythonw.exe'):
-            shutil.copy2(ROOT / 'headroom/.venv/Scripts' / name, runtime / name)
+            shutil.copy2(installed_venv / 'Scripts' / name, runtime / name)
         self.env = dict(os.environ, USERPROFILE=str(self.profile))
 
     def run_script(self, name, *args):

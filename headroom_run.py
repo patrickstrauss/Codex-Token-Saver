@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+from bundle_preferences import load_preferences
 
 from command_compression import (CommandCompressor, CompressionResult,
                                  MAX_OUTPUT_BYTES, MIN_OUTPUT_BYTES,
@@ -171,6 +172,7 @@ def main(argv=None) -> int:
     # The preference may be set by an earlier statement in the same shell
     # command, after its PreToolUse hook ran. Read it at execution time.
     exact = explicit_exact or os.environ.get('HEADROOM_EXACT') == '1'
+    disabled = not load_preferences(ROOT)['headroom_local']
     if not args or args.pop(0) != '--' or not args:
         sys.stderr.write('Usage: headroom-run [--exact] -- <absolute executable> [arguments...]\n')
         return 64
@@ -182,14 +184,15 @@ def main(argv=None) -> int:
     # Codex command hooks also exclude known interactive/watch/stdin commands.
     # Windows Codex gives ordinary piped commands a console stdin handle too;
     # stdin.isatty() alone therefore does not identify an interactive invocation.
-    if exact or sys.stdout.isatty() or sys.stderr.isatty():
+    if disabled or exact or sys.stdout.isatty() or sys.stderr.isatty():
         try:
             completed = subprocess.run(args, shell=False,
                                        env=dict(os.environ, HEADROOM_COMMAND_ACTIVE='1'))
         except OSError as exc:
             sys.stderr.write(f'headroom-run: executable could not start: {exc}\n')
             return 127
-        result = CompressionResult(b'', 'exact_requested' if exact else 'interactive_passthrough')
+        result = CompressionResult(b'', 'disabled' if disabled else
+                                   'exact_requested' if exact else 'interactive_passthrough')
         record_in_worker(result, state_dir, str(executable), completed.returncode, 0, 0)
         return completed.returncode
     try:

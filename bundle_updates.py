@@ -1,4 +1,4 @@
-"""Explicit, staged updates for the two bundled upstream components.
+"""Explicit, staged updates for bundled upstream components.
 
 No network runs at import, construction, or status time. A checked release plan
 stays on the server; the UI can request only check/install/rollback and a known
@@ -25,11 +25,18 @@ import urllib.parse
 import urllib.request
 import uuid
 import zipfile
+from component_runtime import COMPONENTS as OPTIONAL_COMPONENTS, component_descriptor, runtime_path, runtime_manifest
 
 PYPI_URL = "https://pypi.org/pypi/headroom-ai/json"
 GITHUB_URL = "https://api.github.com/repos/rtk-ai/rtk/releases/latest"
 RTK_ASSET = "rtk-x86_64-pc-windows-msvc.zip"
-SOURCES = {"headroom": "https://pypi.org/project/headroom-ai/", "rtk": "https://github.com/rtk-ai/rtk/releases"}
+SOURCES = {"headroom": "https://pypi.org/project/headroom-ai/", "rtk": "https://github.com/rtk-ai/rtk/releases",
+           "serena": "https://pypi.org/project/serena-agent/", "langmem": "https://pypi.org/project/langmem/",
+           "llama_cpp": "https://github.com/ggml-org/llama.cpp/releases"}
+NAMES = {"headroom": "Headroom", "rtk": "RTK", "serena": "Serena", "langmem": "LangMem", "llama_cpp": "llama.cpp (experimental builds)"}
+OPTIONAL_PYPI = {"serena": "https://pypi.org/pypi/serena-agent/json", "langmem": "https://pypi.org/pypi/langmem/json"}
+LLAMA_RELEASES_URL = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10"
+METADATA_URLS = (PYPI_URL, GITHUB_URL, LLAMA_RELEASES_URL, *OPTIONAL_PYPI.values())
 MAX_METADATA_BYTES = 8 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 80 * 1024 * 1024
 MAX_BINARY_BYTES = 100 * 1024 * 1024
@@ -55,6 +62,18 @@ def stable_version(value):
     return parts + (0,) * (3 - len(parts))
 
 
+def component_version(component, value):
+    if component == 'llama_cpp':
+        return (int(value[1:]),) if isinstance(value, str) and re.fullmatch(r'b[1-9][0-9]{0,8}', value) else None
+    return stable_version(value)
+
+
+def _component_state(key, current=None):
+    return {"id": key, "name": NAMES[key], "current": current, "latest": None,
+            "update_available": False, "refresh_available": False, "rollback_available": False,
+            "restart_required": False, "source": SOURCES[key], "error": None}
+
+
 def _official_url(url):
     parsed = urllib.parse.urlsplit(url)
     if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port not in (None, 443):
@@ -62,8 +81,8 @@ def _official_url(url):
     if parsed.hostname in ("release-assets.githubusercontent.com", "objects.githubusercontent.com"):
         return True
     if parsed.hostname == "github.com":
-        return parsed.path.startswith("/rtk-ai/rtk/releases/download/")
-    return url in (PYPI_URL, GITHUB_URL)
+        return parsed.path.startswith(("/rtk-ai/rtk/releases/download/", "/ggml-org/llama.cpp/releases/download/"))
+    return url in METADATA_URLS
 
 
 class _OfficialRedirect(urllib.request.HTTPRedirectHandler):
@@ -76,7 +95,7 @@ class _OfficialRedirect(urllib.request.HTTPRedirectHandler):
 def fetch_bytes(url, limit):
     if not _official_url(url):
         raise UpdateError("Only official package and release endpoints are supported.")
-    request = urllib.request.Request(url, headers={"User-Agent": "CodexTokenSaver-Updater/1", "Accept": "application/json" if url in (PYPI_URL, GITHUB_URL) else "application/octet-stream"})
+    request = urllib.request.Request(url, headers={"User-Agent": "CodexTokenSaver-Updater/1", "Accept": "application/json" if url in METADATA_URLS else "application/octet-stream"})
     opener = urllib.request.build_opener(_OfficialRedirect())
     try:
         with opener.open(request, timeout=NETWORK_TIMEOUT) as response:
@@ -191,14 +210,14 @@ class BundleUpdater:
         versions = self._current_versions()
         return {"busy": False, "operation": None, "stage": "idle", "message": "Check for updates when you are ready.", "error": None,
                 "last_checked": None, "plans": {}, "components": [
-                    {"id": key, "name": "Headroom" if key == "headroom" else "RTK", "current": versions.get(key),
-                     "latest": None, "update_available": False, "refresh_available": False, "rollback_available": False, "restart_required": False,
-                     "source": SOURCES[key], "error": None} for key in ("headroom", "rtk")]}
+                    _component_state(key, versions.get(key)) for key in SOURCES]}
 
     def _read_state(self):
         value = _json_file(self.state_path, {})
         if not isinstance(value.get("components"), list):
             return self._initial_state()
+        saved = {item.get('id'): item for item in value['components'] if isinstance(item, dict)}
+        value['components'] = [dict(_component_state(key), **saved.get(key, {})) for key in SOURCES]
         return value
 
     def _write_state(self, value):
@@ -275,7 +294,7 @@ class BundleUpdater:
 
     def start(self, action, component=None):
         if action not in ("check", "install", "rollback") or (action == "check" and component is not None) or (action != "check" and component not in SOURCES):
-            raise ValueError("Choose check, install, or rollback for Headroom or RTK.")
+            raise ValueError("Choose check, install, or rollback for a known bundle library.")
         with self._mutex:
             handle = self._claim_lock()
             if not handle:
@@ -317,10 +336,12 @@ class BundleUpdater:
                 getattr(self, "_rollback_" + component)()
             state = self._read_state()
             self._refresh_components(state)
-            if component == "headroom" and action in ("install", "rollback"):
+            if component in ("headroom", "serena") and action in ("install", "rollback"):
                 next(x for x in state["components"] if x["id"] == component)["restart_required"] = True
             state.update(busy=False, stage="complete", message="Update check complete." if action == "check" else
-                         "Headroom is ready for new command workers. Restart Codex to reload existing file tools. A running desktop proxy keeps its current runtime until its next restart." if component == "headroom" else "RTK is ready for the next command.", error=None)
+                         "Headroom is ready for new command workers. Restart Codex to reload existing file tools. A running desktop proxy keeps its current runtime until its next restart." if component == "headroom" else
+                         "Restart Codex to load the selected Serena runtime." if component == "serena" else
+                         "The selected library is ready for the next command or summary job.", error=None)
             self._write_state(state)
         except Exception as error:
             state = self._read_state()
@@ -351,23 +372,33 @@ class BundleUpdater:
                 rtk = match[1]
         except (UpdateError, OSError):
             pass
-        return {"headroom": headroom, "rtk": rtk}
+        versions = {"headroom": headroom, "rtk": rtk}
+        for key in OPTIONAL_COMPONENTS:
+            try:
+                runtime_path(self.root, key)
+                versions[key] = component_descriptor(self.root, key).get('version')
+            except (OSError, ValueError, KeyError):
+                versions[key] = None
+        return versions
 
     def _can_install(self, component, latest):
         current = self._current_versions().get(component)
-        if stable_version(current) is None or stable_version(latest) is None:
+        current, latest = component_version(component, current), component_version(component, latest)
+        if latest is None:
             return False
-        return stable_version(latest) > stable_version(current) or (component == "headroom" and stable_version(latest) == stable_version(current))
+        if current is None:
+            return component in OPTIONAL_COMPONENTS
+        return latest > current or (component == "headroom" and latest == current)
 
     def _refresh_components(self, state):
         versions = self._current_versions()
         for component in state["components"]:
             key = component["id"]
             component["current"] = versions.get(key)
-            latest, current = stable_version(component.get("latest")), stable_version(component.get("current"))
+            latest, current = component_version(key, component.get("latest")), component_version(key, component.get("current"))
             plan = state.get("plans", {}).get(key, {})
             fresh = bool(plan and 0 <= time.time() - plan.get("checked_at", 0) <= PLAN_MAX_AGE)
-            component["update_available"] = bool(latest and current and latest > current and fresh)
+            component["update_available"] = bool(latest and fresh and ((current and latest > current) or (current is None and key in OPTIONAL_COMPONENTS)))
             component["refresh_available"] = bool(key == "headroom" and latest and current and latest == current and fresh)
             component["rollback_available"] = self._rollback_available(key)
             if key == "headroom" and self._selection_diagnostic:
@@ -775,10 +806,207 @@ print(json.dumps({'validated':True,'version':sys.argv[1],'phase':phase}))
 
     def _rollback_available(self, component):
         try:
+            if component in OPTIONAL_COMPONENTS:
+                previous = _json_file(runtime_manifest(self.root, component), {}).get('previous')
+                return bool(previous and component_version(component, previous.get('version')) and runtime_path(self.root, component, previous).is_file())
             if component == "headroom":
                 previous = self._previous_headroom()
                 return bool(previous and self._runtime_path(previous).is_dir())
             self._rtk_backup()
             return True
-        except (UpdateError, OSError, TypeError):
+        except (UpdateError, OSError, TypeError, ValueError, KeyError):
             return False
+
+    def _check_optional_python(self, component):
+        metadata = json.loads(fetch_bytes(OPTIONAL_PYPI[component], MAX_METADATA_BYTES))
+        version = metadata.get('info', {}).get('version')
+        if stable_version(version) is None:
+            raise UpdateError('PyPI did not return a supported stable package release.')
+        return {'version': version}
+
+    def _check_serena(self):
+        return self._check_optional_python('serena')
+
+    def _check_langmem(self):
+        return self._check_optional_python('langmem')
+
+    def _check_llama_cpp(self):
+        # Official Windows builds use the b-number prerelease channel. A stable
+        # release may have no Windows assets; never substitute another platform.
+        releases = json.loads(fetch_bytes(LLAMA_RELEASES_URL, MAX_METADATA_BYTES))
+        if not isinstance(releases, list):
+            raise UpdateError('The official llama.cpp build list is unavailable.')
+        for release in releases:
+            tag = release.get('tag_name')
+            if not component_version('llama_cpp', tag) or release.get('draft'):
+                continue
+            name = 'llama-' + tag + '-bin-win-vulkan-x64.zip'
+            assets = [x for x in release.get('assets', []) if x.get('name') == name]
+            if len(assets) == 1 and re.fullmatch(r'sha256:[0-9a-fA-F]{64}', assets[0].get('digest') or ''):
+                return {'version': tag, 'sha256': assets[0]['digest'].split(':')[1].lower()}
+        raise UpdateError('No verified official Windows Vulkan build was found for llama.cpp.')
+
+    def _stage_optional_python(self, component, plan):
+        version = plan.get('version')
+        if stable_version(version) is None:
+            raise UpdateError('The checked package version is invalid. Check again.')
+        uv = self.root / 'tools/uv.exe'
+        baseline = self.root / 'headroom/.venv/Scripts/python.exe'
+        if not uv.is_file() or not baseline.is_file():
+            raise UpdateError('The bundled update runtime is missing. Repair it before updating.')
+        base = 'serena' if component == 'serena' else 'local-compaction'
+        target = self.root / base / 'runtimes' / (component + '-' + version + '-' + uuid.uuid4().hex)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        self._stage('creating_runtime', 'Creating an isolated optional-library runtime.')
+        self._run([str(uv), '--no-config', '--no-python-downloads', 'venv', '--python', str(baseline), str(target)],
+                  'Creating the isolated runtime failed.')
+        python = target / 'Scripts/python.exe'
+        package = OPTIONAL_COMPONENTS[component][2]
+        self._stage('installing_dependencies', 'Installing the checked package version from PyPI.')
+        self._run([str(uv), '--no-config', '--no-python-downloads', 'pip', 'install', '--python', str(python),
+                   '--index-url', 'https://pypi.org/simple', '--only-binary', ':all:', package + '==' + version],
+                  'Installing the staged package failed. The selected runtime is unchanged.', timeout=1800)
+        self._run([str(uv), '--no-config', '--no-python-downloads', 'pip', 'check', '--python', str(python)],
+                  'The staged dependencies failed validation.', timeout=180)
+        frozen = self._run([str(uv), '--no-config', '--no-python-downloads', 'pip', 'freeze', '--python', str(python)],
+                           'Recording dependency versions failed.')
+        if any(' @ ' in line or '://' in line or line.startswith('-e') for line in frozen.splitlines()):
+            raise UpdateError('A dependency has an unapproved direct source. Nothing was activated.')
+        (target / 'resolved-requirements.txt').write_text(frozen, encoding='utf-8')
+        return {'schema_version': 1, 'version': version, 'python_path': python.relative_to(self.root).as_posix()}
+
+    def _stage_llama(self, plan):
+        version, digest = plan.get('version'), plan.get('sha256', '')
+        if not component_version('llama_cpp', version) or not re.fullmatch(r'[0-9a-f]{64}', digest):
+            raise UpdateError('The checked llama.cpp build is invalid. Check again.')
+        asset = 'llama-' + version + '-bin-win-vulkan-x64.zip'
+        url = 'https://github.com/ggml-org/llama.cpp/releases/download/' + version + '/' + asset
+        self._stage('downloading', 'Downloading the verified official Windows Vulkan build. The model is unchanged.')
+        data = fetch_bytes(url, MAX_ARCHIVE_BYTES)
+        if hashlib.sha256(data).hexdigest() != digest:
+            raise UpdateError('The llama.cpp download failed SHA-256 verification.')
+        target = self.root / 'local-compaction/runtimes' / ('llama-' + version + '-' + uuid.uuid4().hex)
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            members, seen = archive.infolist(), set()
+            if len(members) > 256 or sum(item.file_size for item in members) > 512 * 1024 * 1024:
+                raise UpdateError('The llama.cpp archive exceeds the extraction limit.')
+            for item in members:
+                path = PurePosixPath(item.filename)
+                mode = item.external_attr >> 16
+                if (not item.filename or '\\' in item.filename or ':' in item.filename or path.is_absolute()
+                        or '..' in path.parts or item.flag_bits & 1 or stat.S_ISLNK(mode)
+                        or any(part.endswith(('.', ' ')) or re.fullmatch(r'(?i)(CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])', part.split('.')[0])
+                               for part in path.parts)
+                        or item.file_size > 160 * 1024 * 1024 or item.filename.lower() in seen):
+                    raise UpdateError('The llama.cpp archive contains an unsafe entry.')
+                seen.add(item.filename.lower())
+            servers = [x for x in members if not x.is_dir() and PurePosixPath(x.filename).name.lower() == 'llama-server.exe']
+            if len(servers) != 1:
+                raise UpdateError('The llama.cpp archive has no unique server executable.')
+            for item in members:
+                destination = target / item.filename
+                if item.is_dir():
+                    destination.mkdir(parents=True, exist_ok=True)
+                    continue
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(item) as source, destination.open('xb') as output:
+                    shutil.copyfileobj(source, output, 65536)
+        binary = target / servers[0].filename
+        with binary.open('rb') as stream:
+            if stream.read(2) != b'MZ':
+                raise UpdateError('The llama.cpp server is not a Windows executable.')
+        return {'schema_version': 1, 'version': version, 'binary_path': binary.relative_to(self.root).as_posix()}
+
+    def _validate_optional(self, component, descriptor):
+        version = descriptor.get('version')
+        if not component_version(component, version):
+            raise UpdateError('The selected library version is invalid.')
+        executable = runtime_path(self.root, component, descriptor)
+        from local_summary_engine import isolated_environment
+        environment = isolated_environment()
+        self._stage('validating', 'Checking the candidate library before selecting it.')
+        if component == 'llama_cpp':
+            text = self._run([str(executable), '--version'], 'The llama.cpp executable did not start.', timeout=30, env=environment)
+            if not re.search(r'\b' + re.escape(version[1:]) + r'\b', text):
+                raise UpdateError('The llama.cpp binary version does not match the checked build.')
+            help_text = self._run([str(executable), '--help'], 'The llama.cpp command interface probe failed.', timeout=30, env=environment)
+            required = ('--host', '--port', '--api-key', '--reasoning-budget', '--no-agent', '--no-webui', '--no-context-shift')
+            if not all(flag in help_text for flag in required):
+                raise UpdateError('This llama.cpp build does not support the isolated summary server options.')
+            if not (self.root / 'local-compaction/model.json').is_file():
+                raise UpdateError('Choose an existing local model before updating llama.cpp so compatibility can be tested.')
+            try:
+                python = runtime_path(self.root, 'langmem')
+            except (OSError, ValueError) as error:
+                raise UpdateError('The LangMem runtime is needed to test llama.cpp against the existing local model.') from error
+            self._stage('validating_model', 'Testing the candidate with the existing local model, then unloading it. No chat content is used.')
+            report = json.loads(self._run([str(python), str(self.root / 'local_summary_engine.py'), '--bundle-root', str(self.root),
+                                          '--probe-candidate-llama', str(executable)],
+                                         'The candidate local-model compatibility test failed.', timeout=300, env=environment))
+            summary = report.get('summary')
+            if (report.get('status') != 'summarized' or report.get('model_unloaded') is not True
+                    or report.get('original_preserved') is not True or not isinstance(summary, str)
+                    or not all(marker in summary for marker in ('NEVER_DELETE_BACKUPS', 'NATIVE_COMPACTION_ENABLED'))):
+                raise UpdateError('The candidate could not preserve the local-model probe constraints and unload cleanly. The selected runtime is unchanged.')
+        else:
+            package = OPTIONAL_COMPONENTS[component][2]
+            script = 'import importlib.metadata; print(importlib.metadata.version(' + repr(package) + '))'
+            actual = self._run([str(executable), '-c', script], 'The installed package version could not be verified.', env=environment)
+            if actual.strip() != version:
+                raise UpdateError('The candidate package version does not match the checked release.')
+            if component == 'serena':
+                report = json.loads(self._run([str(executable), str(self.root / 'serena_mcp.py'), '--probe-child', '--bundle-root', str(self.root)],
+                                             'The Serena MCP compatibility probe failed.', timeout=90, env=environment))
+                from serena_mcp import NAVIGATION_TOOLS
+                if report.get('ok') is not True or set(report.get('tools', [])) != set(NAVIGATION_TOOLS):
+                    raise UpdateError('The candidate Serena tool list changed. Nothing was activated.')
+            else:
+                if not (self.root / 'tests/test_local_summary_engine.py').is_file():
+                    raise UpdateError('The local summary compatibility tests are missing. Repair the bundle first.')
+                self._run([str(executable), '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_local_summary_engine.py', '-q'],
+                          'The real LangMem incremental-summary compatibility tests failed.', timeout=120, env=environment)
+
+    def _activate_optional(self, component, descriptor):
+        runtime_path(self.root, component, descriptor)
+        manifest = runtime_manifest(self.root, component)
+        try:
+            previous = component_descriptor(self.root, component)
+        except (OSError, ValueError) as error:
+            raise UpdateError('The existing runtime selection is invalid. Repair it before updating.') from error
+        selected = dict(descriptor)
+        if previous.get('version'):
+            selected['previous'] = previous
+        if manifest.exists():
+            _atomic_json(self.directory / 'backups' / (component + '-manifest-' + uuid.uuid4().hex + '.json'),
+                         _json_file(manifest, {}))
+        _atomic_json(manifest, selected)
+
+    def _install_optional(self, component, plan):
+        candidate = self._stage_llama(plan) if component == 'llama_cpp' else self._stage_optional_python(component, plan)
+        self._validate_optional(component, candidate)
+        self._activate_optional(component, candidate)
+
+    def _install_serena(self, plan):
+        self._install_optional('serena', plan)
+
+    def _install_langmem(self, plan):
+        self._install_optional('langmem', plan)
+
+    def _install_llama_cpp(self, plan):
+        self._install_optional('llama_cpp', plan)
+
+    def _rollback_optional(self, component):
+        previous = _json_file(runtime_manifest(self.root, component), {}).get('previous')
+        if not isinstance(previous, dict):
+            raise UpdateError('There is no preserved previous runtime to restore.')
+        self._validate_optional(component, previous)
+        self._activate_optional(component, previous)
+
+    def _rollback_serena(self):
+        self._rollback_optional('serena')
+
+    def _rollback_langmem(self):
+        self._rollback_optional('langmem')
+
+    def _rollback_llama_cpp(self):
+        self._rollback_optional('llama_cpp')
