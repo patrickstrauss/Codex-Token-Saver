@@ -18,6 +18,16 @@
 .bundle-select { font:inherit; color:#edf5ef; background:#172019; border:1px solid #4b5d50; border-radius:5px; padding:8px; max-width:100%; }
 #local-summary-task { display:block; width:100%; margin:8px 0 14px; }
 .summary-text { color:#dce9df; font:inherit; font-size:13px; line-height:1.65; background:#0c120e; border:1px solid #303c33; border-radius:6px; padding:16px; max-height:360px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+.summary-reminders { min-width:0; border:1px solid #38493d; border-radius:6px; padding:12px 16px; margin:0 0 22px; }
+.summary-reminders legend { color:#dce9df; font-weight:600; padding:0 6px; }
+.summary-reminder-controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px; font-size:13px; }
+#summary-reminder-threshold { width:78px; }
+#summary-reminder-threshold:focus-visible { outline:2px solid #80ec99; outline-offset:4px; }
+.summary-reminder-tasks { display:grid; gap:8px; }
+.summary-reminder-task { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid #303c33; }
+.summary-reminder-description { min-width:0; overflow-wrap:anywhere; }
+.summary-reminder-task .updates-button { flex-shrink:0; }
+@media(max-width:520px) { .summary-reminder-task { align-items:flex-start; flex-direction:column; } }
 .rtk-window { display:flex; align-items:center; gap:8px; margin:8px 0 10px; font-size:12px; }
 .rtk-window select { padding:4px 6px; }
 .rtk-note { font-size:12px; line-height:1.6; color:#a9b5ad; margin-top:10px; }

@@ -1,4 +1,5 @@
-param([switch]$Start)
+[CmdletBinding()]
+param([switch]$Start, [switch]$Plan)
 $ErrorActionPreference = 'Stop'
 $taskRoot = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
 $taskStableRoot = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE 'CodexTokenSaver')).TrimEnd('\')
@@ -10,7 +11,17 @@ $taskPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powersh
 if (-not (Test-Path -LiteralPath $taskTrayPath -PathType Leaf)) {
     throw "Tray script is missing: $taskTrayPath"
 }
-$taskArguments = '-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $taskTrayPath + '"'
+$taskLauncher = Join-Path $taskRoot 'bin\token-saver-tray.exe'
+if (-not (Test-Path -LiteralPath $taskLauncher -PathType Leaf)) { throw 'Build native\Build-TrayLauncher.ps1 before installing startup.' }
+$taskArguments = ''
+$taskPlan = [ordered]@{
+    task_name = 'Codex Token Saver'; action = $taskLauncher; arguments = $taskArguments
+    logon_type = 3; run_level = 0; delay = 'PT10S'; execution_time_limit = 'PT0S'
+    restart_interval = 'PT1M'; restart_count = 10; startup_fallback = $false
+    disable_owned_legacy_task = 'Codex Token Saver Proxy'; remove_owned_startup_shortcut = $true
+}
+if ($Plan) { $taskPlan | ConvertTo-Json; exit 0 }
+. (Join-Path $taskRoot 'scripts\Startup-Ownership.ps1')
 $taskBackupRoot = Join-Path $taskRoot 'backups\startup'
 $taskResultPath = Join-Path $taskRoot 'install-startup-result.json'
 $taskUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -35,6 +46,8 @@ $taskResult = [ordered]@{
     }
     startup_fallback_available = $false
     errors = @()
+    backups = @()
+    retired_startup_entries = @()
 }
 
 function Get-BundlePathKey([string]$Entry) {
@@ -147,9 +160,9 @@ function Install-BundleShortcut([string]$Folder, [string]$Label, [bool]$OpenDash
     }
     $taskWsh = New-Object -ComObject WScript.Shell
     $taskShortcut = $taskWsh.CreateShortcut($taskShortcutPath)
-    $taskShortcut.TargetPath = $taskPowerShell
+    $taskShortcut.TargetPath = $taskLauncher
     $taskShortcut.Arguments = $taskArguments
-    if ($OpenDashboard) { $taskShortcut.Arguments += ' -OpenDashboard' }
+    if ($OpenDashboard) { $taskShortcut.Arguments = '-OpenDashboard' }
     $taskShortcut.WorkingDirectory = $taskRoot
     $taskShortcut.WindowStyle = 7
     $taskShortcut.Description = 'Codex Token Saver local tray and savings dashboard'
@@ -174,15 +187,11 @@ function Install-BundleShortcut([string]$Folder, [string]$Label, [bool]$OpenDash
 }
 
 foreach ($taskShortcutSpec in @(
-    @{ Folder = [Environment]::GetFolderPath('Startup'); Label = 'startup'; OpenDashboard = $false },
     @{ Folder = [Environment]::GetFolderPath('Programs'); Label = 'start-menu'; OpenDashboard = $true }
 )) {
     try {
         $taskShortcutResult = Install-BundleShortcut @taskShortcutSpec
         $taskResult.shortcuts += $taskShortcutResult
-        if ($taskShortcutSpec.Label -eq 'startup') {
-            $taskResult.startup_fallback_available = [bool]($taskShortcutResult.exists -and $taskShortcutResult.tray_exists)
-        }
     } catch {
         $taskResult.errors += ($taskShortcutSpec.Label + ': ' + $_.Exception.Message)
     }
@@ -204,39 +213,29 @@ try {
     $taskDefinition.Settings.StopIfGoingOnBatteries = $false
     $taskDefinition.Settings.ExecutionTimeLimit = 'PT0S'
     $taskDefinition.Settings.MultipleInstances = 2 # TASK_INSTANCES_IGNORE_NEW.
+    $taskDefinition.Settings.RestartInterval = $taskPlan.restart_interval
+    $taskDefinition.Settings.RestartCount = $taskPlan.restart_count
     $taskTrigger = $taskDefinition.Triggers.Create(9) # TASK_TRIGGER_LOGON.
     $taskTrigger.UserId = $taskUser
     $taskTrigger.Enabled = $true
     $taskTrigger.Delay = 'PT10S'
     $taskAction = $taskDefinition.Actions.Create(0) # TASK_ACTION_EXEC.
-    $taskAction.Path = $taskPowerShell
+    $taskAction.Path = $taskLauncher
     $taskAction.Arguments = $taskArguments
     $taskAction.WorkingDirectory = $taskRoot
-    $taskRegistered = $taskSchedulerRoot.RegisterTaskDefinition(
-        'Codex Token Saver', $taskDefinition, 6, $taskUser, $null, 3, $null
-    ) # TASK_CREATE_OR_UPDATE with the current interactive user.
-    $taskReadback = $taskRegistered.Definition
-    $taskResult.scheduled_task.registered = $true
-    $taskResult.scheduled_task['path'] = $taskRegistered.Path
-    $taskResult.scheduled_task['user'] = $taskReadback.Principal.UserId
-    $taskResult.scheduled_task['logon_type'] = $taskReadback.Principal.LogonType
-    $taskResult.scheduled_task['run_level'] = $taskReadback.Principal.RunLevel
-    $taskResult.scheduled_task['action'] = $taskReadback.Actions.Item(1).Path
-    $taskResult.scheduled_task['arguments'] = $taskReadback.Actions.Item(1).Arguments
-    $taskResult.scheduled_task['working_directory'] = $taskReadback.Actions.Item(1).WorkingDirectory
-    if ($Start) {
-        $taskRunning = $taskRegistered.Run($null)
-        $taskResult.scheduled_task.started = $true
-        $taskResult.scheduled_task['instance_guid'] = $taskRunning.InstanceGuid
-        $taskResult.scheduled_task['state_at_dispatch'] = $taskRunning.State
-    }
+    $taskShell = New-Object -ComObject WScript.Shell
+    $taskStartupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'Codex Token Saver.lnk'
+    $taskMigration = Invoke-BundleStartupMigration $taskSchedulerRoot $taskDefinition $taskRoot $taskUser $taskStartupShortcut $taskShell $taskBackupRoot -Start:$Start
+    $taskResult.scheduled_task = $taskMigration.scheduled_task
+    $taskResult.backups += $taskMigration.backups
+    $taskResult.retired_startup_entries = $taskMigration.retired_startup_entries
 } catch {
     $taskResult.scheduled_task.limitation = $_.Exception.Message
     $taskResult.errors += ('scheduled-task: ' + $_.Exception.Message)
-    # Leave the ordinary Startup shortcut in place; do not request elevation.
+    # The migration helper rolls back touched tasks and the exact Startup shortcut.
 }
 
-$taskResult['success'] = [bool]($taskResult.startup_fallback_available -or $taskResult.scheduled_task.registered)
+$taskResult['success'] = [bool]($taskResult.scheduled_task.registered -and $taskResult.errors.Count -eq 0)
 $taskResult | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $taskResultPath -Encoding UTF8
 $taskResult | ConvertTo-Json -Depth 8
 if (-not $taskResult.success) { exit 1 }

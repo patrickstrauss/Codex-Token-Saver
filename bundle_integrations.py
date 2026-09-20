@@ -14,6 +14,29 @@ TOOLS = {
     'local_summaries': ['list_local_summary_tasks', 'refresh_local_summary', 'get_local_summary'],
 }
 
+SERENA_GUIDANCE = (
+    b'\n<!-- BEGIN CODEX TOKEN SAVER SERENA -->\n'
+    b'For relevant coding navigation, use the enabled bundle Serena tools implicitly without a per-task setup prompt. '
+    b'Activate the current checkout with activate_project using its absolute path; reactivate when switching checkouts. '
+    b'Prefer get_symbols_overview, find_symbol and find_referencing_symbols before reading whole code files. '
+    b'Before editing or making exact claims, fetch original bodies with find_symbol(include_body=true) or native file reads. '
+    b'When Serena is off, unavailable, unsupported or unhelpful, continue with native tools; skip irrelevant calls. '
+    b'Respect the bundle toggle and do not enable it automatically. Serena guides tool selection; it does not intercept all reads.\n'
+    b'<!-- END CODEX TOKEN SAVER SERENA -->\n'
+)
+
+
+def _serena_guidance(before, enabled):
+    start = b'<!-- BEGIN CODEX TOKEN SAVER SERENA -->'
+    end = b'<!-- END CODEX TOKEN SAVER SERENA -->'
+    pattern = re.compile(b'\r?\n' + re.escape(start) + b'\r?\n.*?\r?\n' + re.escape(end) + b'\r?\n', re.S)
+    matches = list(pattern.finditer(before))
+    if len(matches) > 1 or before.count(start) != len(matches) or before.count(end) != len(matches):
+        raise ValueError('Managed Serena guidance markers are damaged; settings were left unchanged.')
+    if matches:
+        return pattern.sub(lambda _: SERENA_GUIDANCE if enabled else b'', before)
+    return before + SERENA_GUIDANCE if enabled else before
+
 
 def _read(path):
     try:
@@ -99,20 +122,38 @@ class BundleIntegrations:
             tomllib.loads(updated.lstrip('\ufeff'))
             after = updated.encode('utf-8')
             previous_enabled = load_preferences(self.root)[component]
-            if after != before:
-                if _read(self.config) != before:
-                    raise ValueError('Codex configuration changed during this operation. Try again.')
-                stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-                atomic_write(self.root / 'integrations/backups' / f'config-{stamp}.toml', before)
+            changes = [(self.config, before, after, self.config.exists())]
+            if component == 'serena':
+                agents = self.home / 'AGENTS.md'
+                original = _read(agents)
+                changes.append((agents, original, _serena_guidance(original, enabled), agents.exists()))
+            changes = [item for item in changes if item[1] != item[2]]
+            stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+            for path, original, updated, existed in changes:
+                if _read(path) != original or path.exists() != existed:
+                    raise ValueError('Codex configuration or guidance changed during this operation. Try again.')
+                atomic_write(self.root / 'integrations/backups' / f'{path.stem}-{stamp}{path.suffix}', original)
             # Disabling reaches loaded wrappers before removing future MCP configuration.
             # A failed write rolls back this component while preserving unrelated settings.
-            set_preference(self.root, component, enabled)
+            attempted = []
             try:
-                if after != before:
-                    if _read(self.config) != before:
-                        raise ValueError('Codex configuration changed during this operation. Try again.')
-                    atomic_write(self.config, after)
+                set_preference(self.root, component, enabled)
+                for change in changes:
+                    path, original, updated, existed = change
+                    if _read(path) != original or path.exists() != existed:
+                        raise ValueError('Codex configuration or guidance changed during this operation. Try again.')
+                    attempted.append(change)
+                    atomic_write(path, updated)
             except Exception:
-                set_preference(self.root, component, previous_enabled)
+                try:
+                    for path, original, updated, existed in reversed(attempted):
+                        # Never overwrite a concurrent external edit during rollback.
+                        if _read(path) == updated:
+                            if existed:
+                                atomic_write(path, original)
+                            else:
+                                path.unlink(missing_ok=True)
+                finally:
+                    set_preference(self.root, component, previous_enabled)
                 raise
         return {'component': component, 'enabled': enabled, 'restart_required': True}

@@ -13,6 +13,19 @@
   <summary>Experimental local summaries <span class="updates-muted">LangMem + llama.cpp</span></summary>
   <div class="updates-body">
     <p class="updates-muted">Create a local summary for a task you select. Native Codex compaction remains enabled. This does not replace or edit your conversation.</p>
+    <fieldset class="summary-reminders">
+      <legend>Optional reference-summary reminders</legend>
+      <p class="updates-muted" id="summary-reminder-help">Remind me when a task's reported context reaches the threshold. Reminders read usage metadata only; generating a summary still requires Refresh summary.</p>
+      <div class="summary-reminder-controls">
+        <label class="component-toggle"><input type="checkbox" id="summary-reminder-enabled" role="switch" disabled> Reminders</label>
+        <label for="summary-reminder-threshold">Context threshold (%)</label>
+        <input class="bundle-select" type="number" id="summary-reminder-threshold" min="20" max="95" step="1" aria-describedby="summary-reminder-help" disabled>
+        <button type="button" class="updates-button" id="summary-reminder-save" disabled>Save reminders</button>
+      </div>
+      <p id="summary-reminder-status" class="updates-muted" role="status">Open this panel to check reminders.</p>
+      <p id="summary-reminder-error" class="updates-error" role="alert" hidden></p>
+      <div id="summary-reminder-tasks" class="summary-reminder-tasks"></div>
+    </fieldset>
     <label for="local-summary-task">Task to summarize</label>
     <select id="local-summary-task" class="bundle-select"><option value="">Choose a task...</option></select>
     <div class="updates-actions">

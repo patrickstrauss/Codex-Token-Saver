@@ -86,7 +86,7 @@
         el('local-summary-reload').disabled = summaryBusy;
     }
     async function tasks() {
-        if (summaryBusy || !el('local-summary-panel').open || document.hidden) return;
+        if (summaryBusy || !el('local-summary-panel').open || document.hidden) return false;
         try {
             var response = await fetch('/api/local-summaries', {credentials:'same-origin', cache:'no-store'}), data = await response.json();
             if (!response.ok) throw new Error();
@@ -102,7 +102,8 @@
                 : summaryState.available ? 'Ready for an explicit summary request. Both LangMem and llama.cpp must be On.'
                 : 'Local summary runtime is unavailable. Check the component controls.';
             summaryButtons();
-        } catch (_) { error('local-summary-error', 'Task list is unavailable. Original conversations are unchanged.'); }
+            return true;
+        } catch (_) { error('local-summary-error', 'Task list is unavailable. Original conversations are unchanged.'); return false; }
     }
     async function readSummary() {
         var task = selectedTask, current = ++summaryGeneration;
@@ -147,11 +148,98 @@
         } catch (_) { error('local-summary-error', 'The response was interrupted. Check status before starting another job.'); }
         finally { summaryBusy = false; await tasks(); await readSummary(); summaryButtons(); }
     }
-    el('local-summary-panel').addEventListener('toggle', tasks);
+    var reminderState = {}, reminderReading = false, reminderSaving = false, reminderDirty = false, reminderGeneration = 0;
+    function reminderControls() {
+        var ready = typeof reminderState.enabled === 'boolean' && Number.isInteger(reminderState.threshold_percent);
+        el('summary-reminder-enabled').disabled = reminderSaving || !ready;
+        el('summary-reminder-threshold').disabled = reminderSaving || !ready;
+        el('summary-reminder-save').disabled = reminderSaving || !ready || !reminderDirty;
+    }
+    function renderReminders() {
+        if (!reminderDirty) {
+            el('summary-reminder-enabled').checked = reminderState.enabled === true;
+            el('summary-reminder-threshold').value = reminderState.threshold_percent == null ? '' : reminderState.threshold_percent;
+        }
+        reminderControls();
+        var list = el('summary-reminder-tasks'); list.replaceChildren();
+        var known = function (task) { return typeof task.context_percent === 'number' && Number.isFinite(task.context_percent); };
+        var allTasks = reminderState.tasks || [], pending = allTasks.filter(function (task) { return task.needs_summary === true; });
+        var unavailable = allTasks.filter(function (task) { return !known(task); }).length;
+        el('summary-reminder-status').textContent = reminderSaving ? 'Saving reminder preferences...'
+            : reminderState.enabled === false ? 'Reminders are Off.'
+            : reminderState.active === false ? (reminderState.reason || 'Reminders are enabled but currently inactive.')
+            : reminderState.enabled === true ? (pending.length ? pending.length + ' task(s) ready for an optional reference summary.'
+                : 'No tasks currently need a reference-summary reminder.')
+            : 'Reminder status is unavailable.';
+        if (unavailable) el('summary-reminder-status').textContent += ' Latest context is unavailable for ' + unavailable + ' task(s).';
+        if (reminderState.enabled !== true || reminderState.active === false) return;
+        pending.forEach(function (task) {
+            var row = textNode('div', 'summary-reminder-task'), description = textNode('div', 'summary-reminder-description');
+            description.append(textNode('strong', '', task.title || task.task_id));
+            var tokens = typeof task.input_tokens === 'number' && typeof task.context_window === 'number'
+                ? ' · ' + task.input_tokens.toLocaleString() + ' / ' + task.context_window.toLocaleString() + ' input/window tokens' : '';
+            description.append(textNode('p', 'component-reason', (known(task) ? task.context_percent.toFixed(1) + '% context' : 'Latest context unavailable') + tokens));
+            var select = textNode('button', 'updates-button', 'Select task'); select.type = 'button';
+            select.disabled = summaryBusy;
+            select.addEventListener('click', async function () {
+                if (summaryBusy) return;
+                selectedTask = task.task_id;
+                if (!await tasks()) return;
+                if (selectedTask !== task.task_id) { error('summary-reminder-error', 'This task is no longer available in the summary picker. Reload tasks.'); return; }
+                error('local-summary-error', '');
+                summaryButtons(); await readSummary();
+                el('local-summary-task').focus();
+            });
+            row.append(description, select); list.append(row);
+        });
+    }
+    async function loadReminders() {
+        if (reminderReading || reminderSaving || document.hidden || !el('local-summary-panel').open) return;
+        reminderReading = true; var current = ++reminderGeneration;
+        try {
+            var response = await fetch('/api/summary-reminders', {credentials:'same-origin', cache:'no-store'}), data = await response.json();
+            if (current !== reminderGeneration) return;
+            if (!response.ok) throw new Error();
+            reminderState = data; error('summary-reminder-error', data.error || ''); renderReminders();
+        } catch (_) { if (current === reminderGeneration) error('summary-reminder-error', 'Reminder status is unavailable. Displayed values may be stale.'); }
+        finally { reminderReading = false; }
+    }
+    async function saveReminders() {
+        if (reminderSaving || !reminderDirty) return;
+        var threshold = Number(el('summary-reminder-threshold').value);
+        if (!Number.isInteger(threshold) || threshold < 20 || threshold > 95) {
+            error('summary-reminder-error', 'Enter a whole-number context threshold from 20% to 95%.'); return;
+        }
+        reminderSaving = true; ++reminderGeneration; error('summary-reminder-error', ''); reminderControls();
+        try {
+            var response = await fetch('/api/summary-reminders', {method:'POST', credentials:'same-origin', cache:'no-store',
+                headers:{'Content-Type':'application/json', 'X-Codex-Update-Token':token},
+                body:JSON.stringify({enabled:el('summary-reminder-enabled').checked, threshold_percent:threshold})});
+            var data = await response.json();
+            if (!response.ok) { error('summary-reminder-error', data.error || 'Reminder preferences could not be saved.'); return; }
+            reminderState = data; reminderDirty = false; error('summary-reminder-error', data.error || '');
+        } catch (_) { error('summary-reminder-error', 'Saving was interrupted. Reload the panel to check the saved preferences.'); }
+        finally { reminderSaving = false; renderReminders(); }
+    }
+    el('summary-reminder-enabled').addEventListener('change', function () { reminderDirty = true; reminderControls(); });
+    el('summary-reminder-threshold').addEventListener('input', function () { reminderDirty = true; reminderControls(); });
+    el('summary-reminder-save').addEventListener('click', saveReminders);
+    el('local-summary-panel').addEventListener('toggle', function () { tasks(); loadReminders(); });
     el('local-summary-task').addEventListener('change', function () { selectedTask = this.value; error('local-summary-error', ''); summaryButtons(); readSummary(); });
-    el('local-summary-reload').addEventListener('click', tasks);
+    el('local-summary-reload').addEventListener('click', function () { tasks(); loadReminders(); });
     el('local-summary-refresh').addEventListener('click', function () { summaryAction('start'); });
     el('local-summary-cancel').addEventListener('click', function () { summaryAction('cancel'); });
-    setInterval(function () { if (document.hidden) return; load(); if (el('local-summary-panel').open) { tasks(); if (selectedTask) readSummary(); } }, 10000);
+    setInterval(function () { if (document.hidden) return; load(); if (el('local-summary-panel').open) { tasks(); loadReminders(); if (selectedTask) readSummary(); } }, 10000);
+    async function startupSummary() {
+        if (typeof location === 'undefined') return;
+        var params = new URLSearchParams(location.search), task = params.get('summary_task') || '';
+        var valid = params.getAll('summary_task').length === 1 && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(task);
+        if (!valid && location.hash !== '#local-summary-panel') return;
+        el('local-summary-panel').open = true;
+        if (valid) selectedTask = task;
+        loadReminders();
+        if (await tasks() && valid && selectedTask === task) await readSummary();
+    }
     load();
+    startupSummary();
 })();

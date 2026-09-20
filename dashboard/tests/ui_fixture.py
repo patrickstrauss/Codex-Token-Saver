@@ -10,6 +10,7 @@ with patch('threading.Thread.start'):
     import app as dashboard
 from flask import Flask, Response
 from component_routes import register_component_routes
+from summary_reminder_routes import register_summary_reminder_routes
 from proxy_routes import register_proxy_routes, PANEL_HTML
 from update_routes import register_update_routes
 
@@ -71,6 +72,21 @@ class Proxy:
         return self.status()
 
 
+class Reminders:
+    def __init__(self):
+        self.enabled, self.threshold = True, 70
+
+    def status(self):
+        return {'enabled': self.enabled, 'threshold_percent': self.threshold, 'active': self.enabled,
+                'error': None, 'tasks': [{'task_id': FIXTURE_TASK, 'title': 'UI fixture · no real conversation',
+                'input_tokens': 210000, 'context_window': 300000, 'context_percent': 70.0,
+                'needs_summary': self.enabled and self.threshold <= 70}]}
+
+    def configure(self, enabled, threshold_percent):
+        self.enabled, self.threshold = enabled, threshold_percent
+        return self.status()
+
+
 class Updates:
     def status(self):
         return {'busy': False, 'components': [{'id': key, 'current': 'fixture', 'update_available': False}
@@ -83,6 +99,7 @@ def create_app():
     guard = register_update_routes(fixture, root, 18795, {}, lambda _: Updates())
     controls, summaries = Controls(), Summaries()
     register_component_routes(fixture, root, guard, lambda _: controls, lambda _: summaries)
+    register_summary_reminder_routes(fixture, root, guard, lambda _: Reminders())
     register_proxy_routes(fixture, root, guard, lambda _: Proxy())
 
     @fixture.route('/')

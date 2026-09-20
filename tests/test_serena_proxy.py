@@ -7,10 +7,18 @@ from unittest.mock import AsyncMock
 
 from mcp.types import CallToolResult, TextContent
 from bundle_preferences import set_preference
-from serena_proxy import SerenaBridge
+from serena_proxy import SerenaBridge, SERENA_INSTRUCTIONS
 
 
 class SerenaProxyTests(unittest.IsolatedAsyncioTestCase):
+    def test_initialization_instructions_fit_codex_server_guidance_limit(self):
+        from mcp.server.lowlevel import Server
+        server = Server('bundle-serena', instructions=SERENA_INSTRUCTIONS)
+        self.assertEqual(server.create_initialization_options().instructions, SERENA_INSTRUCTIONS)
+        self.assertLessEqual(len(SERENA_INSTRUCTIONS), 512)
+        for phrase in ('implicitly', 'activate_project', 'get_symbols_overview', 'include_body=true', 'off', 'native'):
+            self.assertIn(phrase, SERENA_INSTRUCTIONS)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

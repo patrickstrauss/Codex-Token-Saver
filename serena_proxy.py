@@ -15,6 +15,14 @@ from desktop_proxy_control import atomic_write, routing_lock
 from exact_retrieval import sign_exact_response
 from serena_mcp import NAVIGATION_TOOLS, launch_spec
 
+SERENA_INSTRUCTIONS = (
+    'Use Serena implicitly for relevant coding navigation when enabled. Activate the current '
+    'checkout with activate_project (absolute path), then prefer get_symbols_overview, find_symbol '
+    'and find_referencing_symbols before whole-file reads. Fetch exact bodies with '
+    'find_symbol(include_body=true) or native reads before edits. If off, unavailable or '
+    'unsupported, use native tools. Skip irrelevant calls; no per-task setup prompt is needed.'
+)
+
 
 class SerenaBridge:
     def __init__(self, root, session):
@@ -81,7 +89,7 @@ async def run_bridge(root):
             if {tool.name for tool in tools} != set(NAVIGATION_TOOLS):
                 raise RuntimeError('Serena navigation tool configuration changed; revalidate the managed runtime.')
             bridge = SerenaBridge(root, session)
-            server = Server('bundle-serena')
+            server = Server('bundle-serena', instructions=SERENA_INSTRUCTIONS)
 
             @server.list_tools()
             async def list_tools():

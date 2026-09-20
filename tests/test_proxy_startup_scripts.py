@@ -22,10 +22,13 @@ class ProxyStartupScriptsTests(unittest.TestCase):
         self.profile = Path(self.folder.name)
         self.bundle = self.profile / 'CodexTokenSaver'
         self.bundle.mkdir()
-        for name in ('Install-ProxyStartup.ps1', 'Restore-Codex-Direct.ps1'):
+        for name in ('Install-ProxyStartup.ps1', 'Install-Startup.ps1', 'Restore-Codex-Direct.ps1'):
             shutil.copy2(ROOT / name, self.bundle / name)
         for name in ('desktop_proxy_service.py', 'desktop_proxy_control.py'):
             (self.bundle / name).write_text('# isolated fixture\n')
+        (self.bundle / 'Tray.ps1').write_text('# isolated fixture\n')
+        (self.bundle / 'bin').mkdir()
+        (self.bundle / 'bin/token-saver-tray.exe').write_bytes(b'plan fixture')
         runtime = self.bundle / 'headroom/.venv/Scripts'
         runtime.mkdir(parents=True)
         installed_venv = Path(sys.prefix)
@@ -44,17 +47,16 @@ class ProxyStartupScriptsTests(unittest.TestCase):
         result = self.run_script('Install-ProxyStartup.ps1', '-Plan')
         self.assertEqual(result.returncode, 0, result.stderr)
         plan = json.loads(result.stdout)
-        self.assertEqual(plan['task_name'], 'Codex Token Saver Proxy')
-        self.assertEqual(Path(plan['action']).resolve(), (self.bundle / 'headroom/.venv/Scripts/pythonw.exe').resolve())
-        self.assertEqual(plan['arguments'], '"' + str((self.bundle / 'desktop_proxy_service.py').resolve()) + '" run')
+        self.assertEqual(plan['task_name'], 'Codex Token Saver')
+        self.assertEqual(Path(plan['action']).resolve(), (self.bundle / 'bin/token-saver-tray.exe').resolve())
+        self.assertEqual(plan['arguments'], '')
         self.assertEqual(plan['logon_type'], 3)
         self.assertEqual(plan['run_level'], 0)
-        self.assertEqual(plan['delay'], 'PT0S')
+        self.assertEqual(plan['delay'], 'PT10S')
         self.assertEqual(plan['execution_time_limit'], 'PT0S')
         self.assertEqual(plan['restart_interval'], 'PT1M')
         self.assertEqual(plan['restart_count'], 10)
-        self.assertFalse(plan['disallow_on_battery'])
-        self.assertFalse(plan['stop_on_battery'])
+        self.assertFalse(plan['startup_fallback'])
         self.assertEqual(Path(plan['shortcut']).resolve(), (self.profile / 'AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Codex Token Saver - Restore Direct.lnk').resolve())
         self.assertEqual(set(self.bundle.rglob('*')), before)
 
