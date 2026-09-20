@@ -8,9 +8,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import queue
 import re
 import subprocess
 import sys
+import threading
 import time
 import uuid
 
@@ -22,6 +24,8 @@ MAX_LINE_BYTES = 2 * 1024 * 1024
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
 MAX_SEGMENT_CHARS = 4000
 MAX_BATCH_BYTES = 20000
+MAX_STATE_BYTES = 8 * 1024 * 1024
+SUMMARY_VERSION = 2
 TASK_ID = re.compile(r'^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$')
 ACTIVE = {'queued', 'running', 'cancelling'}
 
@@ -29,8 +33,8 @@ ACTIVE = {'queued', 'running', 'cancelling'}
 def _read(path, default=None):
     try:
         with path.open('rb') as stream:
-            data = stream.read(2 * 1024 * 1024 + 1)
-        if len(data) > 2 * 1024 * 1024:
+            data = stream.read(MAX_STATE_BYTES + 1)
+        if len(data) > MAX_STATE_BYTES:
             raise ValueError('Local summary state exceeds the limit.')
         return json.loads(data)
     except FileNotFoundError:
@@ -38,7 +42,19 @@ def _read(path, default=None):
 
 
 def _write(path, value):
-    atomic_write(path, json.dumps(value, ensure_ascii=False).encode('utf-8'))
+    data = json.dumps(value, ensure_ascii=False).encode('utf-8')
+    if len(data) > MAX_STATE_BYTES:
+        raise ValueError('Local summary state exceeds the limit; previous checkpoint retained.')
+    # Windows cannot replace a checkpoint while a dashboard reader holds it open.
+    # Keep atomic publication, allowing only a short sharing-violation retry.
+    for attempt in range(50):
+        try:
+            atomic_write(path, data)
+            return
+        except PermissionError:
+            if attempt == 49:
+                raise
+            time.sleep(.02)
 
 
 @contextmanager
@@ -143,11 +159,17 @@ class LocalSummaries:
                 break
         return result
 
-    def _read_rollout(self, path, task_id):
+    def _read_rollout(self, path, task_id, *, on_progress=None):
         messages, calls = [], {}
         result = {'messages': messages, 'source_truncated': False, 'source_incomplete': False,
-                  'skipped_lines': 0, 'incomplete_tool_pairs': 0}
-        total = 0
+                  'skipped_lines': 0, 'oversized_lines': 0, 'malformed_lines': 0,
+                  'incomplete_tool_pairs': 0}
+        # Bound individual JSON allocations, not how much history can be scanned.
+        record_limit = 16 * 1024 * 1024
+        snapshot_bytes = Path(path).stat().st_size
+        total = progress_bytes = records = 0
+        line = bytearray()
+        oversized = False
 
         def add(role, content):
             if not content:
@@ -160,26 +182,32 @@ class LocalSummaries:
                 messages.append({'id': ident, 'role': role, 'content': value})
 
         with Path(path).open('rb') as source:
-            while True:
-                line = source.readline(MAX_LINE_BYTES + 1)
-                if not line:
-                    break
-                total += len(line)
-                if total > MAX_SOURCE_BYTES:
-                    result['source_truncated'] = True
-                    break
-                if len(line) > MAX_LINE_BYTES:
-                    result['source_truncated'] = True
-                    result['skipped_lines'] += 1
-                    while line and not line.endswith(b'\n'):
-                        line = source.readline(MAX_LINE_BYTES + 1)
-                        total += len(line)
-                        if total > MAX_SOURCE_BYTES:
-                            return result
-                    continue
-                if not line.endswith(b'\n'):
+            while total < snapshot_bytes:
+                chunk = source.readline(min(MAX_LINE_BYTES + 1, 1024 * 1024, snapshot_bytes - total))
+                if not chunk:
                     result['source_incomplete'] = True
                     break
+                total += len(chunk)
+                if not oversized:
+                    if len(line) + len(chunk) > record_limit:
+                        oversized = True
+                        line.clear()
+                    else:
+                        line.extend(chunk)
+                complete = chunk.endswith(b'\n')
+                records += int(complete)
+                if on_progress and (total - progress_bytes >= 1024 * 1024 or
+                                    (complete and records % 128 == 0)):
+                    on_progress(total, snapshot_bytes)
+                    progress_bytes = total
+                if not complete:
+                    continue
+                if oversized:
+                    result['source_truncated'] = True
+                    result['skipped_lines'] += 1
+                    result['oversized_lines'] += 1
+                    oversized = False
+                    continue
                 try:
                     row = json.loads(line)
                     payload = row.get('payload', {})
@@ -190,7 +218,8 @@ class LocalSummaries:
                     if row.get('type') != 'response_item' or not isinstance(payload, dict):
                         continue
                     kind = payload.get('type')
-                    if kind == 'message' and payload.get('role') in {'user', 'assistant'} and payload.get('phase') != 'analysis':
+                    if (kind == 'message' and payload.get('role') in {'user', 'assistant'}
+                            and payload.get('phase') != 'analysis' and payload.get('channel') != 'analysis'):
                         chunks = payload.get('content', [])
                         if isinstance(chunks, list):
                             add(payload['role'], '\n'.join(x['text'] for x in chunks
@@ -204,9 +233,16 @@ class LocalSummaries:
                             if not isinstance(output, str):
                                 output = json.dumps(output, ensure_ascii=False)
                             add('tool', f'[Tool result: {name}]\n{output}')
-                except (ValueError, TypeError, AttributeError):
+                except (ValueError, TypeError, AttributeError, RecursionError):
                     result['skipped_lines'] += 1
+                    result['malformed_lines'] += 1
                     result['source_truncated'] = True
+                finally:
+                    line.clear()
+        if line or oversized:
+            result['source_incomplete'] = True
+        if on_progress and progress_bytes != total:
+            on_progress(total, snapshot_bytes)
         result['incomplete_tool_pairs'] = len(calls)
         return result
 
@@ -216,7 +252,7 @@ class LocalSummaries:
         saved = _read(self._saved_path(task_id), {})
         ids = [m['id'] for m in parsed['messages']]
         covered = saved.get('covered_ids', [])
-        matches = ids[:len(covered)] == covered
+        matches = saved.get('format_version') == SUMMARY_VERSION and ids[:len(covered)] == covered
         count = len(covered) if matches else 0
         status = 'stale' if saved and not matches else saved.get('status', 'not_started')
         if saved and matches:
@@ -287,108 +323,176 @@ class LocalSummaries:
                 not prefs['local_summaries'] or not prefs['llama_cpp'])
 
     def _engine(self, request, task_id, job_id):
-        command = [str(self._runtime('langmem')),
-                   str(self.root / 'local_summary_engine.py')]
-        process = subprocess.Popen(command, cwd=self.root, env=isolated_environment(),
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        close_job = lambda: None
-        try:
-            close_job = _windows_job(process)
-            data = json.dumps(request, ensure_ascii=False).encode('utf-8')
-            deadline = time.monotonic() + 900
-            while True:
-                if self._cancelled(job_id):
-                    raise RuntimeError('Summary cancelled.')
-                if time.monotonic() > deadline:
-                    raise TimeoutError('Local summary timed out.')
-                self._update_job(job_id)
+        if getattr(self, '_engine_process', None) is None:
+            command = [str(self._runtime('langmem')),
+                       str(self.root / 'local_summary_engine.py'), '--session']
+            self._engine_process = subprocess.Popen(command, cwd=self.root, env=isolated_environment(),
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            self._engine_close_job = lambda: None
+            self._engine_close_job = _windows_job(self._engine_process)
+            self._engine_replies = queue.Queue()
+            process, replies = self._engine_process, self._engine_replies
+            def read_replies():
                 try:
-                    output, _ = process.communicate(input=data, timeout=1)
-                    if process.returncode or len(output) > 2 * 1024 * 1024:
-                        raise RuntimeError('Local summary engine failed.')
-                    return json.loads(output)
-                except subprocess.TimeoutExpired:
-                    data = None
-        finally:
-            if process.poll() is None:
+                    while True:
+                        line = process.stdout.readline(2 * 1024 * 1024 + 1)
+                        if not line or len(line) > 2 * 1024 * 1024:
+                            break
+                        replies.put(line)
+                finally:
+                    replies.put(None)
+            self._engine_reader = threading.Thread(target=read_replies, daemon=True)
+            self._engine_reader.start()
+        process = self._engine_process
+        data = json.dumps(request, ensure_ascii=False).encode('utf-8') + b'\n'
+        if len(data) > 2 * 1024 * 1024:
+            raise ValueError('Local summary request exceeds the limit.')
+        process.stdin.write(data)
+        process.stdin.flush()
+        deadline = time.monotonic() + 900
+        while True:
+            if self._cancelled(job_id):
+                raise RuntimeError('Summary cancelled.')
+            if time.monotonic() > deadline:
+                raise TimeoutError('Local summary timed out.')
+            self._update_job(job_id)
+            try:
+                output = self._engine_replies.get(timeout=1)
+            except queue.Empty:
+                continue
+            if output is None:
+                raise RuntimeError('Local summary engine stopped.')
+            return json.loads(output)
+
+    def _close_engine(self):
+        process = getattr(self, '_engine_process', None)
+        if process is None:
+            return
+        try:
+            try:
+                process.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
+            try:
+                process.wait(5)
+            except subprocess.TimeoutExpired:
                 process.terminate()
                 try:
                     process.wait(5)
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(5)
-            close_job()
+        finally:
+            self._engine_close_job()
+            reader = getattr(self, '_engine_reader', None)
+            if reader:
+                reader.join(timeout=1)
+            process.stdout.close()
+            self._engine_process = None
 
     def _run_job(self, task_id, job_id):
         with job_lock(self.state / 'worker.lock'):
+            terminal, failure = 'failed', None
             try:
                 if self._cancelled(job_id):
-                    self._update_job(job_id, status='cancelled')
+                    terminal = 'cancelled'
                     return
-                self._update_job(job_id, status='running')
-                parsed = self._read_rollout(self._path(task_id), task_id)
+                self._update_job(job_id, status='running', phase='reading', batches_completed=0)
+                def progress(scanned, total):
+                    if self._cancelled(job_id):
+                        raise RuntimeError('Summary cancelled.')
+                    self._update_job(job_id, scanned_bytes=scanned, snapshot_bytes=total)
+                parsed = self._read_rollout(self._path(task_id), task_id, on_progress=progress)
                 messages = parsed['messages']
                 saved = _read(self._saved_path(task_id), {})
                 covered = saved.get('covered_ids', [])
-                if [m['id'] for m in messages[:len(covered)]] != covered:
+                if (saved.get('format_version') != SUMMARY_VERSION or
+                        [m['id'] for m in messages[:len(covered)]] != covered):
                     covered, saved = [], {}
-                pending, size = [], 0
-                for message in messages[len(covered):]:
-                    count = len(json.dumps(message, ensure_ascii=False).encode('utf-8'))
-                    if size + count > MAX_BATCH_BYTES:
-                        break
-                    pending.append(message)
-                    size += count
-                if not pending:
-                    self._update_job(job_id, status='unchanged')
+                incomplete = (parsed['source_truncated'] or parsed['source_incomplete'] or
+                              parsed['incomplete_tool_pairs'])
+                self._update_job(job_id, phase='summarizing', processed_messages=len(covered),
+                                 total_messages=len(messages))
+                if len(covered) == len(messages):
+                    terminal = 'partial' if incomplete else 'unchanged'
                     return
-                request = {'messages': pending, 'max_summary_tokens': 1024}
-                if saved.get('running_summary'):
-                    request['previous_summary'] = saved['running_summary']
-                value = self._engine(request, task_id, job_id)
-                if self._cancelled(job_id):
-                    self._update_job(job_id, status='cancelled')
-                    return
-                running = value.get('running_summary')
-                if value.get('status') == 'failed' or not isinstance(running, dict) or not value.get('summary'):
-                    raise RuntimeError('The local model returned no usable summary.')
-                returned = set(running.get('summarized_message_ids', []))
-                allowed = covered + [m['id'] for m in pending]
-                if not returned.issubset(set(allowed)) or not set(covered).issubset(returned):
-                    raise RuntimeError('Summary coverage is inconsistent.')
-                count = 0
-                for ident in allowed:
-                    if ident not in returned:
-                        break
-                    count += 1
-                if set(allowed[:count]) != returned or count <= len(covered):
-                    raise RuntimeError('Summary did not cover a complete new message prefix.')
-                status = ('summarized' if count == len(messages) and not parsed['source_truncated'] and
-                          not parsed['source_incomplete'] and not parsed['incomplete_tool_pairs'] else 'partial')
-                source_tokens = saved.get('metrics', {}).get('source_tokens', 0) + value.get('processed_input_tokens', value.get('input_tokens', 0))
-                output_tokens = value.get('output_tokens', 0)
-                summary_path = self._saved_path(task_id)
-                summary = {'task_id': task_id, 'status': status,
-                    'summary': value['summary'], 'running_summary': running, 'covered_ids': allowed[:count],
-                    'updated_at': datetime.now(timezone.utc).isoformat(),
-                    'metrics': {'source_tokens': source_tokens, 'summary_tokens': output_tokens,
-                                'estimated_size_reduction': source_tokens - output_tokens}}
-                # Linearize cancellation and publication: Cancel either precedes this
-                # transaction (no artifact change) or follows an already finished job.
-                with _control_lock(self.state / 'control.lock'):
-                    job = _read(self.job_path, {})
-                    if job.get('job_id') != job_id:
-                        raise RuntimeError('The summary job was superseded.')
+                batches = 0
+                while len(covered) < len(messages):
                     if self._cancelled(job_id):
-                        job.update(status='cancelled', heartbeat=time.time())
-                    else:
+                        terminal = 'cancelled'
+                        return
+                    pending, size = [], 0
+                    for message in messages[len(covered):]:
+                        count = len(json.dumps(message, ensure_ascii=False).encode('utf-8'))
+                        if size + count > MAX_BATCH_BYTES:
+                            break
+                        pending.append(message)
+                        size += count
+                    if not pending:
+                        raise RuntimeError('A source segment exceeds the local batch limit.')
+                    request = {'messages': pending, 'max_summary_tokens': 1024}
+                    if saved.get('running_summary'):
+                        request['previous_summary'] = saved['running_summary']
+                    value = self._engine(request, task_id, job_id)
+                    running = value.get('running_summary')
+                    if value.get('status') == 'failed' or not isinstance(running, dict) or not value.get('summary'):
+                        raise RuntimeError('The local model returned no usable summary.')
+                    returned = set(running.get('summarized_message_ids', []))
+                    allowed = covered + [m['id'] for m in pending]
+                    if not returned.issubset(set(allowed)) or not set(covered).issubset(returned):
+                        raise RuntimeError('Summary coverage is inconsistent.')
+                    count = 0
+                    for ident in allowed:
+                        if ident not in returned:
+                            break
+                        count += 1
+                    if set(allowed[:count]) != returned or count <= len(covered):
+                        raise RuntimeError('Summary did not cover a complete new message prefix.')
+                    status = ('summarized' if count == len(messages) and not incomplete else 'partial')
+                    source_tokens = saved.get('metrics', {}).get('source_tokens', 0) + value.get('processed_input_tokens', value.get('input_tokens', 0))
+                    output_tokens = value.get('output_tokens', 0)
+                    summary_path = self._saved_path(task_id)
+                    summary = {'format_version': SUMMARY_VERSION, 'task_id': task_id, 'status': status,
+                        'summary': value['summary'], 'running_summary': running, 'covered_ids': allowed[:count],
+                        'updated_at': datetime.now(timezone.utc).isoformat(),
+                        'metrics': {'source_tokens': source_tokens, 'summary_tokens': output_tokens,
+                                    'estimated_size_reduction': source_tokens - output_tokens}}
+                    # Each completed batch is a resumable checkpoint. Cancel wins
+                    # against publishing the in-flight batch, not earlier checkpoints.
+                    with _control_lock(self.state / 'control.lock'):
+                        job = _read(self.job_path, {})
+                        if job.get('job_id') != job_id:
+                            raise RuntimeError('The summary job was superseded.')
+                        if self._cancelled(job_id):
+                            terminal = 'cancelled'
+                            return
                         _write(summary_path, summary)
-                        job.update(status=status, heartbeat=time.time())
-                    _write(self.job_path, job)
+                        batches += 1
+                        job.update(status='running', heartbeat=time.time(), batches_completed=batches,
+                                   processed_messages=count, total_messages=len(messages))
+                        _write(self.job_path, job)
+                    saved, covered = summary, allowed[:count]
+                terminal = status
             except Exception as exc:
-                status = 'cancelled' if self._cancelled(job_id) else 'failed'
-                self._update_job(job_id, status=status, error=f'Local job {status} ({type(exc).__name__}); originals retained.')
+                terminal = 'cancelled' if self._cancelled(job_id) else 'failed'
+                failure = f'Local job {terminal} ({type(exc).__name__}); originals retained.'
+            finally:
+                cleanup_failed = False
+                try:
+                    self._update_job(job_id, phase='unloading')
+                finally:
+                    try:
+                        self._close_engine()
+                    except Exception as exc:
+                        cleanup_failed = True
+                        terminal = 'failed'
+                        failure = f'Local model cleanup failed ({type(exc).__name__}).'
+                        raise
+                    finally:
+                        if not cleanup_failed and self._cancelled(job_id):
+                            terminal = 'cancelled'
+                        self._update_job(job_id, status=terminal, phase='complete', error=failure)
 
 
 if __name__ == '__main__':

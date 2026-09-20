@@ -189,7 +189,7 @@ class LocalSummariesTests(unittest.TestCase):
                 c._run_job(TASK, job['job_id'])
             self.assertEqual('previous_summary' in requests[0], expected_previous)
 
-    def test_partial_engine_result_does_not_claim_complete_coverage(self):
+    def test_refresh_drains_partial_engine_results_until_snapshot_is_covered(self):
         c = self.controller()
         self.ready()
         self.rollout([{'type': 'message', 'role': 'user', 'content': [{'text': 'First'}]},
@@ -203,8 +203,127 @@ class LocalSummariesTests(unittest.TestCase):
         with patch.object(c, '_engine', side_effect=engine):
             c._run_job(TASK, job['job_id'])
         result = c.get_summary(TASK)
-        self.assertEqual(result['status'], 'partial')
-        self.assertEqual(result['coverage']['pending_messages'], 1)
+        self.assertEqual(result['status'], 'summarized')
+        self.assertEqual(result['coverage']['pending_messages'], 0)
+        self.assertEqual(c.status()['job']['batches_completed'], 2)
+
+    def test_cancel_between_batches_keeps_checkpoint_and_refresh_resumes(self):
+        c = self.controller()
+        self.ready()
+        self.rollout([{'type': 'message', 'role': 'user', 'content': [{'text': 'First'}]},
+                      {'type': 'message', 'role': 'assistant', 'content': [{'text': 'Second'}]}])
+        with patch.object(c, '_launch_worker', return_value=1234):
+            job = c.start(TASK)
+        calls = []
+        def engine(request, *args):
+            calls.append(request)
+            if len(calls) == 2:
+                c.cancel(TASK)
+            return self.fake_engine({**request, 'messages': request['messages'][:1]}, *args)
+        with patch.object(c, '_engine', side_effect=engine):
+            c._run_job(TASK, job['job_id'])
+        self.assertEqual(c.status()['job']['status'], 'cancelled')
+        self.assertEqual(c.get_summary(TASK)['coverage']['summarized_messages'], 1)
+        with patch.object(c, '_launch_worker', return_value=1234):
+            job = c.start(TASK)
+        with patch.object(c, '_engine', side_effect=self.fake_engine):
+            c._run_job(TASK, job['job_id'])
+        self.assertEqual(c.get_summary(TASK)['coverage']['pending_messages'], 0)
+
+    def test_no_progress_fails_instead_of_spinning_forever(self):
+        c = self.controller()
+        self.ready()
+        self.rollout([{'type': 'message', 'role': 'user', 'content': [{'text': 'First'}]}])
+        with patch.object(c, '_launch_worker', return_value=1234):
+            job = c.start(TASK)
+        with patch.object(c, '_engine', return_value={'status': 'unchanged', 'summary': 'old',
+                'running_summary': {'summary': 'old', 'summarized_message_ids': []}}) as engine:
+            c._run_job(TASK, job['job_id'])
+        self.assertEqual(engine.call_count, 1)
+        self.assertEqual(c.status()['job']['status'], 'failed')
+        self.assertFalse(c._saved_path(TASK).exists())
+
+    def test_engine_process_is_reused_then_closed(self):
+        import sys
+        c = self.controller()
+        self.ready()
+        self.rollout()
+        (self.root / 'local_summary_engine.py').write_text(
+            'import json, sys, os\n'
+            'for line in sys.stdin:\n'
+            ' print(json.dumps({"pid":os.getpid(),"echo":json.loads(line)}),flush=True)\n')
+        with patch.object(c, '_launch_worker', return_value=1234):
+            job = c.start(TASK)
+        self.addCleanup(lambda: getattr(c, '_close_engine', lambda: None)())
+        with patch.object(c, '_runtime', return_value=Path(sys.executable)):
+            one = c._engine({'n': 1}, TASK, job['job_id'])
+            two = c._engine({'n': 2}, TASK, job['job_id'])
+        self.assertEqual(one['pid'], two['pid'])
+        self.assertEqual(two['echo'], {'n': 2})
+        process = c._engine_process
+        c._close_engine()
+        self.assertIsNotNone(process.poll())
+
+    def test_cleanup_still_runs_if_final_status_write_fails(self):
+        c = self.controller()
+        self.ready()
+        self.rollout([{'type': 'message', 'role': 'user', 'content': [{'text': 'First'}]}])
+        with patch.object(c, '_launch_worker', return_value=1234):
+            job = c.start(TASK)
+        update = c._update_job
+        def fail_unloading(*args, **kwargs):
+            if kwargs.get('phase') == 'unloading':
+                raise OSError('fixture state write failed')
+            return update(*args, **kwargs)
+        with patch.object(c, '_engine', side_effect=self.fake_engine), \
+             patch.object(c, '_update_job', side_effect=fail_unloading), \
+             patch.object(c, '_close_engine') as close:
+            with self.assertRaises(OSError):
+                c._run_job(TASK, job['job_id'])
+        close.assert_called_once()
+
+    def test_large_checkpoint_roundtrip_and_oversized_write_preserves_previous(self):
+        c = self.controller()
+        path = c._saved_path(TASK)
+        ids = [f'{i:064x}' for i in range(16000)]
+        value = {'covered_ids': ids, 'running_summary': {'summary': 'fixture',
+            'summarized_message_ids': ids, 'last_summarized_message_id': ids[-1]}}
+        module._write(path, value)
+        self.assertEqual(module._read(path), value)
+        before = path.read_bytes()
+        with patch.object(module, 'MAX_STATE_BYTES', 100), self.assertRaises(ValueError):
+            module._write(path, value)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_checkpoint_publication_tolerates_a_brief_status_reader(self):
+        import threading
+        c = self.controller()
+        path = c._saved_path(TASK)
+        module._write(path, {'n': 0})
+        reader = path.open('rb')
+        release = threading.Timer(.08, reader.close)
+        release.start()
+        try:
+            module._write(path, {'n': 1})
+        finally:
+            release.join()
+            reader.close()
+        self.assertEqual(module._read(path), {'n': 1})
+
+    def test_old_summary_is_stale_and_explicit_refresh_rebuilds_evidence(self):
+        c = self.controller()
+        self.ready()
+        p = self.rollout([{'type': 'message', 'role': 'user', 'content': [{'text': 'First'}]}])
+        ids = [m['id'] for m in c._read_rollout(p, TASK)['messages']]
+        module._write(c._saved_path(TASK), {'summary': 'old', 'covered_ids': ids,
+                     'running_summary': {'summary': 'old', 'summarized_message_ids': ids}})
+        self.assertEqual(c.get_summary(TASK)['status'], 'stale')
+        with patch.object(c, '_launch_worker', return_value=1234):
+            job = c.start(TASK)
+        with patch.object(c, '_engine', side_effect=self.fake_engine) as engine:
+            c._run_job(TASK, job['job_id'])
+        self.assertNotIn('previous_summary', engine.call_args.args[0])
+        self.assertEqual(c.get_summary(TASK)['status'], 'summarized')
 
     def test_cancellation_is_explicit_and_does_not_touch_other_task(self):
         c = self.controller()

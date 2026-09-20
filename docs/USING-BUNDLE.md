@@ -27,10 +27,12 @@ RTK, Headroom local output, and Headroom model-request counters measure differen
 
 1. Turn **LangMem local summaries** and **llama.cpp local inference** On after their runtimes and local GGUF model are configured.
 2. Expand **Experimental local summaries** and select the intended task.
-3. Choose **Refresh summary**. Review the resulting text and its covered/pending message counts. Refresh again if more content remains.
-4. Use **Cancel running job** if needed. Original conversation files remain unchanged.
+3. Choose **Refresh summary** once. The job processes the pending history in batches and shows progress. The local model stays loaded between batches and unloads when the job ends.
+4. Use **Cancel running job** if needed. Completed batches remain saved; another refresh resumes them. New conversation messages added during a job are picked up on the next refresh. Original conversation files remain unchanged.
 
-This is an optional local aid, not a replacement for Codex's encrypted native compaction. Native compaction stays enabled. Summaries are not automatically injected into model requests. Large transcripts are processed in bounded increments, and stale or incomplete coverage is reported. A shorter local summary does not by itself establish any savings in Codex usage. Check originals for exact facts, paths and requirements before relying on a generated summary.
+This is an optional local aid, not a replacement for Codex's encrypted native compaction. Native compaction stays enabled. Summaries are not automatically injected into model requests. Long jobs can take time. The reader scans a fixed source snapshot, ignores native compaction metadata, and reports incomplete/malformed records or records exceeding its 16 MiB bound. Coverage counts text segments, so long messages can count as several segments. Older summary formats are marked stale and rebuilt on explicit refresh.
+
+Historical source-evidence notes retain nonzero command exit codes and incomplete-output observations across batches. They do not establish whether a failure remains unresolved, and cannot prove the summary is factually complete. A shorter local summary does not by itself establish any savings in Codex usage. Check originals for exact facts, paths and requirements before relying on a generated summary.
 
 ## Update libraries
 

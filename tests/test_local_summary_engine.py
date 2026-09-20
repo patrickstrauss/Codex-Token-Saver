@@ -2,17 +2,140 @@ from __future__ import annotations
 
 import copy
 import importlib
+import io
+import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 import socket
+import subprocess
+import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 class LocalSummaryEngineTests(unittest.TestCase):
     def setUp(self):
         self.engine = importlib.import_module('local_summary_engine')
+
+    def test_session_reuses_model_and_unloads_at_eof(self):
+        calls = []
+
+        @contextmanager
+        def runtime(*args, **kwargs):
+            calls.append('load')
+            try:
+                def summarize(payload):
+                    calls.append(payload['messages'][0]['id'])
+                    return {'status': 'summarized', 'summary': 'Saved.', 'server_pid': 123}
+                yield summarize
+            finally:
+                calls.append('unload')
+
+        requests = [{'messages': [{'id': ident, 'role': 'user', 'content': 'Keep constraints.'}]} for ident in ('a', 'b')]
+        incoming = io.BytesIO(('\n'.join(json.dumps(value) for value in requests) + '\n').encode())
+        outgoing = io.StringIO()
+        with patch.object(self.engine, 'local_model', runtime, create=True):
+            self.engine.run_session(incoming, outgoing)
+        replies = [json.loads(line) for line in outgoing.getvalue().splitlines()]
+        self.assertEqual(calls, ['load', 'a', 'b', 'unload'])
+        self.assertEqual(len(replies), 2)
+        self.assertTrue(all(value['model_unloaded'] is False for value in replies))
+
+    def test_session_validates_each_request_and_unloads_on_failure(self):
+        events = []
+
+        @contextmanager
+        def runtime(*args, **kwargs):
+            events.append('load')
+            try:
+                yield lambda payload: {'status': 'summarized', 'summary': 'Saved.'}
+            finally:
+                events.append('unload')
+
+        request = {'messages': [{'id': 'a', 'role': 'user', 'content': 'Keep constraints.'}]}
+        incoming = io.BytesIO((json.dumps(request) + '\n{"messages": []}\n').encode())
+        outgoing = io.StringIO()
+        with patch.object(self.engine, 'local_model', runtime, create=True):
+            self.engine.run_session(incoming, outgoing)
+        replies = [json.loads(line) for line in outgoing.getvalue().splitlines()]
+        self.assertEqual(events, ['load', 'unload'])
+        self.assertEqual(replies[-1]['status'], 'failed')
+        self.assertTrue(replies[-1]['original_preserved'])
+        self.assertIsNone(replies[-1]['summary'])
+
+    def test_session_rejects_oversized_input_before_loading_model(self):
+        incoming = io.BytesIO(b'x' * (self.engine.MAX_INPUT_BYTES + 1) + b'\n')
+        outgoing = io.StringIO()
+        with patch.object(self.engine, 'local_model', create=True) as runtime:
+            self.engine.run_session(incoming, outgoing)
+        runtime.assert_not_called()
+        self.assertEqual(json.loads(outgoing.getvalue())['status'], 'failed')
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows job accounting')
+    def test_windows_job_waits_for_all_owned_processes_before_closing_handle(self):
+        import ctypes
+        kernel = Mock()
+        kernel.CreateJobObjectW.return_value = 123
+        events = []
+        active_counts = iter([2, 0])
+
+        def query(handle, kind, accounting, size, returned):
+            if kind == 3:
+                events.append('list')
+                return True
+            accounting._obj.ActiveProcesses = next(active_counts)
+            events.append(('active', accounting._obj.ActiveProcesses))
+            return True
+
+        kernel.QueryInformationJobObject.side_effect = query
+        kernel.TerminateJobObject.side_effect = lambda *args: events.append('terminate') or True
+        kernel.CloseHandle.side_effect = lambda *args: events.append('close') or True
+        with patch.object(ctypes, 'WinDLL', return_value=kernel), patch.object(self.engine.time, 'sleep'):
+            close = self.engine._windows_job(SimpleNamespace(_handle=456))
+            close()
+            close()  # Cleanup is safe when reached again during error handling.
+        self.assertEqual(events, ['list', 'terminate', ('active', 2), ('active', 0), 'close'])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows job process ownership')
+    def test_windows_job_cleanup_returns_only_after_real_descendant_exits(self):
+        import ctypes
+        from ctypes import wintypes as w
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.argtypes = [w.DWORD, w.BOOL, w.DWORD]
+        kernel.OpenProcess.restype = w.HANDLE
+        kernel.WaitForSingleObject.argtypes = [w.HANDLE, w.DWORD]
+        kernel.WaitForSingleObject.restype = w.DWORD
+        kernel.CloseHandle.argtypes = [w.HANDLE]
+        script = ("import subprocess,sys,time; input(); "
+                  "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'], "
+                  "creationflags=subprocess.CREATE_NO_WINDOW); print(child.pid,flush=True); time.sleep(60)")
+        process = subprocess.Popen([sys.executable, '-u', '-c', script], stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                   creationflags=subprocess.CREATE_NO_WINDOW, text=True)
+        close, child = lambda: None, None
+        try:
+            close = self.engine._windows_job(process)
+            process.stdin.write('\n')
+            process.stdin.flush()
+            child_pid = int(process.stdout.readline())
+            child = kernel.OpenProcess(0x00100000, False, child_pid)  # SYNCHRONIZE
+            self.assertTrue(child)
+            self.assertEqual(kernel.WaitForSingleObject(child, 0), 258)
+            close()
+            self.assertEqual(kernel.WaitForSingleObject(child, 0), 0)
+            self.assertIsNotNone(process.poll())
+        finally:
+            close()
+            if child:
+                kernel.CloseHandle(child)
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=5)
+            process.stdin.close()
+            process.stdout.close()
 
     def test_missing_engine_is_not_a_silent_cloud_fallback(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -94,6 +217,55 @@ class LocalSummaryEngineTests(unittest.TestCase):
         self.assertTrue(all(message.type == 'human' for message in model.calls[0][1:]))
         self.assertIn('untrusted', model.calls[0][0].content.lower())
         self.assertIn('PWNED', str(model.calls[0]))
+
+    def test_nested_failure_and_truncation_survive_false_clean_model_summary(self):
+        from langchain_core.messages import AIMessage
+
+        class Model:
+            def invoke(self, messages):
+                return AIMessage(content='Completed Work with Test Evidence: Inspected files.\nUnresolved Errors: None')
+
+        nested = json.dumps({'i': 1, 'status': 'fulfilled', 'value': {
+            'chunk_id': '257684', 'wall_time_seconds': 0.3, 'exit_code': 1, 'output': ''}})
+        content = '[Part 3/11]\n[Tool result: exec]\n' + json.dumps([
+            {'type': 'input_text', 'text': 'Warning: truncated output\n' + nested}])
+        payload = {'messages': [{'id': 't1', 'role': 'tool', 'content': content}], 'max_summary_tokens': 256}
+        result = self.engine.summarize_messages_locally(payload, model=Model(), count_text=len,
+                                                       context_size=8192, model_id='fixture')
+        self.assertEqual(result['running_summary'].get('evidence'), {
+            'nonzero_exit_codes': [1], 'incomplete_source': True})
+        self.assertIn('exit_code=1', result['summary'])
+        self.assertIn('incomplete', result['summary'])
+        self.assertNotIn('Unresolved Errors: None', result['summary'])
+        self.assertNotIn('with Test Evidence', result['summary'])
+
+        payload = {'messages': [{'id': 'u2', 'role': 'user', 'content': 'Continue.'}],
+                   'previous_summary': result['running_summary'], 'max_summary_tokens': 256}
+        followup = self.engine.summarize_messages_locally(payload, model=Model(), count_text=len,
+                                                        context_size=8192, model_id='fixture')
+        self.assertEqual(followup['running_summary']['evidence'], result['running_summary']['evidence'])
+        self.assertIn('exit_code=1', followup['summary'])
+
+    def test_quoted_exit_code_example_is_not_execution_metadata(self):
+        from langchain_core.messages import AIMessage
+
+        class Model:
+            def invoke(self, messages):
+                return AIMessage(content='Documentation read; execution outcome not established.')
+
+        payload = {'messages': [{'id': 't1', 'role': 'tool', 'content':
+                   'Documentation example: {"exit_code": 1, "output": "example only"}'}], 'max_summary_tokens': 256}
+        result = self.engine.summarize_messages_locally(payload, model=Model(), count_text=len,
+                                                       context_size=8192, model_id='fixture')
+        self.assertFalse(result['running_summary'].get('evidence', {}).get('nonzero_exit_codes'))
+
+    def test_evidence_caveat_is_idempotent_and_does_not_deny_reported_recovery(self):
+        evidence = {'nonzero_exit_codes': [1], 'incomplete_source': False}
+        text = 'Retried the failed command successfully.\nUnresolved Errors: None'
+        guarded = self.engine.ground_summary(text, evidence)
+        self.assertEqual(self.engine.ground_summary(guarded, evidence), guarded)
+        self.assertIn('Retried the failed command successfully.', guarded)
+        self.assertNotIn('Resolution not established', guarded)
 
     def test_incremental_summary_keeps_prior_state_and_covers_only_new_ids(self):
         from langchain_core.messages import AIMessage

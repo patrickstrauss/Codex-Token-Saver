@@ -13,6 +13,7 @@
   <summary>Experimental local summaries <span class="updates-muted">LangMem + llama.cpp</span></summary>
   <div class="updates-body">
     <p class="updates-muted">Create a local summary for a task you select. Native Codex compaction remains enabled. This does not replace or edit your conversation.</p>
+    <p class="updates-muted">One refresh processes the pending history in batches, keeping the model loaded until the job ends. Long tasks can take time. Cancel keeps completed batches; refresh resumes them. New messages added during a job are included on the next refresh.</p>
     <fieldset class="summary-reminders">
       <legend>Optional reference-summary reminders</legend>
       <p class="updates-muted" id="summary-reminder-help">Remind me when a task's reported context reaches the threshold. Reminders read usage metadata only; generating a summary still requires Refresh summary.</p>

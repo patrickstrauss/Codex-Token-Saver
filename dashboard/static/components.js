@@ -98,7 +98,12 @@
             });
             select.value = selectedTask;
             if (select.value !== selectedTask) selectedTask = '';
-            el('local-summary-status').textContent = summaryState.running ? 'A local summary job is running.'
+            var job = summaryState.job || {};
+            var progress = job.phase === 'reading' ? 'Reading the task history...'
+                : job.phase === 'unloading' ? 'Finishing the job and unloading the local model...'
+                : 'Local job: ' + (job.processed_messages || 0) + ' of ' + (job.total_messages || 0)
+                    + ' segments; ' + (job.batches_completed || 0) + ' batches completed. Cancel keeps completed batches.';
+            el('local-summary-status').textContent = summaryState.running ? progress
                 : summaryState.available ? 'Ready for an explicit summary request. Both LangMem and llama.cpp must be On.'
                 : 'Local summary runtime is unavailable. Check the component controls.';
             summaryButtons();
@@ -119,15 +124,15 @@
             if (coverage.incomplete_tool_pairs) incomplete.push(coverage.incomplete_tool_pairs + ' tool calls have no matching result.');
             if (coverage.source_truncated) incomplete.push('Source inspection was bounded; some content was not read.');
             if (coverage.skipped_lines) incomplete.push(coverage.skipped_lines + ' source records were skipped.');
-            if (coverage.pending_messages) incomplete.push(coverage.pending_messages + ' readable messages remain unsummarized.');
+            if (coverage.pending_messages) incomplete.push(coverage.pending_messages + ' readable segments remain unsummarized.');
             var quality = !data.summary ? 'No saved summary yet.'
-                : data.status === 'stale' ? 'Stale summary: source messages changed. Regenerate and verify against originals.'
+                : data.status === 'stale' ? 'Stale summary: source or summary format changed. Refresh and verify against originals.'
                 : data.status === 'partial' || incomplete.length ? 'Partial summary: coverage is incomplete.'
-                : data.status === 'summarized' ? 'Summary covers all currently readable messages.'
+                : data.status === 'summarized' ? 'Summary covers all currently readable segments. Verify important details against originals.'
                 : 'Saved summary; completion status is unavailable.';
             el('local-summary-quality').textContent = quality + (incomplete.length ? ' ' + incomplete.join(' ') : '');
             el('local-summary-coverage').textContent = 'Covered ' + (coverage.summarized_messages || 0) + ' of ' + (coverage.total_messages || 0)
-                + ' messages; ' + (coverage.pending_messages || 0) + ' pending.'
+                + ' segments; ' + (coverage.pending_messages || 0) + ' pending.'
                 + (typeof metrics.source_tokens === 'number' && typeof metrics.summary_tokens === 'number'
                     ? ' Local text: ' + metrics.source_tokens + ' source tokens → ' + metrics.summary_tokens + ' summary tokens (estimate).' : '');
         } catch (_) { if (current === summaryGeneration) {

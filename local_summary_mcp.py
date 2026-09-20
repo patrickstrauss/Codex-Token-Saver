@@ -26,7 +26,7 @@ async def list_tools():
         'required': ['task_id'], 'additionalProperties': False}
     return [Tool(name='list_local_summary_tasks', description='List local task IDs and project names for explicit selection. Does not read conversation text.',
                  inputSchema=empty, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False)),
-            Tool(name='refresh_local_summary', description='Start one bounded local summary batch for an explicitly selected task. Requires summaries and llama.cpp enabled. Returns job status immediately; never changes Codex history.',
+            Tool(name='refresh_local_summary', description='Summarize the pending history of an explicitly selected task in automatic local batches. Returns job status immediately; completed batches are saved and cancellation keeps them. Requires summaries and llama.cpp enabled; never changes Codex history.',
                  inputSchema=selected, annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False)),
             Tool(name='get_local_summary', description='Read the selected task summary, coverage and job status. A local size reduction is not actual Codex token savings.',
                  inputSchema=selected, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))]
