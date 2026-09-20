@@ -116,6 +116,33 @@ function Get-HeadroomCommandReplacement {
 
 function Get-HeadroomRewrite {
     param($Event)
+    $preferencesPath = Join-Path $BundleRoot 'settings\components.json'
+    $preferencesPresent = $true
+    try {
+        $attributes = [IO.File]::GetAttributes($preferencesPath)
+        if (($attributes -band [IO.FileAttributes]::Directory) -ne 0) { throw 'directory' }
+    }
+    catch [IO.FileNotFoundException] { $preferencesPresent = $false }
+    catch [IO.DirectoryNotFoundException] { $preferencesPresent = $false }
+    catch { $script:reason = 'invalid_preferences'; return $null }
+    if ($preferencesPresent) {
+        try {
+            if ((Get-Item -LiteralPath $preferencesPath).Length -gt 16384) { throw 'size' }
+            $preferencesText = (New-Object Text.UTF8Encoding($false, $true)).GetString([IO.File]::ReadAllBytes($preferencesPath))
+            if ($preferencesText.StartsWith([string][char]0xFEFF, [StringComparison]::Ordinal)) { $preferencesText = $preferencesText.Substring(1) }
+            $preferences = $preferencesText | ConvertFrom-Json
+            $keys = @($preferences.PSObject.Properties.Name)
+            if ($keys.Count -ne 2 -or $keys -notcontains 'schema_version' -or $keys -notcontains 'components' -or
+                $preferences.schema_version -isnot [long] -and $preferences.schema_version -isnot [int] -or
+                $preferences.schema_version -ne 1 -or $preferences.components -isnot [pscustomobject]) { throw 'schema' }
+            foreach ($property in $preferences.components.PSObject.Properties) {
+                if ($property.Name -notin @('rtk', 'headroom_local', 'serena', 'local_summaries', 'llama_cpp') -or
+                    $property.Value -isnot [bool]) { throw 'component' }
+            }
+            if ($preferences.components.headroom_local -eq $false) { $script:reason = 'disabled'; return $null }
+        }
+        catch { $script:reason = 'invalid_preferences'; return $null }
+    }
     if ($null -eq $Event -or $Event -is [array] -or $Event.tool_name -ne 'Bash' -or
         ($Event.hook_event_name -and $Event.hook_event_name -ne 'PreToolUse')) { return $null }
     if ($null -eq $Event.tool_input -or $Event.tool_input.command -isnot [string] -or

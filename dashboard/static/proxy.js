@@ -26,7 +26,7 @@
             : state.ready ? 'Headroom is warming up or unavailable. New requests can use the direct connection.'
             : 'The local request connection is unavailable. Check the background app.';
         el('recorded').textContent = savings.last_recorded_at
-            ? 'Last recorded savings: ' + new Date(savings.last_recorded_at).toLocaleString()
+            ? 'Last recorded request activity: ' + new Date(savings.last_recorded_at).toLocaleString()
             : 'No request savings recorded yet';
         el('error').textContent = errorMessage || state.last_error || '';
         el('error').hidden = !el('error').textContent;

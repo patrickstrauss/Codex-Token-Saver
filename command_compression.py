@@ -10,6 +10,7 @@ from pathlib import Path
 import sqlite3
 
 from desktop_headroom import DesktopHeadroom, ORIGINAL_TTL_SECONDS
+from bundle_preferences import load_preferences
 
 ROOT = Path(__file__).resolve().parent
 MAX_OUTPUT_BYTES = 2 * 1024 * 1024
@@ -41,11 +42,15 @@ class CompressionResult:
 
 
 class CommandCompressor:
-    def __init__(self, state_dir: str | Path, backend: DesktopHeadroom | None = None):
+    def __init__(self, state_dir: str | Path, backend: DesktopHeadroom | None = None,
+                 bundle_root: str | Path | None = None):
+        self.bundle_root = Path(bundle_root) if bundle_root is not None else ROOT
         self.state_dir = Path(state_dir)
         self.backend = backend if backend is not None else DesktopHeadroom(self.state_dir)
 
     def process(self, original: bytes, return_code: int, exact: bool = False) -> CompressionResult:
+        if not load_preferences(self.bundle_root)['headroom_local']:
+            return CompressionResult(original, 'disabled')
         if exact:
             return CompressionResult(original, 'exact_requested')
         if return_code != 0:

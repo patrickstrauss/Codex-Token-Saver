@@ -36,6 +36,7 @@ local-compaction/llama-*/
 *.lock
 !local-compaction/requirements.lock
 .scratch/
+.serena/
 .superpowers/
 *.receipt.json
 tests/rtk/

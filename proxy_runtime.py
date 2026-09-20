@@ -324,6 +324,22 @@ def _write_exact_retrieval_runtime_receipt():
             os.unlink(temporary)
 
 
+class ExactRetrievalReceipt:
+    """Publish proof only when this process actually receives network traffic."""
+    def __init__(self, app):
+        self.app = app
+        self.recorded = False
+
+    async def __call__(self, scope, receive, send):
+        # ASGI lifespan starts before uvicorn binds. A competing process can
+        # finish lifespan startup and then lose the port; it must not replace
+        # the serving process's receipt. No payloads are inspected or changed.
+        if not self.recorded and scope['type'] in ('http', 'websocket'):
+            _write_exact_retrieval_runtime_receipt()
+            self.recorded = True
+        await self.app(scope, receive, send)
+
+
 def _recoverable_kompress_result(compressor, result, ccr_source=None):
     """Retain every accepted lossy result only when its CCR marker pays for itself.
 
@@ -506,9 +522,19 @@ def main(argv=None):
         print(json.dumps(_model_report()))
         return 0
     config = _configure_sdk(args.host, args.port)
-    _write_exact_retrieval_runtime_receipt()
-    from headroom.proxy.server import run_server
-    run_server(config, workers=1, print_banner=False)
+    from headroom.proxy import server
+    create_app = server.create_app
+
+    def create_serving_app(*args, **kwargs):
+        app = create_app(*args, **kwargs)
+        app.add_middleware(ExactRetrievalReceipt)
+        return app
+
+    server.create_app = create_serving_app
+    try:
+        server.run_server(config, workers=1, print_banner=False)
+    finally:
+        server.create_app = create_app
     return 0
 
 

@@ -181,7 +181,8 @@ class DesktopProxyServiceTests(unittest.TestCase):
         self.service._environment.return_value = {'SECRET_KEY': 'secret-content'}
         result = self.service.step()
         saved = read_status(self.root)
-        self.assertEqual(saved, result)
+        self.assertEqual({key: saved[key] for key in result}, result)
+        self.assertTrue(saved['live'])
         self.assertNotIn('secret-content', json.dumps(saved))
         self.assertNotIn('command', json.dumps(saved))
         self.assertEqual(list(self.service.status_path.parent.glob('*.tmp')), [])
@@ -282,8 +283,10 @@ class DesktopProxyServiceIntegrationTests(unittest.TestCase):
     def test_gateway_command_build_does_not_import_sdk(self):
         root = Path(__file__).resolve().parents[1]
         script = (
-            'import json,sys;from desktop_proxy_service import DesktopProxyService;'
-            's=DesktopProxyService();c=s._command("frontdoor");'
+            'import json,sys,tempfile;from pathlib import Path;from desktop_proxy_service import DesktopProxyService;'
+            'fixture=tempfile.TemporaryDirectory();root=Path(fixture.name);'
+            'runtime=root/"headroom/.venv/Scripts/python.exe";runtime.parent.mkdir(parents=True);runtime.touch();'
+            's=DesktopProxyService(root);c=s._command("frontdoor");'
             'print(json.dumps({"command":c,"sdk_loaded":any(x=="headroom" or x.startswith("headroom.") for x in sys.modules)}))'
         )
         completed = subprocess.run([sys.executable, '-c', script], cwd=root, capture_output=True, text=True, timeout=10)

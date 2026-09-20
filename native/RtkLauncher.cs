@@ -15,6 +15,60 @@ internal static class RtkLauncher
     // the final token/byte reduction decision including the recovery header.
     private const int MinOutputBytes = 1024;
 
+    private static Dictionary<string, bool> Preferences(string root)
+    {
+        var values = new Dictionary<string, bool> {
+            {"rtk", true}, {"headroom_local", true}, {"serena", false},
+            {"local_summaries", false}, {"llama_cpp", false}
+        };
+        string path = Path.Combine(root, "settings", "components.json");
+        try
+        {
+            string json;
+            using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete))
+            {
+                if (file.Length > 16384) throw new FormatException();
+                using (var reader = new StreamReader(file, new UTF8Encoding(false, true), false)) json = reader.ReadToEnd();
+                if (json.StartsWith("\uFEFF", StringComparison.Ordinal)) json = json.Substring(1);
+            }
+            var data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
+            if (data == null || data.Count != 2 || !data.ContainsKey("schema_version") ||
+                !(data["schema_version"] is int) || (int)data["schema_version"] != 1 ||
+                !data.ContainsKey("components")) throw new FormatException();
+            var components = data["components"] as Dictionary<string, object>;
+            if (components == null) throw new FormatException();
+            foreach (var entry in components)
+            {
+                if (!values.ContainsKey(entry.Key) || !(entry.Value is bool)) throw new FormatException();
+                values[entry.Key] = (bool)entry.Value;
+            }
+        }
+        catch (FileNotFoundException) { return values; }
+        catch (DirectoryNotFoundException) { return values; }
+        catch
+        {
+            // Malformed settings must not silently re-enable lossy filtering.
+            foreach (string key in new List<string>(values.Keys)) values[key] = false;
+        }
+        return values;
+    }
+
+    private static string[] WithoutRtkCompression(string[] args)
+    {
+        if (args.Length == 0) return args;
+        string command = args[0].ToLowerInvariant();
+        if (Array.IndexOf(new[] { "gain", "help", "--help", "-h", "--version", "-V", "recall", "verify", "proxy" }, args[0]) >= 0)
+            return args;
+        // Only known external-command forms have an unchanged native argv.
+        // RTK-only verbs and global flags need explicit handling, not token stripping.
+        if (Array.IndexOf(new[] { "git", "rg", "cargo", "dotnet", "pytest", "uv", "npm", "npx", "pnpm", "go", "docker", "gh", "kubectl" }, command) < 0)
+            throw new ArgumentException("RTK compression is off. Run the original external command directly for this RTK-only command.");
+        var result = new string[args.Length + 1];
+        result[0] = "proxy";
+        Array.Copy(args, 0, result, 1, args.Length);
+        return result;
+    }
+
     // Optional compression never executes the command. RTK owns its original
     // invocation; if compression fails, the captured original is delivered.
     private sealed class OutputCapture
@@ -269,8 +323,12 @@ internal static class RtkLauncher
                 Console.Error.WriteLine("Codex Token Saver: RTK executable is missing: " + executable);
                 return 127;
             }
+            var preferences = Preferences(root);
+            string[] selectedArgs;
+            try { selectedArgs = preferences["rtk"] ? args : WithoutRtkCompression(args); }
+            catch (ArgumentException error) { Console.Error.WriteLine(error.Message); return 64; }
             var arguments = new StringBuilder();
-            foreach (string argument in args)
+            foreach (string argument in selectedArgs)
             {
                 if (arguments.Length > 0)
                     arguments.Append(' ');
@@ -282,7 +340,7 @@ internal static class RtkLauncher
             // Stdin and stderr remain inherited. Eligible Codex stdout has a
             // bounded capture window; every other invocation stays unchanged.
             start.EnvironmentVariables["RTK_DB_PATH"] = Path.Combine(root, "data", "rtk", "history.db");
-            bool captureOutput = Eligible(args);
+            bool captureOutput = preferences["headroom_local"] && Eligible(args);
             start.RedirectStandardOutput = captureOutput;
             using (Process process = Process.Start(start))
             {

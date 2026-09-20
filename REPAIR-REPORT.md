@@ -2,7 +2,7 @@
 
 The original global Headroom route made Codex desktop depend on a local proxy. The installation also lived in Codex's MSIX private filesystem: Explorer could not find the normal AppData path used by the startup shortcut. Together these created a startup failure that could interrupt Codex connectivity.
 
-The repaired installation is `C:\Users\Patcharagit Strauss\CodexTokenSaver`. Both Python environments were recreated at that stable path. RTK's history was preserved with SQLite backup, and its wrapper now writes to the stable data folder. Actual Windows startup and Start Menu shortcuts, user PATH, and a user-logon scheduled task were registered and verified from Explorer.
+The repaired installation is `%USERPROFILE%\CodexTokenSaver`. Both Python environments were recreated at that stable path. RTK's history was preserved with SQLite backup, and its wrapper now writes to the stable data folder. Actual Windows startup and Start Menu shortcuts, user PATH, and a user-logon scheduled task were registered and verified from Explorer.
 
 Codex desktop uses its normal connection. The bundle's global routing command refuses enable operations, and the tray has no routing toggle. Removing the remaining legacy marker comments preserved all parsed Codex settings. The selected model remains `gpt-6-astra` with `ultra` reasoning.
 

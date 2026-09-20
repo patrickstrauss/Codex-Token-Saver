@@ -195,6 +195,20 @@ class RtkHeadroomTests(unittest.TestCase):
         self.assertEqual(self.run_launcher(HEADROOM_EXACT='1').stdout, self.original)
         self.assertFalse((self.bundle / 'filter.txt').exists())
 
+    def test_local_headroom_off_leaves_rtk_output_unmodified(self):
+        path = self.bundle / 'settings/components.json'
+        path.parent.mkdir()
+        path.write_text('{"schema_version":1,"components":{"headroom_local":false}}')
+        self.assertEqual(self.run_launcher().stdout, self.original)
+        self.assertFalse((self.bundle / 'filter.txt').exists())
+
+    def test_rtk_off_can_still_use_independent_local_headroom(self):
+        path = self.bundle / 'settings/components.json'
+        path.parent.mkdir()
+        path.write_text('{"schema_version":1,"components":{"rtk":false,"headroom_local":true}}')
+        self.assertIn(b'compressed command stdout', self.run_launcher().stdout)
+        self.assertTrue((self.bundle / 'filter.txt').exists())
+
     def test_filename_and_count_modes_preserve_output_without_filter(self):
         for flag in ('--files', '--count', '--only-matching', '--vimgrep', '--files-with-matches', '--message-format=json'):
             with self.subTest(flag=flag):

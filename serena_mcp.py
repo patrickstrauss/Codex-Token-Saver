@@ -48,6 +48,8 @@ def launch_spec(root: Path = ROOT, *, environ=None, python_path: Path | None = N
     if not python.is_relative_to(root / "serena") or not python.is_file():
         raise ValueError("Candidate Serena interpreter must exist inside its managed directory")
     env = dict(os.environ if environ is None else environ)
+    for key in ('PYTHONPATH', 'PYTHONHOME'):
+        env.pop(key, None)
     env["SERENA_HOME"] = str(root / "serena/state")
     env["PYTHONUTF8"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
@@ -133,13 +135,11 @@ def main(argv=None) -> int:
         print(json.dumps(probe_runtime(args.bundle_root, args.python), ensure_ascii=False))
         return 0
     if args.describe:
-        print(json.dumps(describe_runtime(), ensure_ascii=False))
+        print(json.dumps(describe_runtime(args.bundle_root), ensure_ascii=False))
         return 0
-    command, env = launch_spec()
-    return subprocess.call(
-        command, env=env, cwd=ROOT,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
+    from serena_proxy import run_bridge
+    asyncio.run(run_bridge(args.bundle_root))
+    return 0
 
 
 if __name__ == "__main__":

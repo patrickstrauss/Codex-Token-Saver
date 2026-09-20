@@ -76,7 +76,8 @@ async function flush() { for (let i=0;i<8;i++) await Promise.resolve(); }
     assert data['check']['request']['headers']['X-Codex-Update-Token'] == 'csrf-fixture'
     assert data['check']['busy'] and data['check']['disabled']
     assert json.loads(data['install']['body']) == {'action': 'install', 'component': 'rtk'}
-    assert 'Restart Codex to update any file tools already running' in data['restart']
+    assert 'Restart Codex' in data['restart'] and 'Serena already running' in data['restart']
+    assert 'summary jobs use the selected runtime' in data['restart']
     assert 'Another update is running' in data['failure']
     assert json.loads(data['failedRequest']['body']) == {'action': 'rollback', 'component': 'headroom'}
     assert data['afterError'].get('method', 'GET') == 'GET'

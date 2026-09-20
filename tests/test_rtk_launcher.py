@@ -103,6 +103,45 @@ class NativeRtkLauncherTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b"RTK executable is missing", result.stderr)
 
+    def write_preferences(self, value):
+        path = self.bundle / 'settings/components.json'
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(value, encoding='utf-8')
+
+    def test_rtk_off_passes_supported_native_argv_to_unfiltered_proxy(self):
+        self.write_preferences('{"schema_version":1,"components":{"rtk":false}}')
+        args = ['rg', 'a|b', 'space path', 'ภาษาไทย']
+        result = self.run_launcher(args)
+        self.assertEqual(json.loads(result.stdout.decode('utf-8-sig'))['args'], ['proxy', *args])
+        self.assertEqual(result.returncode, 37)
+        self.assertIn('fixture stderr', result.stderr.decode())
+
+    def test_rtk_off_rejects_rtk_only_verbs_and_preserves_diagnostics(self):
+        self.write_preferences('{"schema_version":1,"components":{"rtk":false}}')
+        result = self.run_launcher(['summary', 'example'])
+        self.assertEqual(result.returncode, 64)
+        self.assertEqual(result.stdout, b'')
+        self.assertIn(b'RTK compression is off', result.stderr)
+        result = self.run_launcher(['gain', '--all', '--format', 'json'])
+        self.assertEqual(json.loads(result.stdout.decode('utf-8-sig'))['args'][0], 'gain')
+
+    def test_corrupt_preferences_bypass_compression(self):
+        self.write_preferences('{bad json')
+        result = self.run_launcher(['git', 'status'])
+        self.assertEqual(json.loads(result.stdout.decode('utf-8-sig'))['args'], ['proxy', 'git', 'status'])
+
+    def test_invalid_preferences_path_does_not_restore_default_compression(self):
+        (self.bundle / 'settings/components.json').mkdir(parents=True)
+        result = self.run_launcher(['git', 'status'])
+        self.assertEqual(json.loads(result.stdout.decode('utf-8-sig'))['args'], ['proxy', 'git', 'status'])
+
+    def test_non_utf8_preferences_are_rejected_consistently_with_dashboard(self):
+        path = self.bundle / 'settings/components.json'
+        path.parent.mkdir()
+        path.write_text('{"schema_version":1,"components":{"rtk":true}}', encoding='utf-16')
+        result = self.run_launcher(['git', 'status'])
+        self.assertEqual(json.loads(result.stdout.decode('utf-8-sig'))['args'], ['proxy', 'git', 'status'])
+
 
 if __name__ == "__main__":
     unittest.main()

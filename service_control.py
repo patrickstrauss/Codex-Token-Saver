@@ -161,7 +161,11 @@ class ServiceController:
             return self.record(name, False, str(exc))
 
     def start_default(self):
-        return self.ensure('dashboard')
+        from desktop_proxy_service import ensure_supervisor
+        supervisor = ensure_supervisor(self.root)
+        result = self.ensure('dashboard')
+        result['supervisor'] = supervisor
+        return result
 
 
 def main():

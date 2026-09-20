@@ -94,7 +94,7 @@ class UpdateRoutes:
                 if "component" in payload:
                     raise ValueError()
             elif action in ("install", "rollback"):
-                if component not in ("headroom", "rtk"):
+                if component not in ("headroom", "rtk", "serena", "langmem", "llama_cpp"):
                     raise ValueError()
             else:
                 raise ValueError()
