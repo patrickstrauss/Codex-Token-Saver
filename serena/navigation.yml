@@ -1,0 +1,14 @@
+description: Codex Token Saver symbol navigation without source-editing tools
+prompt: |
+  Serena provides symbol navigation for the current task's actual repository checkout.
+  Before navigation, activate the absolute path of that checkout or worktree. Do not activate a home directory.
+  Prefer symbol overviews and targeted symbol bodies to reading large source files.
+  Symbol bodies are exact source excerpts; an overview is not complete source evidence.
+  Continue to use Codex's own tools for file edits, commands, and non-code reads.
+fixed_tools:
+  - activate_project
+  - get_symbols_overview
+  - find_symbol
+  - find_referencing_symbols
+single_project: false
+structured_tool_output: false
