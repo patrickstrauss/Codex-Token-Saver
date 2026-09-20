@@ -4,7 +4,7 @@ The installed ci-7 dashboard and managed request proxy are healthy. RTK is runni
 
 ## Evidence
 
-The real-task snapshot covers **Plan Culina 2.5.2 backlog** and one observed child, from 20 September 17:42:24 through 18:28:20 UTC. The task remained active; later activity is excluded.
+The real-task snapshot covers one active coding task and one observed child over approximately 46 minutes. The task remained active; later activity is excluded. Task names and identifiers are omitted.
 
 | Module | Observed result |
 | --- | --- |
@@ -13,7 +13,7 @@ The real-task snapshot covers **Plan Culina 2.5.2 backlog** and one observed chi
 | RTK | Four successful git-status commands. The global ledger records 108 estimated input tokens, 106 output tokens and two avoided tokens for these calls. Small output explains the small reduction. |
 | Native commands | All 25 observed native search fragments used pipelines; nine git rev-parse calls consumed machine-readable output. They should retain complete output. A few display-only git-status fragments could use RTK more consistently. |
 
-Separately, the global proxy savings ledger between the upgrade at 15:33:04 UTC and the pre-audit cutoff at 18:18 UTC contains 45 positive-savings events, 6,629,570 estimated input tokens and 449,474 estimated avoided tokens. These are all-task counters, not attributable solely to the task above. The 6.78% reduction applies only to those recorded events.
+Separately, the global proxy savings ledger for approximately 165 minutes between the upgrade and the pre-audit cutoff contains 45 positive-savings events, 6,629,570 estimated input tokens and 449,474 estimated avoided tokens. These are all-task counters, not attributable solely to the task above. The 6.78% reduction applies only to those recorded events.
 
 Seven local file-read events in that same pre-audit global window added 1,000 estimated tokens in exact-response overhead. This counter is separate from proxy-original retrieval and request compression. Preserving exact source before editing is intentional; stronger compression is not justified to make this counter increase. Prefer targeted Serena bodies or native ranges where appropriate.
 
