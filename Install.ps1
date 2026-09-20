@@ -12,7 +12,7 @@ $taskRoot = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\')
 $taskDefault = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE 'CodexTokenSaver')).TrimEnd('\')
 if (-not $SkipIntegration -and $taskRoot -ine $taskDefault) { throw 'Use the default installation folder, or -SkipIntegration for an isolated test.' }
 for ($taskAncestor = $taskRoot; $taskAncestor; $taskAncestor = Split-Path -Parent $taskAncestor) {
-    if ((Test-Path -LiteralPath $taskAncestor) -and ((Get-Item -LiteralPath $taskAncestor).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+    if ((Test-Path -LiteralPath $taskAncestor) -and ((Get-Item -LiteralPath $taskAncestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
         throw 'Install into a real local directory, not a junction or symbolic link.'
     }
 }
