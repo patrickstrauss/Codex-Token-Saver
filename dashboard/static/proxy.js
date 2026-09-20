@@ -19,10 +19,12 @@
         var label = key !== 'lifetime' ? ({fifteen_minutes:'last 15 minutes', today:'today', seven_days:'last 7 days'}[key]) : 'lifetime';
         el('saved').textContent = available ? number(selected.saved_tokens) : 'Unavailable';
         el('scope').textContent = 'Estimated input tokens avoided · ' + label + ' · all tasks. Individual-task attribution is unavailable.';
-        el('window-detail').textContent = available ? number(selected.requests) + ' requests in this window'
-            + (selected.reduction_pct == null ? '' : ' · ' + number(selected.reduction_pct) + '% text reduction') : 'No readable records for this window.';
-        el('coverage').textContent = key !== 'lifetime' && recent && recent.available && !recent.complete
-            ? 'Partial ledger coverage: older or invalid records were omitted. These are totals from available records only.' : '';
+        el('window-detail').textContent = available ? number(selected.requests)
+            + (key === 'lifetime' ? ' requests recorded' : ' savings events in this window')
+            + (selected.reduction_pct == null ? '' : ' · ' + number(selected.reduction_pct) + '% reduction within recorded events') : 'No readable records for this window.';
+        el('coverage').textContent = key !== 'lifetime' && recent && recent.available
+            ? 'Headroom records positive-savings events only; zero-savings requests and expansions are excluded. This is not an overall traffic reduction rate.'
+                + (!recent.complete ? ' Partial ledger coverage: older or invalid records were omitted. These are totals from available records only.' : '') : '';
         el('counts').textContent = 'Requests recorded by Headroom: ' + number(savings.requests)
             + '. Completed connections: ' + number(requests.optimized) + ' optimized; ' + number(requests.direct)
             + ' direct; ' + number(requests.failed) + ' failed. Active connections: ' + number(requests.active);

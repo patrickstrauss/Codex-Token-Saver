@@ -1,4 +1,9 @@
-"""Bounded, read-only windows over the request proxy's token-only event ledger."""
+"""Bounded windows over the proxy's token-only savings ledger.
+
+Headroom 0.37 writes positive savings only, not every request. ``complete``
+describes parsing coverage of that ledger, not coverage of all model traffic.
+Signed deltas remain supported if a future producer includes expansion costs.
+"""
 from datetime import datetime, timedelta
 import json
 
