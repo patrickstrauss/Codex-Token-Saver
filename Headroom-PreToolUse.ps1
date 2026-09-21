@@ -114,8 +114,72 @@ function Get-HeadroomCommandReplacement {
     }
 }
 
+function Get-AutomaticRtkReplacement {
+    param($Ast, $Event, [string]$CommandText)
+    # Codex normalizes every shell tool to Bash + {command}; it does not expose
+    # the chosen shell. A bare rtk.exe prefix is valid in both Windows PowerShell
+    # and Git Bash. Never invent PowerShell syntax for a bare native command.
+    if ($Event.cwd -isnot [string] -or $Event.cwd -notmatch '^[A-Za-z]:[\\/]' -or
+        $Ast.EndBlock.Statements.Count -ne 1) { return $null }
+    $statement = $Ast.EndBlock.Statements[0]
+    if ($statement -isnot [System.Management.Automation.Language.PipelineAst] -or
+        $statement.PipelineElements.Count -ne 1 -or $statement.Background) { return $null }
+    $command = $statement.PipelineElements[0]
+    if ($command -isnot [System.Management.Automation.Language.CommandAst] -or
+        $command.InvocationOperator -ne 'Unknown' -or $command.Redirections.Count -or
+        $command.CommandElements.Count -lt 2) { return $null }
+    $elements = @($command.CommandElements)
+    $first = $elements[0]
+    if ($first -isnot [System.Management.Automation.Language.StringConstantExpressionAst] -or
+        $first.StringConstantType -ne 'BareWord' -or $first.Value -notmatch '^(git|rg)(?:\.exe)?$') { return $null }
+    $name = [IO.Path]::GetFileNameWithoutExtension([string]$first.Value).ToLowerInvariant()
+    $arguments = @()
+    foreach ($element in @($elements | Select-Object -Skip 1)) {
+        if ($element -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
+            $element.StringConstantType -in @('BareWord', 'SingleQuoted', 'DoubleQuoted')) {
+            $arguments += [string]$element.Value
+        }
+        elseif ($element -is [System.Management.Automation.Language.CommandParameterAst] -and $null -eq $element.Argument) {
+            $arguments += [string]$element.Extent.Text
+        }
+        else { return $null }
+    }
+    # Skip options intercepted by RTK itself, output consumers, external filters,
+    # and modes with special exit behavior. Preserve the argument text verbatim.
+    if (@($arguments | Where-Object { $_ -match '^(?:--(?:output|pre|pre-glob|ultra-compact|skip-env|exit-code|quiet|no-index|ext-diff|textconv|check|binary|patch-with-raw|word-diff|word-diff-regex|output-indicator-new|output-indicator-old|output-indicator-context)(?:=|$)|-q$)' }).Count) {
+        return $null
+    }
+    $checkArguments = $arguments
+    if ($name -eq 'git' -and $arguments[0] -notin @('status', 'diff', 'log')) { return $null }
+    if ($name -eq 'git' -and $arguments[0] -eq 'diff') {
+        $checkArguments = @('status') + @($arguments | Select-Object -Skip 1)
+    }
+    if (-not (Test-HeadroomCommand -Name $name -Arguments $checkArguments)) { return $null }
+    $rtk = Join-Path $BundleRoot 'bin\rtk.exe'
+    if (-not ([IO.File]::Exists($rtk) -and [IO.File]::Exists((Join-Path $BundleRoot 'tools\rtk.exe')))) {
+        $script:reason = 'missing_rtk'; return $null
+    }
+    # Both commands must resolve to native executables on the inherited PATH.
+    # Never replace an alias/function, a .cmd shim, or another RTK installation.
+    $resolvedRtk = Get-Command 'rtk.exe' -ErrorAction SilentlyContinue
+    $resolvedNative = Get-Command ([string]$first.Value) -ErrorAction SilentlyContinue
+    if ($null -eq $resolvedRtk -or $resolvedRtk.CommandType -ne 'Application' -or
+        $resolvedRtk.Path -ine [IO.Path]::GetFullPath($rtk) -or
+        $null -eq $resolvedNative -or $resolvedNative.CommandType -ne 'Application' -or
+        [IO.Path]::GetExtension($resolvedNative.Path) -ine '.exe') {
+        $script:reason = 'rtk_path_unavailable'; return $null
+    }
+    return @{
+        start = $first.Extent.StartOffset
+        length = $first.Extent.EndOffset - $first.Extent.StartOffset
+        text = 'rtk.exe ' + $name
+    }
+}
+
 function Get-HeadroomRewrite {
     param($Event)
+    $rtkEnabled = $true
+    $headroomEnabled = $true
     $preferencesPath = Join-Path $BundleRoot 'settings\components.json'
     $preferencesPresent = $true
     try {
@@ -139,10 +203,13 @@ function Get-HeadroomRewrite {
                 if ($property.Name -notin @('rtk', 'headroom_local', 'serena', 'local_summaries', 'llama_cpp') -or
                     $property.Value -isnot [bool]) { throw 'component' }
             }
-            if ($preferences.components.headroom_local -eq $false) { $script:reason = 'disabled'; return $null }
+            $rtkEnabled = $preferences.components.rtk -ne $false
+            $headroomEnabled = $preferences.components.headroom_local -ne $false
         }
         catch { $script:reason = 'invalid_preferences'; return $null }
     }
+    if (-not $rtkEnabled -and -not $headroomEnabled) { $script:reason = 'disabled'; return $null }
+    if ($env:HEADROOM_EXACT -eq '1') { $script:reason = 'exact_opt_out'; return $null }
     if ($null -eq $Event -or $Event -is [array] -or $Event.tool_name -ne 'Bash' -or
         ($Event.hook_event_name -and $Event.hook_event_name -ne 'PreToolUse')) { return $null }
     if ($null -eq $Event.tool_input -or $Event.tool_input.command -isnot [string] -or
@@ -152,9 +219,6 @@ function Get-HeadroomRewrite {
     $wrapper = Join-Path $BundleRoot 'bin\headroom-run.exe'
     $runtime = Join-Path $BundleRoot 'headroom\.venv\Scripts\python.exe'
     $runner = Join-Path $BundleRoot 'headroom_run.py'
-    if (-not ([IO.File]::Exists($wrapper) -and [IO.File]::Exists($runtime) -and [IO.File]::Exists($runner))) {
-        $script:reason = 'missing_runtime'; return $null
-    }
     $commandText = $Event.tool_input.command
     if ($commandText.Length -gt 65536) { $script:reason = 'oversized_input'; return $null }
     $tokens = $null
@@ -162,7 +226,7 @@ function Get-HeadroomRewrite {
     $ast = [System.Management.Automation.Language.Parser]::ParseInput($commandText, [ref]$tokens, [ref]$parseErrors)
     if ($parseErrors.Count) { $script:reason = 'parse_error'; return $null }
     foreach ($token in $tokens) {
-        if ($token.Kind -eq 'Comment' -and $token.Text -match '(?im)^\s*(?:#|<#)\s*headroom:\s*exact\b') {
+        if ($token.Kind -eq 'Comment' -and $token.Text -match '(?im)^\s*(?:#|<#)\s*(?:headroom|rtk):\s*exact\b') {
             $script:reason = 'exact_opt_out'; return $null
         }
         if ($token.Kind -eq 'LineContinuation' -or $token.Text -eq '--%') {
@@ -174,9 +238,17 @@ function Get-HeadroomRewrite {
         $script:reason = 'complex_syntax'; return $null
     }
     $replacements = @()
-    foreach ($statement in $ast.EndBlock.Statements) {
-        $replacement = Get-HeadroomCommandReplacement -Statement $statement -CommandText $commandText -Wrapper $wrapper
-        if ($null -ne $replacement) { $replacements += $replacement }
+    $rewriteReason = 'supported_external'
+    if ($rtkEnabled) {
+        $replacement = Get-AutomaticRtkReplacement -Ast $ast -Event $Event -CommandText $commandText
+        if ($null -ne $replacement) { $replacements += $replacement; $rewriteReason = 'rtk_rewrite' }
+    }
+    if ($replacements.Count -eq 0 -and $headroomEnabled -and
+        [IO.File]::Exists($wrapper) -and [IO.File]::Exists($runtime) -and [IO.File]::Exists($runner)) {
+        foreach ($statement in $ast.EndBlock.Statements) {
+            $replacement = Get-HeadroomCommandReplacement -Statement $statement -CommandText $commandText -Wrapper $wrapper
+            if ($null -ne $replacement) { $replacements += $replacement }
+        }
     }
     if ($replacements.Count -eq 0) { return $null }
     # Original offsets remain valid while replacing from right to left. Newlines,
@@ -190,7 +262,7 @@ function Get-HeadroomRewrite {
     $updatedInput = [ordered]@{}
     foreach ($property in $Event.tool_input.PSObject.Properties) { $updatedInput[$property.Name] = $property.Value }
     $updatedInput['command'] = $updatedCommand
-    $script:reason = 'supported_external'
+    $script:reason = $rewriteReason
     return @{ hookSpecificOutput = @{ hookEventName = 'PreToolUse'; permissionDecision = 'allow'; updatedInput = $updatedInput } }
 }
 

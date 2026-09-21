@@ -32,10 +32,11 @@ The [verified September 20 build](https://github.com/patrickstrauss/Codex-Token-
 ## Install and open the dashboard
 
 1. Save your work and close Codex before installation so it can load the new tools when reopened. Keep your normal Codex sign-in; no API key is required by this installer.
-2. Double-click the extracted **Install.cmd**. Leave its window open while downloads and checks run. It installs into `%USERPROFILE%\CodexTokenSaver`, registers the local file tools, adds the user's PATH entry, and installs a Start menu shortcut and logon scheduled task. No administrator elevation is requested.
+2. Double-click the extracted **Install.cmd**. Leave its window open while downloads and checks run. It installs into `%USERPROFILE%\CodexTokenSaver`, registers the local file tools and optional command hook, adds the user's PATH entry, and installs a Start menu shortcut and logon scheduled task. No administrator elevation is requested.
 3. Wait for **Installed and checked** and the instruction to restart Codex. If the window says **Installation stopped**, follow the error rather than treating the installation as complete. Press a key to close the finished installer.
 4. Open **Codex Token Saver** from the Windows Start menu. Installation registers startup; it does not itself open the tray app. Open the [dashboard](http://127.0.0.1:8095/) or click the **TS** tray icon. The icon may be under the tray's up-arrow.
 5. Configure the controls below, then reopen Codex. Its existing connection, model, reasoning, authentication, approval settings and task history are preserved. New tasks and resumed tasks can use tools after Codex loads them; verify activity rather than relying only on a **Configured** label.
+6. For automatic RTK command routing, open **Codex Settings → Hooks → Reload hooks → User**, review **Checking automatic Headroom command compression**, and click **Trust**. This existing shared hook name covers RTK and local Headroom. The installer registers the definition but never grants trust. If hooks were explicitly disabled in your Codex configuration, that choice is preserved and automatic routing stays unavailable.
 
 ## Set up the team defaults
 
@@ -43,7 +44,7 @@ In the dashboard's **Your toolkit** section, use these controls. Each row also n
 
 | Dashboard control | Team setting | What to expect |
 | --- | --- | --- |
-| Command output — RTK | **On** (installed default) | Reduces supported command output when Codex invokes RTK. |
+| Command output — RTK | **On** (installed default) | Reduces explicit RTK calls; the trusted hook also routes eligible bare Git/search commands automatically. |
 | Local file & output reading — Headroom | **On** (installed default) | Local file tools and eligible RTK output compression; activity can legitimately produce zero reduction. |
 | Code navigation — Serena | Turn **On** | Registers the symbol tools and coding guidance. Reopen Codex afterward so it loads them. |
 | Request compression — Headroom | Leave **Off / unavailable** | Fresh-machine setup is not supported in this preview. |
@@ -63,6 +64,7 @@ Serena is preferred implicitly for relevant coding navigation; team members do n
 
   The initial bundle reports `rtk 0.49.0`. This checks the executable, not token savings. Use a supported command in your normal coding work to produce real activity.
 - After enabling Serena and reopening Codex, open or resume a task in your own code project and ask: **“Identify this project's main entry points and relevant symbols. Do not edit files.”** Check for Serena tool calls and an updated **Code navigation** activity count. The [full Serena check](SERENA-TESTING.md) verifies bodies, references, project switching and disabling against isolated fixtures.
+- After trusting the hook, a single ordinary `git status --short`, `git diff`, `git log -5 --oneline` or `rg` display call in a Windows project can use RTK even if the task omits its prefix. Scripts, pipelines, dynamic arguments, machine output and WSL/POSIX paths deliberately stay native. Use `# rtk: exact` or `# headroom: exact` on a native call when completeness matters. RTK usage can increase with zero savings for small outputs; the dashboard itself does not execute commands.
 - At the next Windows login, check that the tray/dashboard starts. A successful installation test is not a substitute for a login test on your teammate's laptop.
 
 These controls work in existing coding tasks once their tools are loaded; no new conversation is required just to use RTK or Serena. Restarting Codex is for changed tool registration/configuration, not a routine per-command requirement. Activity and local token-reduction estimates are not measured weekly-quota savings.
@@ -73,7 +75,7 @@ Default installation includes Headroom 0.37.0, RTK 0.49.0, Serena 1.7.0, LangMem
 
 Local summaries are paused for the current team setup. If the team explicitly revisits that experiment later, **Select-Local-Model.cmd** inside the installed folder selects a compatible GGUF model you already have; **Task summaries** and **Local model** then allow an explicitly selected task to be summarized. No GGUF is downloaded or loaded by installation or selection. The CPU build needs no GPU driver but may be slow, and selecting a file does not prove model compatibility. Summaries remain separate, lossy reference files and do not replace native Codex compaction or the current conversation. There is no need to select a model for the recommended setup above.
 
-**Request compression is not yet supported for a fresh team installation. Keep that control off.** This package supports RTK, local Headroom file compression, Serena and summaries with a selected GGUF. It does not configure a request route, install a command hook, download the request model, or silently activate inference. Fresh Codex profiles remain on their normal connection. The historical `activate_validated_request_proxy.py` script requires the maintainer's old validation receipts; do not run it for a teammate or copy another person's receipts. A safe per-machine request-proxy bootstrap remains pending. Optional hooks need their existing trust/setup flow.
+**Request compression is not yet supported for a fresh team installation. Keep that control off.** This package supports RTK, local Headroom file compression, Serena and summaries with a selected GGUF. It registers the optional command hook for user review; it does not configure a request route, download the request model, or silently activate inference. Fresh Codex profiles remain on their normal connection. The historical `activate_validated_request_proxy.py` script requires the maintainer's old validation receipts; do not run it for a teammate or copy another person's receipts. A safe per-machine request-proxy bootstrap remains pending.
 
 ## Troubleshooting, updates and removal
 
@@ -86,13 +88,14 @@ Local summaries are paused for the current team setup. If the team explicitly re
 | Dashboard does not open | Open **Codex Token Saver** from Start. If needed, run `Start-Services.ps1` from `%USERPROFILE%\CodexTokenSaver` and inspect its `logs` folder. |
 | Serena is On but tools are absent | Reopen Codex after enabling it, check the dashboard's availability explanation, then follow the Serena test. Do not copy another user's Codex config. |
 | Savings stay at zero | Confirm the tool was actually used on eligible content. Version checks, small output and exact reads can produce no savings. |
+| Bare Git/search calls never use RTK | Check the RTK toggle, trust the shared command hook, and restart Codex once after installation so it inherits the bundle PATH. Complex/exact commands stay native. |
 | Request compression is unavailable | Expected for fresh installs in this preview; leave it off. |
 
 Rerun the same **Install.cmd** after a failed download. Verified downloads are cached. Completed environments are preserved, and source checksums are checked before resuming. The same source release may add the optional runtimes after a core-only installation. Library updates and rollbacks use the dashboard's existing controls.
 
 The installer deliberately refuses an existing nonempty legacy folder, a different source release, or locally modified source. It does not overwrite working runtimes or local state. Source upgrades currently require the maintainer's reviewed backup/deployment process; there is no automatic source updater or one-click uninstaller yet. Keep the old installation and its backups until the replacement has been checked. Do not delete the folder while startup entries or Codex MCP entries still point to it.
 
-Configuration backups are under the installed `backups` directory; startup registration writes `install-startup-result.json`. Successful setup writes `team-install-result.json`. Download or dependency failures happen before Codex registration. Registration rolls its configuration change back if writing guidance fails, unless another writer changed that file in the meantime. A startup failure may occur after local tools were registered; rerunning retries startup. Unrelated settings are preserved, and the original configuration backup remains available. Settings and authentication files are never included in release packages.
+Configuration backups are under the installed `backups` directory; startup registration writes `install-startup-result.json`. Successful setup writes `team-install-result.json`. Download or dependency failures happen before Codex registration. Tools, guidance and hook registration roll back together if a write fails, unless another writer changed a file in the meantime. Existing unrelated hooks and trust are preserved; a different existing bundle hook is refused for review. A startup failure may occur after local tools were registered; rerunning retries startup. Unrelated settings are preserved, and the original configuration backup remains available. Settings and authentication files are never included in release packages.
 
 The ZIP and native launchers are currently **unsigned**. Windows SmartScreen or organizational policy may require IT approval. Check the source and release checksum; do not disable organization security policies. The process-level PowerShell execution-policy override in the launcher does not change machine policy. First installation is **not offline**; this ZIP is not an air-gapped installer. Checksum verification protects pinned downloads, but a checksum shipped beside an untrusted ZIP is not a publisher signature.
 

@@ -18,6 +18,15 @@ PANEL_HTML = '''
         <p class="updates-muted" id="request-proxy-scope">Estimated input tokens avoided across all tasks; individual-task attribution is unavailable.</p>
         <p id="request-proxy-window-detail" class="updates-muted"></p>
         <p id="request-proxy-coverage" class="updates-muted"></p>
+        <h3 style="font-size:15px;margin-bottom:8px">Compression effectiveness</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:32px">
+            <div><strong id="request-proxy-active-rate" style="font-size:26px;color:#67c9ff">Unavailable</strong><br>Of content submitted for compression</div>
+            <div><strong id="request-proxy-whole-rate" style="font-size:26px;color:#67c9ff">Unavailable</strong><br>Of complete request input</div>
+        </div>
+        <p id="request-proxy-backend-scope" class="updates-muted"></p>
+        <p class="updates-muted">The first rate covers eligible content and tool schemas; the second includes protected history and uses compression savings only. A long conversation can have strong eligible-content reduction and low complete-input reduction. These are token estimates, not measured Codex quota savings.</p>
+        <p id="request-proxy-diagnostics" class="updates-muted"></p>
+        <p id="request-proxy-timing" class="updates-muted"></p>
         <p id="request-proxy-counts" class="updates-muted"></p>
         <p id="request-proxy-routing" class="updates-muted"></p>
         <p id="request-proxy-backend" class="updates-muted"></p>

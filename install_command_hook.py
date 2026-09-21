@@ -1,4 +1,4 @@
-"""Install one optional command rewrite hook; never grant hook trust."""
+"""Install the shared optional RTK/Headroom command hook; never grant trust."""
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -12,6 +12,8 @@ from install_desktop_mcp import replace_checked
 def hook_group(root):
     script = Path(root) / 'Headroom-PreToolUse.ps1'
     command = f'powershell.exe -NoProfile -NonInteractive -File "{script}"'
+    # Keep the existing reviewed definition byte-for-byte compatible. Only the
+    # script implementation evolves; do not reset the user's native hook trust.
     return {'matcher': '^Bash$', 'hooks': [{'type': 'command', 'command': command,
         'timeout': 5, 'statusMessage': 'Checking automatic Headroom command compression'}]}
 
@@ -69,7 +71,7 @@ def main():
         'activation': 'Requires user review in Codex Settings > Hooks > Reload hooks > User > Trust',
         'trust_granted_by_installer': False, 'codex_config_unchanged': True,
         'global_proxy_route_added': False,
-        'scope': 'Supported explicit Windows native command calls; complex or ambiguous commands remain unchanged'}
+        'scope': 'Single literal native Windows git status/diff/log and rg calls use RTK when enabled and on PATH; explicit supported executable calls can use Headroom; complex and exact commands remain unchanged'}
     (root / 'automatic-headroom.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(receipt, indent=2))
 

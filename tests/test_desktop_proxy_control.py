@@ -93,6 +93,71 @@ class DesktopProxyControlTests(unittest.TestCase):
         self.assertFalse(value['available'])
         self.assertIsNone(value['saved_tokens'])
 
+    def test_backend_rates_keep_one_snapshot_and_do_not_mix_persisted_totals(self):
+        self.backend.update(tokens={'proxy_compression_saved': 60, 'all_layers_saved': 80,
+            'proxy_attempted_tokens': 180, 'proxy_total_before_compression': 3000,
+            'active_savings_percent': 40.0, 'proxy_savings_percent': 2.0},
+            persistent_savings={'lifetime': {'tokens_saved': 900000, 'total_input_tokens': 1000000}},
+            display_session={'started_at': '2020-01-01T00:00:00Z'},
+            codex_ws={'frames_attempted_total': 20, 'frames_compressed_total': 6,
+                      'frames_failed_total': 2, 'secret': 'fixture-secret'},
+            pipeline_timing={'codex_ws.compression': {'count': 20, 'average_ms': 120.5, 'max_ms': 5012.3}})
+        value = self.control.status()
+        metrics = value['backend_metrics']
+        self.assertEqual(metrics['scope'], 'backend_counters')
+        self.assertEqual(metrics['active_reduction_pct'], 40.0)  # Includes deferred tool schemas.
+        self.assertEqual(metrics['whole_reduction_pct'], 2.0)
+        self.assertEqual(metrics['attempted_tokens'], 180)
+        self.assertEqual(metrics['whole_input_tokens'], 3000)
+        self.assertEqual(metrics['diagnostics']['frames_failed'], 2)
+        self.assertEqual(metrics['diagnostics']['compression_average_ms'], 120.5)
+        self.assertIsNotNone(module._timestamp(metrics['collected_at']))
+        self.assertNotIn('started_at', metrics)  # Persisted display-session epoch is independent.
+        self.assertNotIn('timeout', json.dumps(metrics))
+        self.assertNotIn('fixture-secret', json.dumps(metrics))
+        self.assertEqual(value['savings']['saved_tokens'], 900000)
+        self.assertEqual(self.control._fetch.call_count, 3)  # Reuse the already-fetched backend stats.
+
+    def test_backend_rates_are_unavailable_offline_empty_or_without_attempts(self):
+        self.backend = {'tokens': {'active_savings_percent': 0, 'proxy_savings_percent': 0,
+            'proxy_attempted_tokens': 0, 'proxy_total_before_compression': 0,
+            'proxy_compression_saved': 0, 'all_layers_saved': 0}}
+        for offline in (False, True):
+            self.gateway['backend_ready'] = not offline
+            metrics = self.control.status()['backend_metrics']
+            self.assertIsNone(metrics['active_reduction_pct'])
+            self.assertIsNone(metrics['whole_reduction_pct'])
+            self.assertIsNone(metrics['diagnostics']['compression_average_ms'])
+            if offline:
+                self.assertIsNone(metrics['collected_at'])
+        self.backend = {}
+        metrics = self.control.status()['backend_metrics']
+        self.assertIsNone(metrics['whole_reduction_pct'])
+        self.assertIsNone(metrics['collected_at'])
+
+    def test_backend_metrics_reject_invalid_and_inconsistent_numeric_values(self):
+        tokens = {'proxy_compression_saved': 60, 'all_layers_saved': 60,
+                  'proxy_attempted_tokens': 100, 'proxy_total_before_compression': 3000,
+                  'active_savings_percent': 60.0, 'proxy_savings_percent': 2.0}
+        for invalid in (True, '60', -1, 101, float('nan'), float('inf'), 2**100):
+            self.backend['tokens'] = dict(tokens, active_savings_percent=invalid)
+            with self.subTest(invalid=invalid):
+                self.assertIsNone(self.control.status()['backend_metrics']['active_reduction_pct'])
+        for invalid in (True, '100', -1, 2**100):
+            self.backend['tokens'] = dict(tokens, proxy_attempted_tokens=invalid)
+            with self.subTest(counter=invalid):
+                self.assertIsNone(self.control.status()['backend_metrics']['active_reduction_pct'])
+        self.backend['tokens'] = dict(tokens, active_savings_percent=80.0)
+        self.backend['codex_ws'] = {'frames_attempted_total': True, 'frames_failed_total': 2**100}
+        self.backend['pipeline_timing'] = {'codex_ws.compression': {'count': 2,
+            'average_ms': float('nan'), 'max_ms': '5012.3'}}
+        metrics = self.control.status()['backend_metrics']
+        self.assertIsNone(metrics['active_reduction_pct'])
+        self.assertIsNone(metrics['diagnostics']['frames_attempted'])
+        self.assertIsNone(metrics['diagnostics']['frames_failed'])
+        self.assertIsNone(metrics['diagnostics']['compression_average_ms'])
+        self.assertIsNone(metrics['diagnostics']['compression_max_ms'])
+
     def test_offline_history_reads_only_the_dedicated_request_backend(self):
         self.control._fetch.side_effect = OSError('offline')
         old = self.root / 'headroom' / 'state'

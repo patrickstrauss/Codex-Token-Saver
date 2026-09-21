@@ -129,3 +129,59 @@ function select(value){node('request-proxy-window').value=value;node('request-pr
         assert 'last 15 minutes' in data[key]['scope']
         assert 'No readable records' in data[key]['detail']
     assert data['manualLifetime']['saved'] == '99,999'
+
+
+@pytest.mark.skipif(shutil.which('node') is None, reason='Requires Node for shipped JavaScript')
+def test_backend_rates_have_separate_scope_and_hide_missing_measurements():
+    script = (Path(__file__).parents[1] / 'static' / 'proxy.js').read_text(encoding='utf-8')
+    harness = r'''
+const vm=require('node:vm'), source=JSON.parse(require('node:fs').readFileSync(0,'utf8'));
+const nodes={}, responses=[], timers=[], calls=[];
+function node(id){return nodes[id]||={textContent:'',hidden:false,disabled:false,value:'',listeners:{},
+ addEventListener(t,fn){this.listeners[t]=fn;}};}
+const metrics={scope:'backend_counters',collected_at:'2026-09-21T03:00:00Z',
+ active_reduction_pct:58.8,whole_reduction_pct:1.8,
+ diagnostics:{frames_attempted:300,frames_compressed:90,frames_failed:5,
+ compression_average_ms:123.4,compression_max_ms:5001,compression_samples:300}};
+const state={mode:'optimized',backend_metrics:metrics,savings:{available:true,saved_tokens:9999,requests:600}};
+responses.push(state);
+const context={document:{getElementById:node,querySelector:()=>({content:'fixture'}),hidden:false},
+ setInterval(fn){timers.push(fn);},fetch:async(url,options={})=>{calls.push({url,...options});
+ return {ok:true,json:async()=>responses.shift()};}};
+vm.createContext(context);vm.runInContext(source,context);
+async function flush(){for(let i=0;i<10;i++)await Promise.resolve();}
+function view(){return {active:node('request-proxy-active-rate').textContent,
+ whole:node('request-proxy-whole-rate').textContent,scope:node('request-proxy-backend-scope').textContent,
+ diagnostics:node('request-proxy-diagnostics').textContent,timing:node('request-proxy-timing').textContent};}
+(async()=>{
+ await flush();const initial=view(),before=calls.length;
+ node('request-proxy-window').value='lifetime';node('request-proxy-window').listeners.change();const lifetime=view();
+ responses.push({...state,backend_metrics:{...metrics,active_reduction_pct:null,whole_reduction_pct:null,diagnostics:{}}});
+ await timers[0]();await flush();const unavailable=view();
+ responses.push({...state,backend_metrics:undefined});await timers[0]();await flush();const missing=view();
+ responses.push({...state,backend_metrics:{...metrics,active_reduction_pct:0,whole_reduction_pct:0,
+ diagnostics:{frames_attempted:0,frames_compressed:0,frames_failed:0}}});
+ await timers[0]();await flush();const zero=view();
+ process.stdout.write(JSON.stringify({initial,lifetime,unavailable,missing,zero,extraCalls:calls.length-before}));
+})().catch(e=>{process.stderr.write(e.stack);process.exitCode=1;});
+'''
+    result = subprocess.run(['node', '-e', harness], input=json.dumps(script), text=True,
+                            capture_output=True, check=True, timeout=10)
+    data = json.loads(result.stdout)
+    assert data['initial']['active'] == '58.8%'
+    assert data['initial']['whole'] == '1.8%'
+    assert 'backend counters' in data['initial']['scope']
+    assert 'selected savings window' in data['initial']['scope']
+    assert '300 attempted' in data['initial']['diagnostics']
+    assert '5 failed' in data['initial']['diagnostics']
+    assert 'timeout' not in data['initial']['diagnostics'].lower()
+    assert '123.4 ms average' in data['initial']['timing']
+    assert '300 measured' in data['initial']['timing']
+    assert data['lifetime'] == data['initial']
+    for key in ('unavailable', 'missing'):
+        assert data[key]['active'] == data[key]['whole'] == 'Unavailable'
+        assert 'Unavailable' in data[key]['diagnostics']
+        assert 'Unavailable' in data[key]['timing']
+    assert data['zero']['active'] == data['zero']['whole'] == '0%'
+    assert '0 attempted' in data['zero']['diagnostics']
+    assert data['extraCalls'] == 3  # Window selection never fetches or changes routing.

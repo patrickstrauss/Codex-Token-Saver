@@ -25,6 +25,8 @@ class FakeControl:
                 'route_enabled': self.enabled, 'mode': 'optimized' if self.enabled else 'paused',
                 'ready': True, 'backend_ready': True, 'restart_required': bool(self.calls),
                 'requests': {'optimized': 2, 'direct': 1, 'failed': 0, 'active': 0},
+                'backend_metrics': {'scope': 'backend_counters', 'active_reduction_pct': 60,
+                                    'whole_reduction_pct': 2, 'collected_at': '2026-09-21T03:00:00Z'},
                 'savings': {'available': True, 'saved_tokens': 321, 'estimated': True}}
 
     def set_enabled(self, enabled):
@@ -63,6 +65,7 @@ def test_status_is_read_only_and_reports_uncombined_proxy_savings(proxy_api):
     assert response.status_code == 200
     assert response.json['savings']['saved_tokens'] == 321
     assert response.json['mode'] == 'paused'
+    assert response.json['backend_metrics'] == control.status()['backend_metrics']
     assert response.headers['Cache-Control'] == 'no-store'
     assert not control.calls
 

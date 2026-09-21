@@ -185,7 +185,92 @@ def _configure_sdk(host='127.0.0.1', port=8789):
     config.compression_max_workers = 2
     _enable_recoverable_kompress()
     _enable_exact_retrieval_guard()
+    _enable_responses_schema_accounting()
     return config
+
+
+def _responses_schema_accounting(compress, record):
+    """Repair 0.37 HTTP's message-only pair when schema savings are included.
+
+    Only numeric counts are retained, bounded for requests without outcomes.
+    WS already forms its own coherent pair; additional_tools can be counted
+    inside converted messages, so neither path is widened here.
+    """
+    import asyncio
+    from collections import OrderedDict
+    from dataclasses import replace
+    from functools import wraps
+    from headroom.proxy.handlers.openai import _json_debug_dumps
+    pending = OrderedDict()
+
+    @wraps(compress)
+    async def compressed(self, payload, **kwargs):
+        # Capture classic schemas before the SDK's additional_tools lift can
+        # mutate payload. Explicit timeout is the SDK's WS dispatch contract.
+        tools = payload.get('tools') if isinstance(payload, dict) else None
+        items = payload.get('input') if isinstance(payload, dict) else None
+        if isinstance(items, list) and any(isinstance(item, dict) and item.get('type') == 'additional_tools'
+                                           for item in items):
+            tools = None
+        result = await compress(self, payload, **kwargs)
+        try:
+            rid = kwargs.get('request_id')
+            if tools and rid and 'timeout' not in kwargs and result[1] and result[2] > 0:
+                # The SDK only returns a combined schema+router denominator.
+                # This extra count must not serialize on the event loop or
+                # extend forwarding by an unbounded tokenizer wait.
+                def count_schema():
+                    counter = self.openai_provider.get_token_counter(kwargs.get('model'))
+                    return counter.count_text(_json_debug_dumps(tools))
+                count = await asyncio.wait_for(asyncio.to_thread(count_schema), timeout=0.1)
+                if type(count) is int and count > 0:
+                    pending[rid] = count
+                    pending.move_to_end(rid)
+                    while len(pending) > 512:
+                        pending.popitem(last=False)
+        except Exception:
+            pass  # Accounting cannot alter forwarding or fail a model request.
+        return result
+
+    @wraps(record)
+    async def recorded(self, outcome):
+        count = pending.pop(outcome.request_id, 0)
+        if (count and outcome.provider == 'openai' and outcome.tokens_saved > 0
+                and (outcome.tags or {}).get('endpoint') != 'responses_ws'
+                and outcome.optimized_tokens == max(0, outcome.original_tokens - outcome.tokens_saved)):
+            before = outcome.original_tokens + count
+            if outcome.tokens_saved <= before:
+                outcome = replace(outcome, original_tokens=before,
+                                  optimized_tokens=before - outcome.tokens_saved)
+        return await record(self, outcome)
+
+    compressed._bundle_schema_accounting = True
+    return compressed, recorded
+
+
+def _enable_responses_schema_accounting():
+    """Child-only, exact-wheel/contract gate; future fixed wheels stay native."""
+    import inspect
+    from importlib.metadata import version
+    from headroom.proxy.handlers.openai import OpenAIHandlerMixin
+    from headroom.proxy.server import HeadroomProxy
+    method = '_compress_openai_responses_payload_in_executor'
+    compress = getattr(OpenAIHandlerMixin, method)
+    if getattr(compress, '_bundle_schema_accounting', False):
+        return True
+    if version('headroom-ai') != '0.37.0':
+        return False
+    try:
+        source = inspect.getsource(OpenAIHandlerMixin.handle_openai_responses)
+    except (OSError, TypeError):
+        return False
+    if ('tokenizer, original_tokens = await self._count_tokens_offloaded(model, messages)' not in source
+            or 'optimized_tokens = max(0, original_tokens - tokens_saved)' not in source):
+        return False
+    compressed, recorded = _responses_schema_accounting(compress, HeadroomProxy._record_request_outcome)
+    setattr(OpenAIHandlerMixin, method, compressed)
+    HeadroomProxy._record_request_outcome = recorded
+    return True
 
 
 def _guard_exact_responses(original, *, root=ROOT):
@@ -473,6 +558,7 @@ def _configuration_report():
             'savings_flush_every': flush_every,
             'request_invariants_preserved': preserved,
             'exact_retrieval_protected': exact_retrieval_protected,
+            'responses_schema_accounting': _enable_responses_schema_accounting(),
             'workspace': str(paths.workspace_dir())}
 
 
