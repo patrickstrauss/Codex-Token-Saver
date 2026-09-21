@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import tempfile
@@ -174,6 +175,50 @@ def _savings(payload, historical=False):
     return result
 
 
+def _backend_metrics(payload):
+    """Project aggregate counters from one cached snapshot, never persisted totals."""
+    def mapping(value):
+        return value if isinstance(value, dict) else {}
+
+    def count(value):
+        return value if type(value) is int and 0 <= value <= 2**53 - 1 else None
+
+    def number(value, maximum=2**53 - 1):
+        return value if type(value) in (int, float) and 0 <= value <= maximum and math.isfinite(value) else None
+
+    def rate(value, numerator, denominator):
+        valid = number(value, 100)
+        if (valid is None or numerator is None or denominator is None or denominator <= 0
+                or numerator > denominator or abs(valid - 100 * numerator / denominator) > .015):
+            return None
+        return valid
+
+    tokens = mapping(payload.get('tokens'))
+    saved = count(tokens.get('proxy_compression_saved'))
+    all_saved = count(tokens.get('all_layers_saved'))
+    attempted = count(tokens.get('proxy_attempted_tokens'))
+    whole = count(tokens.get('proxy_total_before_compression'))
+    # Upstream's active denominator also includes deferred tool schemas. Those
+    # are the difference between all-layer and compression-only saved tokens.
+    active_denominator = (count(attempted + all_saved - saved)
+                          if None not in (attempted, all_saved, saved) and all_saved >= saved else None)
+    frames = mapping(payload.get('codex_ws'))
+    timing = mapping(mapping(payload.get('pipeline_timing')).get('codex_ws.compression'))
+    samples = count(timing.get('count'))
+    return {'scope': 'backend_counters', 'estimated': True,
+            'collected_at': datetime.now(timezone.utc).isoformat() if payload else None,
+            'attempted_tokens': attempted, 'whole_input_tokens': whole,
+            'active_reduction_pct': rate(tokens.get('active_savings_percent'), all_saved, active_denominator),
+            'whole_reduction_pct': rate(tokens.get('proxy_savings_percent'), saved, whole),
+            'diagnostics': {
+                'frames_attempted': count(frames.get('frames_attempted_total')),
+                'frames_compressed': count(frames.get('frames_compressed_total')),
+                'frames_failed': count(frames.get('frames_failed_total')),
+                'compression_samples': samples,
+                'compression_average_ms': number(timing.get('average_ms')) if samples else None,
+                'compression_max_ms': number(timing.get('max_ms')) if samples else None}}
+
+
 class DesktopProxyControl:
     def __init__(self, root=ROOT, *, config_home=None):
         self.root = Path(root).resolve()
@@ -286,7 +331,8 @@ class DesktopProxyControl:
                 'mode': ('offline' if not ready else 'paused' if not enabled else 'optimized' if backend_ready else 'direct'),
                 'validated': validated, 'last_error': ' '.join(errors) or None,
                 'restart_required': self._owned(receipt) and receipt.get('restart_required') is True,
-                'requests': requests, 'savings': savings}
+                'requests': requests, 'savings': savings,
+                'backend_metrics': _backend_metrics(backend if backend_ready else {})}
 
     def _check_routes(self, config, receipt):
         def check_layer(layer):

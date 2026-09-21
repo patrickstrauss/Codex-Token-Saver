@@ -6,6 +6,7 @@
     var state = {}, reading = false, changing = false, sequence = 0, errorMessage = '';
     function el(id) { return document.getElementById('request-proxy-' + id); }
     function number(value) { return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : 'Unavailable'; }
+    function percent(value) { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? number(value) + '%' : 'Unavailable'; }
     function render() {
         var modes = {optimized: 'Optimized connection', direct: 'Direct connection — compression unavailable',
             offline: 'Request connection offline', paused: 'Request compression paused'};
@@ -25,6 +26,17 @@
         el('coverage').textContent = key !== 'lifetime' && recent && recent.available
             ? 'Headroom records positive-savings events only; zero-savings requests and expansions are excluded. This is not an overall traffic reduction rate.'
                 + (!recent.complete ? ' Partial ledger coverage: older or invalid records were omitted. These are totals from available records only.' : '') : '';
+        var metrics = state.backend_metrics || {}, diagnostics = metrics.diagnostics || {};
+        el('active-rate').textContent = percent(metrics.active_reduction_pct);
+        el('whole-rate').textContent = percent(metrics.whole_reduction_pct);
+        el('backend-scope').textContent = 'Current backend counters across all tasks; independent of the selected savings window. Counters reset with backend metrics.'
+            + (metrics.collected_at ? ' Snapshot retrieved: ' + new Date(metrics.collected_at).toLocaleString() + '.' : ' Snapshot unavailable.');
+        el('diagnostics').textContent = 'WebSocket compression frames: ' + number(diagnostics.frames_attempted)
+            + ' attempted; ' + number(diagnostics.frames_compressed) + ' compressed; ' + number(diagnostics.frames_failed)
+            + ' failed. Failure reasons are not reported by these counters.';
+        el('timing').textContent = 'WebSocket compression time: ' + number(diagnostics.compression_average_ms)
+            + ' ms average; ' + number(diagnostics.compression_max_ms) + ' ms slowest; '
+            + number(diagnostics.compression_samples) + ' measured. Excludes model generation and upstream connection time.';
         el('counts').textContent = 'Requests recorded by Headroom: ' + number(savings.requests)
             + '. Completed connections: ' + number(requests.optimized) + ' optimized; ' + number(requests.direct)
             + ' direct; ' + number(requests.failed) + ' failed. Active connections: ' + number(requests.active);

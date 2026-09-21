@@ -1,18 +1,26 @@
-"""Register bundle file tools transactionally; preserve unrelated Codex settings."""
+"""Register bundle tools and an untrusted hook transactionally; preserve settings."""
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
 import sys
+import tomllib
 
 
 def configure(root, config_home):
     sys.path.insert(0, str(root))
     from install_desktop_mcp import merge_config, replace_checked
+    from install_command_hook import merge_hooks
     config_home.mkdir(parents=True, exist_ok=True)
-    config, agents = config_home / 'config.toml', config_home / 'AGENTS.md'
-    existed = {p: p.exists() for p in (config, agents)}
-    before = {p: p.read_bytes() if existed[p] else b'' for p in (config, agents)}
+    config, agents, hooks = (config_home / name for name in ('config.toml', 'AGENTS.md', 'hooks.json'))
+    existed = {p: p.exists() for p in (config, agents, hooks)}
+    before = {p: p.read_bytes() if existed[p] else b'' for p in (config, agents, hooks)}
+    hook_disabled = tomllib.loads(before[config].decode('utf-8-sig')).get('features', {}).get('hooks') is False
+    desired_hooks = before[hooks]
+    if not hook_disabled:
+        desired_hooks = merge_hooks(before[hooks].decode('utf-8-sig') if existed[hooks] else '{}', root).encode()
+        if before[hooks].startswith(b'\xef\xbb\xbf'):
+            desired_hooks = b'\xef\xbb\xbf' + desired_hooks
     desired_config = merge_config(before[config].decode('utf-8-sig'), root).encode()
     if before[config].startswith(b'\xef\xbb\xbf'):
         desired_config = b'\xef\xbb\xbf' + desired_config
@@ -27,7 +35,7 @@ def configure(root, config_home):
             raise ValueError('Managed guidance markers are damaged; nothing changed.')
         if start not in guidance:
             guidance += b'\n\n' + start + b'\n' + text.encode() + b'\n' + end + b'\n'
-    changes = [(config, desired_config), (agents, guidance)]
+    changes = [(config, desired_config), (agents, guidance), (hooks, desired_hooks)]
     changes = [(p, value) for p, value in changes if value != before[p]]
     backup = root / 'backups' / ('team-install-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ'))
     if changes:
@@ -51,7 +59,10 @@ def configure(root, config_home):
             if path.exists() and path.read_bytes() == b'':
                 path.unlink()
         raise
-    return {'registered': True, 'connection_preserved': True, 'backup': str(backup) if changes else None}
+    return {'registered': True, 'connection_preserved': True, 'backup': str(backup) if changes else None,
+            'command_hook_registered': not hook_disabled, 'hook_trust_granted': False,
+            'hook_activation': ('Hooks were explicitly disabled; settings preserved.' if hook_disabled else
+                                'Review and trust the command hook in Codex Settings > Hooks > Reload hooks > User.')}
 
 
 if __name__ == '__main__':
