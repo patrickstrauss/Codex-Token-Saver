@@ -37,7 +37,8 @@ def verify(root, package, config_home):
     # Never accept the normal user installation/profile as a synthetic test target.
     assert root.parent == config_home.parent and root.name == 'bundle' and config_home.name == 'codex'
     assert root.parent.name.startswith('token-saver-package-'), 'Use Smoke-Package.ps1 to create an isolated sandbox.'
-    for name in ('Repair-Team-Setup.cmd', 'Setup-Request-Compression.cmd'):
+    for name in ('Repair-Team-Setup.cmd', 'Setup-Request-Compression.cmd',
+                 'Disable-Token-Saver.cmd', 'Get-Token-Saver-Diagnostics.cmd'):
         assert (package / name).read_bytes() == (package / 'payload' / name).read_bytes()
         assert (root / name).read_bytes() == (package / name).read_bytes()
     for relative in ('Repair-Team-Setup.ps1', 'repair_team_setup.py', 'Setup-Request-Compression.ps1',

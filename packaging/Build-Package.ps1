@@ -14,7 +14,7 @@ $taskFiles = @(Get-ChildItem -LiteralPath $taskRepo -File | Where-Object Extensi
 foreach ($taskDoc in @('README.md','LIBRARY-UPDATES.md','DESKTOP-REQUEST-PROXY.md','DESKTOP-REPORT.md','INSTALL-PLAN.md','AUTOMATIC-HEADROOM-REPORT.md','HEADROOM-COMPARISON.md','REPAIR-REPORT.md','CONTEXT.md','dashboard\LICENSE','native\README.md')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo $taskDoc)
 }
-foreach ($taskLauncher in @('Select-Local-Model.cmd','Repair-Team-Setup.cmd','Setup-Request-Compression.cmd')) {
+foreach ($taskLauncher in @('Select-Local-Model.cmd','Repair-Team-Setup.cmd','Setup-Request-Compression.cmd','Disable-Token-Saver.cmd','Get-Token-Saver-Diagnostics.cmd')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo $taskLauncher)
 }
 foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena')) {
@@ -24,7 +24,7 @@ foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena'
 }
 $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'dashboard\static') -File -Recurse |
     Where-Object Extension -in @('.css','.js','.svg','.png','.ico','.woff2')
-foreach ($taskDoc in @('TEAM-INSTALL.md','USING-BUNDLE.md','SERENA-INTEGRATION.md','SERENA-TESTING.md','CONTROL-UI-VALIDATION.md','PERFORMANCE-CHECK.md')) {
+foreach ($taskDoc in @('TEAM-INSTALL.md','USING-BUNDLE.md','SERENA-INTEGRATION.md','SERENA-TESTING.md','CONTROL-UI-VALIDATION.md','PERFORMANCE-CHECK.md','PROCESS-RECOVERY.md')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo ('docs\' + $taskDoc))
 }
 foreach ($taskFile in ($taskFiles | Sort-Object FullName -Unique)) {
@@ -40,7 +40,7 @@ foreach ($taskBuild in @('Build-RtkLauncher.ps1','Build-HeadroomLauncher.ps1','B
 }
 # Kept only because the existing startup installer checks for its legacy fallback.
 '@echo off', '"%~dp0rtk.exe" %*' | Set-Content -LiteralPath (Join-Path $taskPayload 'bin\rtk.cmd') -Encoding ascii
-foreach ($taskEntry in @('Install.cmd','Install.ps1','Repair-Team-Setup.cmd','Setup-Request-Compression.cmd')) {
+foreach ($taskEntry in @('Install.cmd','Install.ps1','Repair-Team-Setup.cmd','Setup-Request-Compression.cmd','Disable-Token-Saver.cmd','Get-Token-Saver-Diagnostics.cmd')) {
     Copy-Item -LiteralPath (Join-Path $taskRepo $taskEntry) -Destination $taskStage
 }
 $taskEntries = @(Get-ChildItem -LiteralPath $taskPayload -File -Recurse | Sort-Object FullName | ForEach-Object {

@@ -130,6 +130,43 @@ class ProxyRuntimeTests(unittest.TestCase):
         self.assertGreater(report['tokens_before'], report['tokens_after'])
         self.assertLess(report['load_seconds'], 45)
 
+    def test_model_probe_budget_is_isolated_from_production_and_parent(self):
+        from proxy_runtime import validate_proxy_model, validate_proxy_runtime, build_proxy_environment
+        before = dict(os.environ)
+        state = ROOT / 'proxy-test-state'
+        result = subprocess.CompletedProcess([], 0, stdout='{"ok": true}')
+        with patch('proxy_runtime.subprocess.run', return_value=result) as run:
+            validate_proxy_model(ROOT / 'headroom/.venv', state)
+            model_env = run.call_args.kwargs['env']
+            self.assertEqual(model_env['HEADROOM_KOMPRESS_TIME_BUDGET_SECONDS'], '15')
+            self.assertEqual(model_env['HEADROOM_KOMPRESS_ACQUIRE_TIMEOUT_SECONDS'], '3')
+            self.assertEqual(run.call_args.kwargs['timeout'], 45)
+            validate_proxy_runtime(ROOT / 'headroom/.venv', state)
+            self.assertEqual(run.call_args.kwargs['env'], build_proxy_environment(state))
+        production_env = build_proxy_environment(state)
+        self.assertEqual(production_env['HEADROOM_KOMPRESS_TIME_BUDGET_SECONDS'], '3')
+        self.assertEqual(production_env['HEADROOM_KOMPRESS_ACQUIRE_TIMEOUT_SECONDS'], '0.25')
+        self.assertEqual(os.environ, before)
+
+    def test_negative_model_report_preserves_diagnostics(self):
+        from proxy_runtime import validate_proxy_model
+        report = {'ok': False, 'model_ready': True, 'tokens_before': 1250,
+                  'tokens_after': 1250, 'exact_original_recovered': False}
+        result = subprocess.CompletedProcess([], 0, stdout=json.dumps(report))
+        with patch('proxy_runtime.subprocess.run', return_value=result):
+            actual = validate_proxy_model(ROOT / 'headroom/.venv', ROOT / 'proxy-test-state')
+        for key, value in report.items():
+            self.assertEqual(actual[key], value)
+        self.assertEqual(actual['error'], 'Headroom runtime validation checks failed')
+
+    def test_validation_rejects_non_boolean_status(self):
+        from proxy_runtime import validate_proxy_model
+        result = subprocess.CompletedProcess([], 0, stdout='{"ok": "false"}')
+        with patch('proxy_runtime.subprocess.run', return_value=result):
+            actual = validate_proxy_model(ROOT / 'headroom/.venv', ROOT / 'proxy-test-state')
+        self.assertIs(actual['ok'], False)
+        self.assertEqual(actual['error'], 'Headroom runtime is unavailable or invalid')
+
     def test_completed_request_savings_survive_abrupt_exit_and_fresh_process(self):
         from proxy_runtime import build_proxy_environment
         with tempfile.TemporaryDirectory(prefix='headroom-proxy-durability-') as state:
