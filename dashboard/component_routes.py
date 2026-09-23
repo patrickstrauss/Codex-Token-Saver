@@ -2,6 +2,8 @@
 import sys
 import re
 import threading
+import os
+import subprocess
 from pathlib import Path
 from uuid import UUID
 
@@ -9,6 +11,18 @@ from flask import jsonify, request
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
 
 COMPONENTS = ('rtk', 'headroom_local', 'headroom_requests', 'serena', 'local_summaries', 'llama_cpp')
+
+
+def _launch_disable(root):
+    """Open a separate native confirmation window, never disable from HTTP."""
+    script = root / 'Disable-Token-Saver.ps1'
+    if sys.platform != 'win32' or not script.is_file():
+        raise RuntimeError('Interactive disable is unavailable')
+    powershell = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+    return subprocess.Popen([str(powershell), '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
+                             '-File', str(script.resolve()), '-Interactive'],
+                            cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
 
 
 def _controls(root):
@@ -45,6 +59,7 @@ def register_component_routes(app, root, security, control_factory=None, summary
     root = Path(root)
     factories = {'controls': control_factory or _controls, 'summaries': summary_factory or _summaries}
     managers, lock = {}, threading.Lock()
+    disable_process = None
 
     def manager(name):
         with lock:
@@ -98,6 +113,24 @@ def register_component_routes(app, root, security, control_factory=None, summary
         except Exception:
             return security.error('Component status is unavailable. Refresh before trying another change.', 503)
 
+    def open_disable():
+        nonlocal disable_process
+        denied = security.guard(mutation=True)
+        if denied is not None:
+            return denied
+        try:
+            if request.query_string or body({'action'})['action'] != 'open':
+                raise ValueError()
+            with lock:
+                already_open = disable_process is not None and disable_process.poll() is None
+                if not already_open:
+                    disable_process = _launch_disable(root)
+            return respond({'opened': True, 'already_open': already_open}, 202)
+        except (ValueError, BadRequest, RequestEntityTooLarge):
+            return security.error('Use the Disable Token Saver button to open its confirmation window.', 400)
+        except Exception:
+            return security.error('The disable window could not open. Run Disable-Token-Saver.cmd from the installed folder. Nothing was disabled by this request.', 503)
+
     def lookup_summary_task():
         denied = security.guard(mutation=False)
         if denied is not None:
@@ -148,6 +181,7 @@ def register_component_routes(app, root, security, control_factory=None, summary
             return security.error('Local summaries are unavailable. Original conversations are unchanged.', 503)
 
     app.add_url_rule('/api/components', 'bundle_components', components, methods=['GET', 'POST'])
+    app.add_url_rule('/api/bundle/disable', 'open_bundle_disable', open_disable, methods=['POST'])
     app.add_url_rule('/api/local-summaries', 'local_summaries', summaries, methods=['GET', 'POST'])
     app.add_url_rule('/api/local-summaries/lookup', 'lookup_summary_task', lookup_summary_task, methods=['GET'])
     return snapshot

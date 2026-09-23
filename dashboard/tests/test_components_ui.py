@@ -46,8 +46,11 @@ async function flush(){for(let i=0;i<20;i++)await Promise.resolve()}
  const ready=!node('local-summary-refresh').disabled,priorPosts=calls.filter(x=>x.method==='POST').length;
  node('local-summary-refresh').listeners.click();await flush();
  const posted=calls.filter(x=>x.method==='POST').at(-1),summary=node('local-summary-text').textContent;
+ const beforeDisable=calls.length,disableClick=node('bundle-disable').listeners.click;
+ const opening=disableClick.call(node('bundle-disable'));disableClick.call(node('bundle-disable'));await opening;await flush();
+ const disable={calls:calls.length-beforeDisable,request:calls.at(-1),message:node('bundle-disable-status').textContent,enabled:!node('bundle-disable').disabled};
  context.document.hidden=true;const before=calls.length;timers[0]();await flush();
- process.stdout.write(JSON.stringify({initialCalls,unavailable,change,localStillOn,reloadNotice,ready,priorPosts,posted,summary,quality:node('local-summary-quality').textContent,progress:node('local-summary-status').textContent,hiddenPolls:calls.length-before}));
+ process.stdout.write(JSON.stringify({initialCalls,unavailable,change,localStillOn,reloadNotice,ready,priorPosts,posted,summary,disable,quality:node('local-summary-quality').textContent,progress:node('local-summary-status').textContent,hiddenPolls:calls.length-before}));
 })().catch(e=>{process.stderr.write(e.stack);process.exitCode=1});
 '''
     result = subprocess.run(['node', '-e', harness], input=json.dumps({'source': source, 'status': summary_status, 'coverage': coverage_extra}), text=True,
@@ -62,6 +65,11 @@ async function flush(){for(let i=0;i<20;i++)await Promise.resolve()}
     assert json.loads(data['posted']['body']) == {'action': 'start', 'task_id': 'a6e593dc-4bd7-40f6-8250-ae9d8990efe4'}
     assert data['summary'] == '<script>is displayed as text</script>'
     assert data['hiddenPolls'] == 0
+    assert data['disable']['calls'] == 1 and data['disable']['enabled']
+    assert data['disable']['request']['url'] == '/api/bundle/disable'
+    assert data['disable']['request']['headers']['X-Codex-Update-Token'] == 'csrf'
+    assert json.loads(data['disable']['request']['body']) == {'action': 'open'}
+    assert 'Nothing is disabled until you confirm' in data['disable']['message']
     assert expected_quality in data['quality']
     assert '6 of 14 segments; 1 batches completed' in data['progress']
     if summary_status != 'summarized':

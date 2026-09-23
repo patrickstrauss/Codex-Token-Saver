@@ -85,6 +85,24 @@
         } catch (_) { error('components-error', 'The response was interrupted. Refresh status before trying again.'); }
         finally { changing = false; render(); }
     }
+    var disableOpening = false;
+    el('bundle-disable').addEventListener('click', async function () {
+        if (disableOpening) return;
+        disableOpening = true; this.disabled = true;
+        error('bundle-disable-error', ''); el('bundle-disable-status').hidden = true;
+        try {
+            var response = await fetch('/api/bundle/disable', {method:'POST', credentials:'same-origin', cache:'no-store',
+                headers:{'Content-Type':'application/json', 'X-Codex-Update-Token':token}, body:JSON.stringify({action:'open'})});
+            var data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'The disable window could not open.');
+            el('bundle-disable-status').textContent = data.already_open
+                ? 'The disable window is already open. Check the Windows taskbar to continue or cancel.'
+                : 'The Windows confirmation window is opening. Nothing is disabled until you confirm there.';
+            el('bundle-disable-status').hidden = false;
+        } catch (problem) {
+            error('bundle-disable-error', problem.message || 'Could not open the disable window. Run Disable-Token-Saver.cmd from the installed folder.');
+        } finally { disableOpening = false; this.disabled = false; }
+    });
     var summaryBusy = false, summaryState = {}, selectedTask = '', selectedMetadata = null, summaryGeneration = 0;
     var lookupBusy = false, lookupGeneration = 0, tasksReading = false, tasksGeneration = 0, recentTasks = [];
     function taskReference(value) {

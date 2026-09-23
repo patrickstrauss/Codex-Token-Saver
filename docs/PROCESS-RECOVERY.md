@@ -2,7 +2,9 @@
 
 ## Stop the bundle without deleting your data
 
-Fully quit Codex, then run **Disable-Token-Saver.cmd** from the installed folder or the latest fully extracted deployment package. Wait for its successful completion, then **restart Windows yourself**. The command disables owned startup entries and Codex integrations, turns the bundle preferences off, and restores an owned request route before marking the proxy uninstalled. It does not terminate applications, reboot Windows, delete installation files/history, or change your model, reasoning, authentication or unrelated tools.
+In the dashboard, open **Your toolkit → Turn off Token Saver → Disable Token Saver…**, or right-click the **TS** tray icon and choose **Disable Token Saver…**. A separate Windows confirmation explains the changes. Fully quit Codex before continuing; if it is still open, the dialog lets you retry or cancel. Opening or cancelling the dialog does not disable anything. Wait for the success message, then **restart Windows yourself**.
+
+If the UI is unavailable, fully quit Codex and run **Disable-Token-Saver.cmd** from the installed folder or the latest fully extracted deployment package. Both entry points use the same disable procedure: disable owned startup entries and Codex integrations, turn the bundle preferences off, and restore an owned request route before marking the proxy uninstalled. The procedure does not terminate applications, reboot Windows, delete installation files/history, or change your model, reasoning, authentication or unrelated tools.
 
 Restarting Windows is required to clear existing workers. Closing the tray alone leaves services running; component switches and Pause are not full shutdown controls. Disable failures must be addressed before treating the bundle as disabled. Keep the printed report and backup location. Windows startup changes and configuration edits are separate operations; inspect any partial-failure report.
 

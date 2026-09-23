@@ -23,6 +23,17 @@ function Start-Dashboard {
     try { $null = & (Join-Path $taskRoot 'Start-Services.ps1') }
     catch { Write-TrayLog $_.Exception.Message }
 }
+function Start-DisableBundle {
+    try {
+        $taskDisableScript = Join-Path $taskRoot 'Disable-Token-Saver.ps1'
+        if (-not (Test-Path -LiteralPath $taskDisableScript -PathType Leaf)) { throw 'The disable script is missing. Open the setup and recovery guide.' }
+        $taskPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        Start-Process -FilePath $taskPowerShell -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "' + $taskDisableScript + '" -Interactive') -WindowStyle Hidden
+    } catch {
+        Write-TrayLog ('Disable window failed: ' + $_.Exception.Message)
+        [void][Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Codex Token Saver', [Windows.Forms.MessageBoxButtons]::OK, [Windows.Forms.MessageBoxIcon]::Error)
+    }
+}
 function Update-TrayStats {
     try {
         $taskStats = Invoke-RestMethod -Uri 'http://127.0.0.1:8095/api/stats' -TimeoutSec 2
@@ -133,6 +144,7 @@ try {
     $taskRepairItem = $taskMenu.Items.Add('Restart / repair dashboard')
     $taskSummaryItem = $taskMenu.Items.Add('Local summary reminders')
     $taskGuideItem = $taskMenu.Items.Add('Open setup and recovery guide')
+    $taskDisableItem = $taskMenu.Items.Add(('Disable Token Saver' + [char]0x2026))
     $taskQuitItem = $taskMenu.Items.Add('Quit tray (services keep running)')
     $taskOpenItem.Add_Click({ Start-Dashboard; Start-Process 'http://127.0.0.1:8095/' })
     $taskTray.Add_MouseClick({ param($sender,$eventArgs); if ($eventArgs.Button -eq [Windows.Forms.MouseButtons]::Left) { Start-Dashboard; Start-Process 'http://127.0.0.1:8095/' } })
@@ -144,6 +156,7 @@ try {
         }
     })
     $taskGuideItem.Add_Click({ Start-Process notepad.exe -ArgumentList ('"' + (Join-Path $taskRoot 'README.md') + '"') })
+    $taskDisableItem.Add_Click({ Start-DisableBundle })
     $taskQuitItem.Add_Click({ [Windows.Forms.Application]::Exit() })
     Start-Dashboard
     Update-TrayStats
