@@ -100,8 +100,10 @@ class BundleControls:
                 data = observations.get('rtk', {})
                 row['available'] = all((self.root / file).is_file() for file in ('bin/rtk.exe', 'tools/rtk.exe'))
                 row['last_use'] = data.get('last_recorded_at')
-                row['reason'] = ('Used recently. Only supported commands passed through RTK are filtered.'
-                                 if data.get('recent_use') else 'No recent use recorded. Ordinary shell commands do not automatically use RTK.')
+                row['reason'] = ('Used recently.' if data.get('recent_use') else
+                                 'No commands recorded yet.' if data.get('data_status') == 'not_started' else
+                                 'No recent use recorded.')
+                row['reason'] += ' With the trusted command hook, eligible Git and rg commands use RTK automatically. Other supported commands require explicit RTK use.'
                 row['last_error'] = 'RTK records could not be read; activity is unknown.' if data.get('health') in ('stale', 'error') else None
             elif name == 'headroom_local':
                 data = observations.get('desktop_headroom', {})
@@ -117,7 +119,7 @@ class BundleControls:
                 row['restart_required'] = proxy.get('restart_required') is True
                 row['reason'] = 'Uses the managed connection. Already-open connections may retain their prior route until Codex restarts.'
                 if not requested and not row['available']:
-                    row['reason'] = 'Request compression is not installed or its validation is pending.'
+                    row['reason'] = 'Run Setup-Request-Compression.cmd from the latest deployment package to download and validate the local request compressor, then enable it here.'
                 if requested:
                     if not proxy.get('ready'):
                         row['state'] = 'error'

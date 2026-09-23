@@ -21,6 +21,8 @@ Use **Windows 10/11 x64**, an ordinary user account, and an installed Codex desk
    ```text
    Install.cmd
    Install.ps1
+   Repair-Team-Setup.cmd
+   Setup-Request-Compression.cmd
    package-manifest.json
    payload\
    ```
@@ -47,7 +49,7 @@ In the dashboard's **Your toolkit** section, use these controls. Each row also n
 | Command output — RTK | **On** (installed default) | Reduces explicit RTK calls; the trusted hook also routes eligible bare Git/search commands automatically. |
 | Local file & output reading — Headroom | **On** (installed default) | Local file tools and eligible RTK output compression; activity can legitimately produce zero reduction. |
 | Code navigation — Serena | Turn **On** | Registers the symbol tools and coding guidance. Reopen Codex afterward so it loads them. |
-| Request compression — Headroom | Leave **Off / unavailable** | Fresh-machine setup is not supported in this preview. |
+| Request compression — Headroom | **Off** until local setup passes | Run **Setup-Request-Compression.cmd**, then turn it On in the dashboard if desired. See below. |
 | Task summaries — LangMem | Leave **Off** | Local-summary work is paused; generating a summary does not reduce the existing Codex task's context. |
 | Local model — llama.cpp | Leave **Off** | llama.cpp is not required by RTK, local file tools or Serena. |
 
@@ -75,7 +77,23 @@ Default installation includes Headroom 0.37.0, RTK 0.49.0, Serena 1.7.0, LangMem
 
 Local summaries are paused for the current team setup. If the team explicitly revisits that experiment later, **Select-Local-Model.cmd** inside the installed folder selects a compatible GGUF model you already have; **Task summaries** and **Local model** then allow an explicitly selected task to be summarized. No GGUF is downloaded or loaded by installation or selection. The CPU build needs no GPU driver but may be slow, and selecting a file does not prove model compatibility. Summaries remain separate, lossy reference files and do not replace native Codex compaction or the current conversation. There is no need to select a model for the recommended setup above.
 
-**Request compression is not yet supported for a fresh team installation. Keep that control off.** This package supports RTK, local Headroom file compression, Serena and summaries with a selected GGUF. It registers the optional command hook for user review; it does not configure a request route, download the request model, or silently activate inference. Fresh Codex profiles remain on their normal connection. The historical `activate_validated_request_proxy.py` script requires the maintainer's old validation receipts; do not run it for a teammate or copy another person's receipts. A safe per-machine request-proxy bootstrap remains pending.
+## Optional request compression
+
+1. Finish the normal installation first. Double-click **Setup-Request-Compression.cmd** in the extracted deployment package or installed folder. It downloads and verifies the public compression model; the first download can take up to 15 minutes and requires access to Hugging Face as well as GitHub. This model is separate from the optional GGUF summary model.
+2. Leave the window open until setup succeeds. Setup checks the installed runtime, compression, exact original-content retrieval and a backend on an isolated local port. It records validation for this machine and starts the managed connection in its paused state. Codex keeps its current connection throughout setup; no API key or paid model request is needed for validation.
+3. Refresh the dashboard and turn **Request compression** On. This warms the backend before the existing controller changes routing. Restart Codex once after enabling, then resume existing tasks. Check observed request activity rather than expecting every request to shrink.
+
+Setup preserves an already validated, enabled connection. A failure does not enable routing; keep the error text and retry after addressing it. Setup rolls back its proxy metadata and stops a supervisor it newly created when a later step fails. Shared Windows PATH/Start menu maintenance is not a full system transaction. Port conflicts preserve the existing service instead of stopping it. Use **Pause** in the dashboard or `Restore-Codex-Direct.ps1` for recovery; restart Codex after a routing change.
+
+Do not copy another person's validation receipts or run the historical `activate_validated_request_proxy.py` script. The normal installer never silently enables request compression. Local summaries and llama.cpp can stay Off while request compression is used.
+
+## Repair an earlier team installation
+
+Download and fully extract the latest approved deployment artifact. Run its **Repair-Team-Setup.cmd**, leaving the existing `%USERPROFILE%\CodexTokenSaver` folder in place. This corrects the dashboard's RTK history/executable paths, checks RTK's history schema without fabricating command records, and repairs the local-tool and hook status receipts. It preserves component choices, existing history, Codex model/reasoning/authentication settings and routing. Configuration backups are saved under `backups\team-repair-*`.
+
+Restart the dashboard from the tray's **Restart / repair dashboard** item, reopen Codex, then review/trust its shared command hook if requested. A new installation with no recorded commands should show zero activity, not an unreadable-history error. Explicit process environment overrides can supersede `dashboard\.env`; the repair report lists conflicting override names for review.
+
+This targeted repair supports installations made by the team installer; it does not replace all installed source files or libraries. Do not use **Install.cmd** from a different release to overwrite an older installation. The new artifact's **Setup-Request-Compression.cmd** can also prepare request compression against an existing team installation, validating that machine's installed proxy code before activation.
 
 ## Troubleshooting, updates and removal
 
@@ -89,7 +107,8 @@ Local summaries are paused for the current team setup. If the team explicitly re
 | Serena is On but tools are absent | Reopen Codex after enabling it, check the dashboard's availability explanation, then follow the Serena test. Do not copy another user's Codex config. |
 | Savings stay at zero | Confirm the tool was actually used on eligible content. Version checks, small output and exact reads can produce no savings. |
 | Bare Git/search calls never use RTK | Check the RTK toggle, trust the shared command hook, and restart Codex once after installation so it inherits the bundle PATH. Complex/exact commands stay native. |
-| Request compression is unavailable | Expected for fresh installs in this preview; leave it off. |
+| RTK shows Error before first use, or tray says local Headroom is not configured | Run **Repair-Team-Setup.cmd** from the latest extracted artifact, then restart the dashboard. |
+| Request compression is unavailable | Run **Setup-Request-Compression.cmd**, wait for successful local validation, then enable it in the dashboard. |
 
 Rerun the same **Install.cmd** after a failed download. Verified downloads are cached. Completed environments are preserved, and source checksums are checked before resuming. The same source release may add the optional runtimes after a core-only installation. Library updates and rollbacks use the dashboard's existing controls.
 

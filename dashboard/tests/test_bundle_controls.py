@@ -87,6 +87,24 @@ def test_readable_history_does_not_claim_current_activity(control):
     assert rows['rtk']['state'] == 'ready'
     assert rows['rtk']['last_use'] == '2026-01-01T00:00:00Z'
     assert 'No recent use' in rows['rtk']['reason']
+    assert 'trusted command hook' in rows['rtk']['reason']
+    assert 'do not automatically' not in rows['rtk']['reason']
+
+
+def test_rtk_first_run_is_ready_without_claiming_activity(control):
+    row = by_id(control, {'rtk': {'records_readable': True, 'health': 'ok',
+                                'data_status': 'not_started', 'last_recorded_at': None}})['rtk']
+    assert row['state'] == 'ready'
+    assert row['last_use'] is None
+    assert row['last_error'] is None
+    assert 'No commands recorded yet' in row['reason']
+
+
+@pytest.mark.parametrize('health', ['stale', 'error'])
+def test_rtk_unreadable_history_still_reports_error(control, health):
+    row = by_id(control, {'rtk': {'records_readable': False, 'health': health}})['rtk']
+    assert row['state'] == 'error'
+    assert 'could not be read' in row['last_error']
 
 
 def test_new_headroom_file_activity_is_not_hidden_by_an_older_command(control):
