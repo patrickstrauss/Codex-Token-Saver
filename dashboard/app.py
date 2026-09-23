@@ -36,8 +36,8 @@ DESKTOP_HEADROOM_DB_PATH = Path(__file__).resolve().parent.parent / "headroom" /
 DESKTOP_INTEGRATION_PATH = Path(__file__).resolve().parent.parent / "desktop-integration.json"
 AUTOMATIC_HEADROOM_PATH = Path(__file__).resolve().parent.parent / "automatic-headroom.json"
 HEADROOM_HOOK_EVENTS_PATH = DESKTOP_HEADROOM_DB_PATH.with_name("hook-events.jsonl")
-RTK_DB_PATH = os.environ.get("RTK_DB_PATH", os.path.join(HOME, ".local", "share", "rtk", "history.db"))
-RTK_BIN = os.environ.get("RTK_BIN", "rtk")
+RTK_DB_PATH = os.environ.get("RTK_DB_PATH", str(Path(__file__).resolve().parent.parent / "data/rtk/history.db"))
+RTK_BIN = os.environ.get("RTK_BIN", str(Path(__file__).resolve().parent.parent / "bin/rtk.exe"))
 JCODEMUNCH_INDEX_DIR = os.environ.get("JCODEMUNCH_INDEX_DIR", os.path.join(HOME, ".code-index"))
 JCODEMUNCH_BIN = os.environ.get("JCODEMUNCH_BIN", "jcodemunch-mcp")
 JDOCMUNCH_INDEX_DIR = os.environ.get("JDOCMUNCH_INDEX_DIR", os.path.join(HOME, ".doc-index"))
@@ -167,9 +167,26 @@ def collect_rtk():
     """Read rtk SQLite DB and return stats + history."""
     conn = None
     try:
-        db_path = RTK_DB_PATH
-        if not os.path.exists(db_path):
-            return None
+        db_path = Path(RTK_DB_PATH)
+        try:
+            db_path.stat()
+        except FileNotFoundError:
+            # An unused installation has no database yet. A lost database must
+            # retain its last good measurements through collect_all's fallback.
+            if _last_good.get("rtk", {}).get("history_exists"):
+                return None
+            empty = dict.fromkeys(("total_commands", "total_saved", "total_input", "total_output",
+                                   "total_time_ms", "avg_savings_pct", "optimized_commands",
+                                   "largest_saved", "largest_input", "largest_saved_share_pct",
+                                   "largest_input_share_pct"), 0)
+            return {
+                **empty, "active": False, "records_readable": True, "history_exists": False,
+                "data_status": "not_started", "recent_use": False, "last_recorded_at": None,
+                "collected_at": datetime.now(timezone.utc).isoformat(),
+                "windows": {key: dict(empty) for key in ("today", "seven_days", "lifetime")},
+                "version": _cached_versions.get("rtk") or "unknown", "history": [],
+                "measurement": "No RTK commands recorded yet. Savings begin with supported commands passed through RTK.",
+            }
 
         conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
         conn.row_factory = sqlite3.Row
@@ -221,6 +238,7 @@ def collect_rtk():
         return {
             "active": windows['recent_use'],
             "records_readable": True,
+            "history_exists": True,
             "recent_use": windows['recent_use'],
             "last_recorded_at": windows['last_recorded_at'],
             "collected_at": windows['collected_at'],

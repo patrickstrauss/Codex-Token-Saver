@@ -17,6 +17,8 @@ Use **Bundle controls** to change one component at a time. **On** is your saved 
 
 Missing runtimes have unavailable controls and an explanation. Enabling one library does not silently enable its dependencies. After installing this update, restart Codex once: existing file-tool processes need to load the new controls, and newly registered Serena and summary tools need discovery. Existing tasks can then be resumed. Later preference changes are checked on each new tool call by the updated wrappers.
 
+For unavailable request compression, run **Setup-Request-Compression.cmd** from the latest extracted deployment package. It downloads and validates the local compressor while preserving Codex's current connection. After success, turn the dashboard control On and restart Codex once. For an earlier team installation showing RTK history errors or missing local-tool status, use **Repair-Team-Setup.cmd** from that package and restart the dashboard. See the [team setup and repair guide](TEAM-INSTALL.md).
+
 ## Read the activity
 
 RTK defaults to **Today**. Select **7 days** or **Lifetime** to compare periods. The dashboard retains the lifetime figure, latest command time, collector time, and large single-record contributions. A high lifetime reduction can come from an old large output while current tasks rarely invoke RTK.
