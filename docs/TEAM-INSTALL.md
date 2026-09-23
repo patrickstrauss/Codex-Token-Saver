@@ -99,7 +99,7 @@ This targeted repair supports installations made by the team installer; it does 
 
 ## Troubleshooting, updates and removal
 
-For high process counts, collect **Get-Token-Saver-Diagnostics.cmd** before deleting anything. To disable the bundle, fully quit Codex, run **Disable-Token-Saver.cmd**, then restart Windows after it succeeds. This leaves files/history in place. See [process recovery](PROCESS-RECOVERY.md), including steps when the installation folder was already deleted.
+For high process counts, collect **Get-Token-Saver-Diagnostics.cmd** before deleting anything. To disable the bundle, choose **Your toolkit → Turn off Token Saver → Disable Token Saver…** in the dashboard or **Disable Token Saver…** from the TS tray menu. Follow the separate confirmation: fully quit Codex before continuing, then restart Windows after success. Files/history are kept; enabling the bundle again requires setup. **Disable-Token-Saver.cmd** remains available if the UI cannot open. See [process recovery](PROCESS-RECOVERY.md), including steps when the installation folder was already deleted.
 
 | Symptom | Next step |
 | --- | --- |

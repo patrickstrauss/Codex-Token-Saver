@@ -5,6 +5,12 @@
     <div id="components-list" class="component-grid"></div>
     <p id="components-error" class="updates-error" role="alert" hidden></p>
     <p id="components-notice" class="updates-muted" role="status" hidden></p>
+    <div class="bundle-power" aria-labelledby="bundle-power-title">
+      <div><h3 id="bundle-power-title">Turn off Token Saver</h3><p class="updates-muted">Disable all bundle integrations and automatic startup. Your files and savings history are kept.</p><p class="updates-muted">Close Codex before confirming in the Windows dialog, then restart Windows to stop existing services. Setup is required to enable the bundle again.</p></div>
+      <button type="button" class="updates-button bundle-disable-button" id="bundle-disable">Disable Token Saver…</button>
+      <p id="bundle-disable-status" class="updates-muted" role="status" hidden></p>
+      <p id="bundle-disable-error" class="updates-error" role="alert" hidden></p>
+    </div>
     <details class="bundle-help"><summary>About setup and measurements</summary><p class="updates-muted">After a bundle update, restart Codex once to load new tools. Existing tasks can be resumed afterward. Savings from these layers overlap and are never added together; exact original content remains available when local filtering is Off.</p></details>
   </div>
 </section>
