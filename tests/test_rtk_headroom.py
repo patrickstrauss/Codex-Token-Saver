@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -127,6 +128,89 @@ class RtkHeadroomTests(unittest.TestCase):
         self.assertEqual(check.returncode, 0, 'optional filter process was left running')
         receipt = json.loads((self.bundle / 'record.json').read_text(encoding='utf-8-sig'))
         self.assertEqual(receipt['result']['status'], 'compression_unavailable')
+
+    def test_repeated_real_venv_timeouts_leave_no_interpreters_or_duplicate_commands(self):
+        # A fake python.exe cannot cover Windows' venv launcher/interpreter
+        # boundary. Removing the worker termination must fail this regression.
+        import ctypes
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        shutil.copy2(ROOT / 'headroom/.venv/Scripts/python.exe',
+                     self.bundle / 'headroom/.venv/Scripts/python.exe')
+        shutil.copy2(ROOT / 'headroom/.venv/pyvenv.cfg', self.bundle / 'headroom/.venv/pyvenv.cfg')
+        (self.bundle / 'headroom_run.py').write_text('''
+import json, os, pathlib, sys, time
+root = pathlib.Path(__file__).parent
+if '--filter-packet' in sys.argv:
+    sys.stdin.buffer.read()
+    pending = root / 'worker.pending'
+    pending.write_text(json.dumps({'interpreter': os.getpid(), 'launcher': os.getppid()}))
+    pending.replace(root / 'worker.json')
+    time.sleep(60)
+elif '--record-result' in sys.argv:
+    (root / 'record.json').write_bytes(sys.stdin.buffer.read())
+''', encoding='utf-8')
+
+        for attempt in range(2):
+            with self.subTest(attempt=attempt + 1):
+                (self.bundle / 'worker.json').unlink(missing_ok=True)
+                process = subprocess.Popen(
+                    [str(self.bundle / 'bin/rtk.exe'), 'rg', 'fixture'],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    cwd=self.bundle, env=self.env,
+                )
+                handles = []
+                try:
+                    deadline = time.monotonic() + 6
+                    while not (self.bundle / 'worker.json').exists() and time.monotonic() < deadline:
+                        time.sleep(.025)
+                    self.assertTrue((self.bundle / 'worker.json').is_file(), 'real worker did not start')
+                    identities = json.loads((self.bundle / 'worker.json').read_text())
+                    self.assertNotEqual(identities['launcher'], identities['interpreter'])
+                    for name in ('launcher', 'interpreter'):
+                        # Retain handles before timeout: cleanup never targets a
+                        # later, unrelated process that reuses a recorded PID.
+                        handle = kernel.OpenProcess(0x100000 | 0x0001, False, identities[name])
+                        self.assertTrue(handle, f'could not retain owned {name} handle')
+                        handles.append((name, handle))
+                    try:
+                        stdout, stderr = process.communicate(timeout=18)
+                    except subprocess.TimeoutExpired:
+                        self.fail('optional timeout failed to return original output within 18 seconds')
+                    self.assertEqual(process.returncode, 0)
+                    self.assertEqual(stdout, self.original)
+                    self.assertEqual(stderr, b'stderr unchanged\n')
+                    self.assertEqual((self.bundle / 'executions.txt').read_text().splitlines(),
+                                     ['run'] * (attempt + 1))
+                    for name, handle in handles:
+                        self.assertEqual(kernel.WaitForSingleObject(handle, 1000), 0,
+                                         f'owned {name} survived the filter timeout')
+                    receipt = json.loads((self.bundle / 'record.json').read_text(encoding='utf-8-sig'))
+                    self.assertEqual(receipt['result']['status'], 'compression_unavailable')
+                    self.assertIsNone(receipt['result']['input_tokens'])
+                finally:
+                    for _, handle in reversed(handles):
+                        if kernel.WaitForSingleObject(handle, 0) == 258:
+                            kernel.TerminateProcess(handle, 1)
+                            kernel.WaitForSingleObject(handle, 3000)
+                        kernel.CloseHandle(handle)
+                    if process.poll() is None:
+                        subprocess.run(
+                            [str(Path(os.environ['WINDIR']) / 'System32/taskkill.exe'),
+                             '/PID', str(process.pid), '/T', '/F'],
+                            capture_output=True, timeout=5,
+                            creationflags=subprocess.CREATE_NO_WINDOW,
+                        )
+                        process.wait(timeout=3)
+                    process.stdout.close()
+                    process.stderr.close()
 
     def test_non_codex_invocation_is_unchanged(self):
         self.env.pop('CODEX_THREAD_ID')

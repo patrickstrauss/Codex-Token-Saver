@@ -23,6 +23,8 @@ Use **Windows 10/11 x64**, an ordinary user account, and an installed Codex desk
    Install.ps1
    Repair-Team-Setup.cmd
    Setup-Request-Compression.cmd
+   Disable-Token-Saver.cmd
+   Get-Token-Saver-Diagnostics.cmd
    package-manifest.json
    payload\
    ```
@@ -96,6 +98,8 @@ Restart the dashboard from the tray's **Restart / repair dashboard** item, reope
 This targeted repair supports installations made by the team installer; it does not replace all installed source files or libraries. Do not use **Install.cmd** from a different release to overwrite an older installation. The new artifact's **Setup-Request-Compression.cmd** can also prepare request compression against an existing team installation, validating that machine's installed proxy code before activation.
 
 ## Troubleshooting, updates and removal
+
+For high process counts, collect **Get-Token-Saver-Diagnostics.cmd** before deleting anything. To disable the bundle, fully quit Codex, run **Disable-Token-Saver.cmd**, then restart Windows after it succeeds. This leaves files/history in place. See [process recovery](PROCESS-RECOVERY.md), including steps when the installation folder was already deleted.
 
 | Symptom | Next step |
 | --- | --- |

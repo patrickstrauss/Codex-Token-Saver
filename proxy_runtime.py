@@ -565,9 +565,15 @@ def _configuration_report():
 def _validate(runtime, state_dir, flag, timeout):
     """Bounded isolated SDK/config probe without sending any model request."""
     try:
+        environment = build_proxy_environment(state_dir)
+        if flag == '--validate-model':
+            # Cold CPU inference needs more time than the production latency
+            # limit. Validate model capability without changing serving policy.
+            environment['HEADROOM_KOMPRESS_TIME_BUDGET_SECONDS'] = '15'
+            environment['HEADROOM_KOMPRESS_ACQUIRE_TIMEOUT_SECONDS'] = '3'
         result = subprocess.run(
             [_python(runtime), str(Path(__file__).resolve()), flag],
-            env=build_proxy_environment(state_dir), cwd=str(ROOT),
+            env=environment, cwd=str(ROOT),
             capture_output=True, text=True, encoding='utf-8', timeout=timeout,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
@@ -575,8 +581,10 @@ def _validate(runtime, state_dir, flag, timeout):
             return {'ok': False, 'error': 'Headroom runtime validation failed',
                     'exit_code': result.returncode}
         report = json.loads(result.stdout)
-        if not isinstance(report, dict) or report.get('ok') is not True:
+        if not isinstance(report, dict) or type(report.get('ok')) is not bool:
             raise ValueError('Invalid validation report')
+        if not report['ok']:
+            report.setdefault('error', 'Headroom runtime validation checks failed')
         return report
     except subprocess.TimeoutExpired:
         return {'ok': False, 'error': 'Headroom runtime validation timed out'}
