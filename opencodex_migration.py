@@ -10,6 +10,7 @@ import tomllib
 
 from desktop_proxy_control import DesktopProxyControl, _json, _read, _encode, atomic_write, routing_lock
 from opencodex_control import OpenCodexControl
+from desktop_proxy_service import ensure_supervisor
 
 
 PROTECTED = ('model', 'model_provider', 'profile', 'model_reasoning_effort',
@@ -27,12 +28,13 @@ def protected(home):
 
 
 class Migration:
-    def __init__(self, root, home=None, *, native=None, control=None):
+    def __init__(self, root, home=None, *, native=None, control=None, ensure_worker=None):
         self.root = Path(root).resolve()
         self.home = Path(home or os.environ.get('CODEX_HOME') or Path.home() / '.codex').resolve()
         self.receipt = self.root / 'proxy/migration-receipt.json'
         self.native = native or DesktopProxyControl(self.root, config_home=self.home)
         self.control = control or OpenCodexControl(self.root, config_home=self.home)
+        self.ensure_worker = ensure_worker or ensure_supervisor
 
     def verify(self):
         receipt = _json(self.receipt)
@@ -78,6 +80,12 @@ class Migration:
             self.verify()
             receipt['phase'] = 'connected'
             atomic_write(self.receipt, _encode(receipt))
+            # Enabling records intent; a tray or logon task may not be running.
+            # Use the existing lifetime-lock recovery path, never start/kill a
+            # listener directly or change the user's startup preferences here.
+            worker = self.ensure_worker(self.root)
+            if not worker.get('live') and not worker.get('starting') and not result.get('effective_enabled'):
+                result = dict(result, reason=worker.get('last_error') or 'The managed transform worker could not be started.')
             return result
 
 

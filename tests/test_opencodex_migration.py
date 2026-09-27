@@ -22,7 +22,20 @@ class MigrationTests(unittest.TestCase):
         self.control.bridge.read.return_value = {'value': None}
         self.control.discovery.return_value = {'ready': True, 'routing_matches': True, 'transform_protocol': 1, 'control_protocol': 1}
         self.control.set_enabled.return_value = {'phase': 'warming', 'requested_enabled': True}
-        self.migration = Migration(self.root, self.home, native=self.native, control=self.control)
+        self.worker = Mock(return_value={'starting': True, 'live': False})
+        self.migration = Migration(self.root, self.home, native=self.native, control=self.control, ensure_worker=self.worker)
+
+    def test_connect_starts_worker_when_tray_and_startup_are_off(self):
+        self.migration.prepare()
+        self.migration.connect()
+        self.worker.assert_called_once_with(self.root.resolve())
+
+    def test_worker_start_failure_is_reported_without_claiming_ready(self):
+        self.migration.prepare()
+        self.worker.return_value = {'live': False, 'last_error': 'Managed runtime is unavailable.'}
+        result = self.migration.connect()
+        self.assertFalse(result.get('effective_enabled', False))
+        self.assertEqual(result['reason'], 'Managed runtime is unavailable.')
 
     def test_handoff_uses_owned_pause_then_extension(self):
         self.migration.prepare()

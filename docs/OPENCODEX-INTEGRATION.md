@@ -18,7 +18,8 @@ acceptance remain to be completed. Development has not changed the live installa
 3. **Restart your laptop once**, after Connect succeeds. This clears the old workers
    and loads the installed code. If you still need exact originals from recent native
    tool output, allow their 30-minute retention window to expire before restarting.
-4. Open OpenCodex first. Run **Check.cmd normally**; it must show
+4. Open OpenCodex first, then **Codex Token Saver** from the Start menu if its tray
+   icon is absent. Run **Check.cmd normally**; it must show
    `effective_enabled: true`. If it reports that OpenCodex is unavailable, fully close
    Codex and run Connect.cmd again. Allow up to a minute for pending activation.
    Then reopen Codex and use your existing chats and chosen models.
