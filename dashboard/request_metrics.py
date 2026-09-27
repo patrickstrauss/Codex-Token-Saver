@@ -8,11 +8,13 @@ from datetime import datetime, timedelta
 import json
 
 
-def request_windows(path, now=None, max_bytes=2 * 1024 * 1024):
+def request_windows(path, now=None, max_bytes=2 * 1024 * 1024, *, include_lifetime=False):
     now = now or datetime.now().astimezone()
     cutoffs = {'fifteen_minutes': now - timedelta(minutes=15),
                'today': now.replace(hour=0, minute=0, second=0, microsecond=0),
                'seven_days': now - timedelta(days=7)}
+    if include_lifetime:
+        cutoffs['lifetime'] = datetime.min.replace(tzinfo=now.tzinfo)
     windows = {key: {'requests': 0, 'input_tokens': 0, 'saved_tokens': 0,
                      'reduction_pct': None, 'last_recorded_at': None} for key in cutoffs}
     result = {'available': False, 'complete': False, 'truncated': False,

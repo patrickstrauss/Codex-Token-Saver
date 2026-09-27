@@ -86,3 +86,18 @@ The local replay diagnostic compressed13 replacements from33 eligible outputs in
 a single recent output compressed in16ms. No separate paid-provider probe was sent.
 Early requests bypassed; their detailed reason was not retained. This verifies the
 observed OpenAI route, not other providers or a future reboot. No Windows restart is needed.
+
+## Live request-savings ledger — 2026-09-27
+
+The request headline now reads worker measurements, with no fallback to native-proxy
+history. The regression failed before the change; 41 focused dashboard/ledger tests
+and 5 real ASGI endpoint tests passed afterward. Cached replies are counted; error
+responses and failed measurements do not create savings. The ledger stores no text.
+
+Installed source was backed up and verified before replacement. Only the transform
+worker and dashboard were restarted. Two local diagnostic replies (one cached)
+changed today's total from 0 to 19,070; they made no provider request. Subsequent
+ordinary traffic increased the visible total to 22,494. The dashboard screenshot
+and LIVE-METRICS-VALIDATION.json are in the combined candidate folder. New totals
+begin at installation; old savings cannot be backfilled. These are worker-response
+token estimates, not verified provider acceptance, whole-request or quota savings.

@@ -150,7 +150,7 @@ const context={document:{getElementById:node,querySelector:()=>({content:'fixtur
  return {ok:true,json:async()=>responses.shift()};}};
 vm.createContext(context);vm.runInContext(source,context);
 async function flush(){for(let i=0;i<10;i++)await Promise.resolve();}
-function view(){return {active:node('request-proxy-active-rate').textContent,
+function view(){return {saved:node('request-proxy-saved').textContent,active:node('request-proxy-active-rate').textContent,
  whole:node('request-proxy-whole-rate').textContent,scope:node('request-proxy-backend-scope').textContent,
  diagnostics:node('request-proxy-diagnostics').textContent,timing:node('request-proxy-timing').textContent,
  status:node('request-proxy-status').textContent,savingsScope:node('request-proxy-scope').textContent,
@@ -164,7 +164,8 @@ function view(){return {active:node('request-proxy-active-rate').textContent,
  responses.push({...state,backend_metrics:{...metrics,active_reduction_pct:0,whole_reduction_pct:0,
  diagnostics:{frames_attempted:0,frames_compressed:0,frames_failed:0}}});
  await timers[0]();await flush();const zero=view();
- responses.push({...state,mode:'opencodex',enabled:true,effective_enabled:true,savings_history_only:true,
+ responses.push({...state,mode:'opencodex',enabled:true,effective_enabled:true,savings_history_only:false,
+ savings:{available:true,saved_tokens:750,requests:2,reduction_pct:75},
  transform_outcomes:{compressed:3,unchanged:2,bypassed:1,error:0}});
  await timers[0]();await flush();const opencodex=view();
  responses.push(state);await timers[0]();await flush();const restored=view();
@@ -183,17 +184,19 @@ function view(){return {active:node('request-proxy-active-rate').textContent,
     assert 'timeout' not in data['initial']['diagnostics'].lower()
     assert '123.4 ms average' in data['initial']['timing']
     assert '300 measured' in data['initial']['timing']
-    assert {k:v for k,v in data['lifetime'].items() if k != 'savingsScope'} == {k:v for k,v in data['initial'].items() if k != 'savingsScope'}
+    assert {k:v for k,v in data['lifetime'].items() if k not in ('savingsScope', 'saved')} == {k:v for k,v in data['initial'].items() if k not in ('savingsScope', 'saved')}
     for key in ('unavailable', 'missing'):
         assert data[key]['active'] == data[key]['whole'] == 'Unavailable'
         assert 'Unavailable' in data[key]['diagnostics']
         assert 'Unavailable' in data[key]['timing']
     assert data['zero']['active'] == data['zero']['whole'] == '0%'
     assert '0 attempted' in data['zero']['diagnostics']
-    assert data['opencodex']['active'] == data['opencodex']['whole'] == 'Not reported'
+    assert data['opencodex']['saved'] == '750'
+    assert data['opencodex']['active'] == '75%'
+    assert data['opencodex']['whole'] == 'Not reported'
     assert 'enabled' in data['opencodex']['status']
-    assert 'Historical native-proxy' in data['opencodex']['savingsScope']
-    assert 'does not report' in data['opencodex']['scope']
+    assert 'OpenCodex tool results' in data['opencodex']['savingsScope']
+    assert 'selected savings window' in data['opencodex']['scope']
     assert '3 compressed' in data['opencodex']['counts']
     assert data['opencodex']['timingHidden']
     assert data['restored'] == data['lifetime']

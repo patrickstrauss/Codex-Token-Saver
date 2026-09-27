@@ -64,11 +64,16 @@
                 : state.enabled ? 'OpenCodex compression waiting for readiness' : 'OpenCodex compression paused';
             el('enable').disabled = changing || !state.installed || !state.validated || state.enabled;
             el('pause').disabled = changing || !state.enabled;
-            el('scope').textContent = 'Historical native-proxy savings · ' + label + ' · all tasks. These totals do not measure the current OpenCodex integration.';
-            el('active-rate').textContent = el('whole-rate').textContent = 'Not reported';
-            el('backend-scope').textContent = 'OpenCodex reports transform outcomes but does not report submitted-content or complete-request token totals. Neither effectiveness percentage can currently be calculated.';
-            el('rate-note').textContent = 'Only eligible tool-result text is submitted for compression. Protected conversation content is preserved. Outcome counts are not token savings or Codex quota savings.';
-            el('diagnostics').textContent = 'Live worker outcomes are separate from the historical savings window above.';
+            el('saved').textContent = available ? number(selected.saved_tokens) : 'Waiting for first measurement';
+            el('scope').textContent = 'Estimated tokens removed from OpenCodex tool results · ' + label + ' · all tasks. Measured since live metering was enabled.';
+            el('window-detail').textContent = available ? number(selected.requests) + ' transform replies measured in this window' : 'No live OpenCodex measurements recorded yet.';
+            el('coverage').textContent = 'Includes cached replies, zero-savings replies and diagnostic checks. These estimates measure worker responses, not confirmed provider usage or quota savings.'
+                + (recent && !recent.complete ? ' Partial ledger coverage: totals include only available valid records.' : '');
+            el('active-rate').textContent = percent(selected.reduction_pct);
+            el('whole-rate').textContent = 'Not reported';
+            el('backend-scope').textContent = 'Rates use the selected savings window and all tool text submitted to the worker, including replies with no savings. Complete-request token totals are not measured.';
+            el('rate-note').textContent = 'Only eligible tool-result text is submitted for compression. Protected conversation content is preserved. Savings before live metering was enabled cannot be reconstructed.';
+            el('diagnostics').textContent = 'Worker outcomes below count newly computed batches since worker start; cached replies also contribute to the measured savings above.';
             el('timing').hidden = true;
             var outcomes = state.transform_outcomes || {};
             el('counts').textContent = 'Tool-result batches since worker start: ' + number(outcomes.compressed)
@@ -77,8 +82,8 @@
             el('routing').textContent = 'Connection mode: OpenCodex.';
             el('backend').textContent = state.ready ? 'Local transform worker is ready.' : 'Local transform worker is not ready.';
             el('recorded').textContent = savings.last_recorded_at
-                ? 'Last native-proxy savings activity: ' + new Date(savings.last_recorded_at).toLocaleString()
-                : 'No historical native-proxy savings recorded.';
+                ? 'Last measured OpenCodex reply: ' + new Date(savings.last_recorded_at).toLocaleString()
+                : 'Waiting for the first measured OpenCodex reply.';
             el('restart').textContent = state.restart_required ? 'OpenCodex must reload its integration settings before compression can become active.' : '';
         }
     }

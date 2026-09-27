@@ -48,6 +48,8 @@ def ensure_transform_token(root):
 
 def create_transform_app(service, *, token):
     from starlette.applications import Starlette
+    from starlette.background import BackgroundTask
+    from request_transform_metrics import record_transform
     from starlette.requests import ClientDisconnect
     from starlette.responses import JSONResponse
     from starlette.routing import Route
@@ -84,7 +86,9 @@ def create_transform_app(service, *, token):
         except (ValueError, RecursionError, ClientDisconnect):
             return JSONResponse({'error': 'invalid_request'}, status_code=400)
         result = await service.transform(payload)
-        return JSONResponse(result, status_code=400 if result['outcome'] == 'error' else 200)
+        return JSONResponse(result, status_code=400 if result['outcome'] == 'error' else 200,
+                            background=BackgroundTask(record_transform, service.root,
+                                                      service.token_counter, payload, result))
 
     async def retrieve(request):
         if not authorized(request):

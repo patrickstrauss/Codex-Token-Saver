@@ -32,11 +32,19 @@ over your current installation.
 
 ## Dashboard measurements
 
-In OpenCodex mode the request panel reads the managed transform's live status and
-outcome counts. Its saved-token history is explicitly labeled as historical native-proxy
-data. OpenCodex protocol v1 does not report submitted-content or complete-request token
-totals, so effectiveness rates show **Not reported**, not a fabricated percentage.
-Worker outcome counts reset on restart and include diagnostic checks.
+In OpenCodex mode the headline uses the worker's durable token-only ledger at
+`proxy/transform-state/savings_events.jsonl`. Measurements start when live metering
+is installed; earlier savings cannot be reconstructed. Native-proxy history stays
+separate and does not populate this headline.
+
+Each successful transform reply records estimated input and output tokens after
+sending its response. Cached, unchanged, bypassed and diagnostic replies are included.
+The first effectiveness rate uses submitted tool text in the selected window.
+Whole-request effectiveness remains **Not reported**: protected conversation content
+is not measured. Worker responses are not proof of provider acceptance or quota savings.
+The ledger contains only a timestamp, token counts and outcome; measurement failures
+cannot fail compression. Bounded reads disclose partial ledger coverage.
+Worker outcome counts reset on restart, exclude cache hits, and include diagnostic checks.
 
 RTK's totals cover commands actually routed through RTK. Small output, exact-output
 options, complex shell scripts and ambiguous commands can produce no savings or bypass

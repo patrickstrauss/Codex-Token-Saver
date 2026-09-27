@@ -66,6 +66,13 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
                    'entries': [{'id': 'a', 'original_sha256': hashlib.sha256(text.encode()).hexdigest(), 'text': text}]}
         response = await self.client.post('/v1/transform/tool-results', json=payload, headers=self.headers)
         ref = response.json()['replacements'][0]['retrieval_reference']
+        import json
+        ledger = Path(self.folder.name) / 'proxy/transform-state/savings_events.jsonl'
+        first = json.loads(ledger.read_text().splitlines()[0])
+        self.assertGreater(first['saved'], 0)
+        self.assertEqual(first['before'], len(text))
+        await self.client.post('/v1/transform/tool-results', json=payload, headers=self.headers)
+        self.assertEqual(len(ledger.read_text().splitlines()), 2)  # Cached replies count too.
         self.service.enabled = False
         self.assertEqual((await self.client.get('/v1/retrieve/' + ref)).status_code, 401)
         exact = await self.client.get('/v1/retrieve/' + ref, headers=self.headers)

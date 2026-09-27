@@ -121,7 +121,14 @@ def register_proxy_routes(app, root, security, control_factory=None):
                 return security.error('Choose Enable or Pause request compression.', 400)
         try:
             snapshot = manager().status() if enabled is None else manager().set_enabled(enabled)
-            snapshot['recent_savings'] = request_windows(root / 'proxy/backend-state/savings_events.jsonl')
+            if snapshot.get('mode') == 'opencodex':
+                recent = request_windows(root / 'proxy/transform-state/savings_events.jsonl', include_lifetime=True)
+                snapshot['native_savings'] = snapshot.get('savings', {})
+                snapshot['recent_savings'] = recent
+                snapshot['savings'] = dict(recent['windows']['lifetime'], available=recent['available'])
+                snapshot['savings_history_only'] = False
+            else:
+                snapshot['recent_savings'] = request_windows(root / 'proxy/backend-state/savings_events.jsonl')
             response = jsonify(snapshot)
             response.headers['Cache-Control'] = 'no-store'
             return response

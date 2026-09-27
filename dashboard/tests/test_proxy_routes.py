@@ -92,6 +92,26 @@ def post(api, payload, **kwargs):
                        headers=headers, json=payload, **kwargs)
 
 
+def test_opencodex_headline_uses_only_live_ledger(proxy_api, tmp_path):
+    from datetime import datetime
+    client, _, control, _ = proxy_api
+    original_status = control.status
+    control.status = lambda: dict(original_status(), mode='opencodex')
+    url = dict(base_url='http://127.0.0.1:8095')
+    missing = client.get('/api/request-proxy', **url).get_json()
+    assert missing['savings']['available'] is False
+    assert missing['savings'].get('saved_tokens') != 321
+    ledger = tmp_path / 'proxy/transform-state/savings_events.jsonl'
+    ledger.parent.mkdir(parents=True)
+    ledger.write_text(json.dumps({'ts': datetime.now().astimezone().isoformat(),
+                                 'before': 1000, 'after': 250, 'saved': 750}) + '\n')
+    current = client.get('/api/request-proxy', **url).get_json()
+    assert current['savings']['saved_tokens'] == 750
+    assert current['recent_savings']['windows']['today']['saved_tokens'] == 750
+    assert current['savings_history_only'] is False
+    assert current['native_savings']['saved_tokens'] == 321
+
+
 def test_status_is_read_only_and_reports_uncombined_proxy_savings(proxy_api):
     client, _, control, constructed = proxy_api
     assert not constructed
