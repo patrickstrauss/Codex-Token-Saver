@@ -49,6 +49,21 @@ class IntegrationTests(unittest.TestCase):
         self.control.set_enabled('serena', False)
         self.assertFalse(load_preferences(self.root)['serena'])
 
+    def test_codex_app_disabled_flag_after_marker_is_owned_by_the_mcp_table(self):
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled):
+                self.config.write_bytes(self.original)
+                self.control.set_enabled('serena', True)
+                with self.config.open('a') as stream:
+                    stream.write('enabled = false\n')
+                self.control.set_enabled('serena', enabled)
+                config = tomllib.loads(self.config.read_text())
+                self.assertEqual(config['mcp_servers']['existing'], {'command': 'existing.exe'})
+                if enabled:
+                    self.assertTrue(self.control.status()['serena']['configured'])
+                else:
+                    self.assertNotIn('bundle_serena', config['mcp_servers'])
+
     def test_concurrent_codex_config_change_is_preserved_and_preference_rolled_back(self):
         from bundle_preferences import set_preference, load_preferences
         concurrent = self.original + b'\n# external change\n'

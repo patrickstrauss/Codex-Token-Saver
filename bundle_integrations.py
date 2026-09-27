@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import tomllib
+import tomlkit
 from datetime import datetime, timezone
 
 from desktop_proxy_control import atomic_write, routing_lock
@@ -116,6 +117,12 @@ class BundleIntegrations:
                 raise ValueError('Managed integration markers are damaged; configuration was left unchanged.')
             if 'bundle_' + component in parsed.get('mcp_servers', {}) and not matches:
                 raise ValueError('An unmanaged MCP entry uses this name; configuration was left unchanged.')
+            entry = parsed.get('mcp_servers', {}).get('bundle_' + component, {})
+            if matches and 'enabled' in entry:
+                # Codex can append this field after our end comment; it still belongs to our table.
+                document = tomlkit.parse(text.lstrip('\ufeff'))
+                del document['mcp_servers']['bundle_' + component]['enabled']
+                text = ('\ufeff' if text.startswith('\ufeff') else '') + tomlkit.dumps(document)
             updated = pattern.sub(lambda _: self._block(component) if enabled else '', text)
             if enabled and not matches:
                 updated += self._block(component)
