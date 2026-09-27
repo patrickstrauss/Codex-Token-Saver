@@ -77,6 +77,12 @@ TypeScript, structure and privacy checks passed. The rebuilt executable passed i
 two CLI control tests (18 assertions) and version check.
 
 The checked replacement executable is installed with the prior executable backed up.
-Automatic approval review blocked restarting the running OpenCodex process. Until
-the user quits/reopens OpenCodex, the old process remains active. Real traffic through
-the repaired process is not yet verified. No Windows restart is needed.
+The forced process-restart command was blocked by approval review. The documented
+ocx restart command subsequently drained the old process and verified its replacement.
+Live process19060 serves the repaired executable. Worker compressed outcomes advanced
+from1 to4; two were explicitly local diagnostic calls, so at least one new compression
+came from normal traffic. Recent OpenAI requests completed with status200.
+The local replay diagnostic compressed13 replacements from33 eligible outputs in203ms;
+a single recent output compressed in16ms. No separate paid-provider probe was sent.
+Early requests bypassed; their detailed reason was not retained. This verifies the
+observed OpenAI route, not other providers or a future reboot. No Windows restart is needed.
