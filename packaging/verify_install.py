@@ -43,7 +43,7 @@ def verify(root):
         version = subprocess.check_output([str(root / 'bin/rtk.exe'), '--version'], text=True, timeout=30)
         assert 'rtk ' in version
         dashboard = root / 'dashboard/.venv/Scripts/python.exe'
-        subprocess.run([str(dashboard), '-c', 'import flask, dotenv; print("dashboard dependencies OK")'], check=True, timeout=30)
+        subprocess.run([str(dashboard), '-c', 'import flask, dotenv, tomlkit; print("dashboard dependencies OK")'], check=True, timeout=30)
         for directory, imports in [('serena', 'import serena; import solidlsp'), ('local-compaction', 'import langmem; import langchain_openai')]:
             python = root / directory / '.venv/Scripts/python.exe'
             if python.is_file():
