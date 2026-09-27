@@ -42,7 +42,7 @@ def control(tmp_path):
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
-    return BundleControls(tmp_path, proxy=Proxy(), integrations=Integrations(), summaries=Summaries())
+    return BundleControls(tmp_path, proxy=Proxy(), integrations=Integrations(), summaries=Summaries(), opencodex=lambda: {})
 
 
 def by_id(control, observations=None):
@@ -122,6 +122,24 @@ def test_rtk_off_keeps_local_filter_choice_and_request_routing_independent(contr
     assert not control.proxy.calls
     control.set_enabled('headroom_requests', True)
     assert control.proxy.calls == [True]
+
+
+def test_opencodex_without_extension_is_unavailable_but_local_tools_work(control):
+    control.opencodex = lambda: {'installed': True, 'ready': True,
+                                'routing_matches': True, 'transform_protocol': None}
+    rows = by_id(control)
+    assert rows['headroom_requests']['state'] == 'unavailable'
+    assert not rows['headroom_requests']['effective_enabled']
+    assert not rows['headroom_requests']['available']
+    assert 'OpenCodex integration required' in rows['headroom_requests']['reason']
+    assert rows['rtk']['state'] == rows['headroom_local']['state'] == 'ready'
+    assert control.proxy.calls == []
+
+
+def test_installed_opencodex_does_not_override_native_status(control):
+    control.opencodex = lambda: {'installed': True, 'ready': False,
+                                'routing_matches': False, 'transform_protocol': None}
+    assert by_id(control)['headroom_requests']['state'] == 'off'
 
 
 def test_requested_but_bypassed_request_compression_degrades_overall(control):

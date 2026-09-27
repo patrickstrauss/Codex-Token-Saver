@@ -48,7 +48,7 @@ def serena_diagnostics(activity):
 
 
 class BundleControls:
-    def __init__(self, root, *, proxy=None, integrations=None, summaries=None):
+    def __init__(self, root, *, proxy=None, integrations=None, summaries=None, opencodex=None):
         self.root = Path(root).resolve()
         if proxy is None:
             from desktop_proxy_control import DesktopProxyControl
@@ -57,6 +57,10 @@ class BundleControls:
             from bundle_integrations import BundleIntegrations
             integrations = BundleIntegrations(self.root)
         self.proxy, self.integrations, self.summaries = proxy, integrations, summaries
+        if opencodex is None:
+            from opencodex_integration import discovery_status
+            opencodex = discovery_status
+        self.opencodex = opencodex
 
     def _summary_status(self):
         if self.summaries is None:
@@ -68,6 +72,10 @@ class BundleControls:
         observations = observations or {}
         preferences = preference_status(self.root)
         values, settings_error = preferences['values'], preferences.get('error')
+        try:
+            opencodex = self.opencodex()
+        except Exception:
+            opencodex = {'reason': 'OpenCodex status could not be verified.'}
         try:
             proxy = self.proxy.status()
         except Exception:
@@ -135,6 +143,9 @@ class BundleControls:
                         row['effective_enabled'] = True
                 if proxy.get('enabled') is None:
                     row.update(state='error', requested_enabled=None, reason='The requested routing state is unknown.')
+                if opencodex.get('routing_matches') is True:
+                    row.update(available=False, effective_enabled=False, state='unavailable',
+                               reason='Unavailable: OpenCodex integration required. Local tools remain available.')
             elif name in ('serena', 'local_summaries'):
                 integration = integrations.get(name, {})
                 row['available'] = integration.get('installed') is True
@@ -192,6 +203,7 @@ class BundleControls:
         return {'components': rows, 'overall_health': 'error' if severe else 'stale' if degraded else 'ok',
                 'selected_count': len(selected), 'preferences_error': settings_error,
                 'unverified_count': sum(row['effective_enabled'] is None for row in selected),
+                'opencodex': opencodex,
                 'native_compaction_retained': True}
 
     def set_enabled(self, component, enabled):
