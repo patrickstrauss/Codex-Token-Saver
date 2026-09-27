@@ -5,7 +5,9 @@ import importlib.util
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+from pathlib import Path
 import socket
+import tempfile
 import threading
 import unittest
 from unittest.mock import patch
@@ -23,6 +25,7 @@ HEALTH = {"service": "headroom-proxy", "status": "healthy", "ready": True}
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.server.hits.append(self.path)
+        self.server.last_authorization = self.headers.get('Authorization')
         status, body, headers = self.server.routes.get(self.path, (404, b"missing", {}))
         self.send_response(status)
         self.send_header("Content-Type", headers.get("Content-Type", "application/json"))
@@ -40,6 +43,15 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class ProxyRetrievalTests(unittest.TestCase):
+    def test_transform_retrieval_uses_private_token_only_after_identity_check(self):
+        with self.service() as original, tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'proxy').mkdir()
+            (root / 'proxy/transform-token').write_text('a' * 64)
+            self.server.routes['/health'] = (200, json.dumps({**HEALTH, 'mode': 'transform-only'}).encode(), {})
+            self.assertEqual(proxy_retrieval.read_proxy_original(HASH, root=root), original)
+            self.assertEqual(self.server.last_authorization, 'Bearer ' + 'a' * 64)
+
     def test_proxy_retrieval_feature_exists(self):
         self.assertIsNotNone(proxy_retrieval, "The proxy original-content bridge is missing.")
 

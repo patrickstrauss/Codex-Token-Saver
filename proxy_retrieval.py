@@ -2,6 +2,7 @@
 
 from http.client import HTTPException
 import json
+from pathlib import Path
 import re
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -11,6 +12,7 @@ PROXY_ORIGIN = "http://127.0.0.1:8789"
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 HEALTH_RESPONSE_BYTES = 64 * 1024
 HTTP_TIMEOUT_SECONDS = 3
+ROOT = Path(__file__).resolve().parent
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -18,8 +20,11 @@ class _NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def _read_json(opener, path: str, limit: int, *, original: bool = False) -> dict:
-    request = Request(PROXY_ORIGIN + path, headers={"Accept": "application/json"})
+def _read_json(opener, path: str, limit: int, *, original: bool = False, token=None) -> dict:
+    headers = {"Accept": "application/json"}
+    if token is not None:
+        headers['Authorization'] = 'Bearer ' + token
+    request = Request(PROXY_ORIGIN + path, headers=headers)
     try:
         with opener.open(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
             if response.status != 200:
@@ -52,7 +57,7 @@ def _read_json(opener, path: str, limit: int, *, original: bool = False) -> dict
         raise RuntimeError("The local Headroom service returned malformed original-content data.") from None
 
 
-def read_proxy_original(content_hash: str) -> str:
+def read_proxy_original(content_hash: str, *, root=ROOT) -> str:
     """Return full original text without normalizing it or recording local savings.
 
     The endpoint is fixed and never obtained from a hash, environment variable,
@@ -66,8 +71,17 @@ def read_proxy_original(content_hash: str) -> str:
     health = _read_json(opener, "/health", HEALTH_RESPONSE_BYTES)
     if health.get("service") != "headroom-proxy" or health.get("status") != "healthy":
         raise RuntimeError("The local listener is not the expected healthy Headroom service.")
+    token = None
+    if health.get('mode') == 'transform-only':
+        try:
+            with (Path(root) / 'proxy/transform-token').open('r', encoding='ascii') as stream:
+                token = stream.read(65)
+            if re.fullmatch(r'[0-9a-f]{64}', token) is None:
+                raise ValueError('Invalid token')
+        except (OSError, ValueError):
+            raise RuntimeError('The transform retrieval token is unavailable or invalid.') from None
     payload = _read_json(
-        opener, f"/v1/retrieve/{content_hash}", MAX_RESPONSE_BYTES, original=True
+        opener, f"/v1/retrieve/{content_hash}", MAX_RESPONSE_BYTES, original=True, **({'token': token} if token else {})
     )
     original = payload.get("original_content")
     if payload.get("hash") != content_hash or not isinstance(original, str):

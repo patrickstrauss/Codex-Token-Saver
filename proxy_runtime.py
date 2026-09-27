@@ -604,6 +604,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--serve', action='store_true')
+    group.add_argument('--serve-transform', action='store_true')
     group.add_argument('--validate', action='store_true')
     group.add_argument('--validate-model', action='store_true')
     parser.add_argument('--host', default='127.0.0.1')
@@ -614,6 +615,10 @@ def main(argv=None):
         return 0
     if args.validate_model:
         print(json.dumps(_model_report()))
+        return 0
+    if args.serve_transform:
+        from request_transform_service import serve_transform
+        serve_transform(ROOT, host=args.host, port=args.port)
         return 0
     config = _configure_sdk(args.host, args.port)
     from headroom.proxy import server
