@@ -1,5 +1,6 @@
 """Explicit local desktop request routing controls, sharing the dashboard guard."""
 import sys
+import json
 import threading
 from pathlib import Path
 
@@ -24,7 +25,7 @@ PANEL_HTML = '''
             <div><strong id="request-proxy-whole-rate" style="font-size:26px;color:#67c9ff">Unavailable</strong><br>Of complete request input</div>
         </div>
         <p id="request-proxy-backend-scope" class="updates-muted"></p>
-        <p class="updates-muted">The first rate covers eligible content and tool schemas; the second includes protected history and uses compression savings only. A long conversation can have strong eligible-content reduction and low complete-input reduction. These are token estimates, not measured Codex quota savings.</p>
+        <p id="request-proxy-rate-note" class="updates-muted">The first rate covers eligible content and tool schemas; the second includes protected history and uses compression savings only. These are token estimates, not measured Codex quota savings.</p>
         <p id="request-proxy-diagnostics" class="updates-muted"></p>
         <p id="request-proxy-timing" class="updates-muted"></p>
         <p id="request-proxy-counts" class="updates-muted"></p>
@@ -47,7 +48,40 @@ def _make_control(root):
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     from desktop_proxy_control import DesktopProxyControl
-    return DesktopProxyControl(root)
+    from opencodex_control import OpenCodexControl
+    return RequestProxyView(root, DesktopProxyControl(root), OpenCodexControl(root))
+
+
+class RequestProxyView:
+    """Select the owned control while retaining explicitly historical native savings."""
+    def __init__(self, root, native, extension):
+        self.root, self.native, self.extension = Path(root), native, extension
+
+    def _opencodex(self):
+        try:
+            return json.loads((self.root / 'proxy/settings.json').read_text(encoding='utf-8-sig')).get('mode') == 'opencodex'
+        except FileNotFoundError:
+            return False
+
+    def status(self):
+        state = self.native.status()
+        if self._opencodex():
+            extension = self.extension.status()
+            effective = extension.get('effective_enabled') is True
+            state.update(mode='opencodex', enabled=extension.get('requested_enabled') is True,
+                         effective_enabled=effective, route_enabled=effective,
+                         validated=extension.get('managed') is True, ready=extension.get('ready') is True,
+                         backend_ready=effective, restart_required=extension.get('needs_reload') is True,
+                         last_error=extension.get('reason') if extension.get('requested_enabled') else None,
+                         savings_history_only=True, backend_metrics={},
+                         transform_outcomes=extension.get('outcomes', {}))
+        return state
+
+    def set_enabled(self, enabled):
+        if self._opencodex():
+            self.extension.set_enabled(enabled)
+            return self.status()
+        return self.native.set_enabled(enabled)
 
 
 def register_proxy_routes(app, root, security, control_factory=None):

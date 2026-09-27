@@ -8,6 +8,8 @@
     function number(value) { return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : 'Unavailable'; }
     function percent(value) { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? number(value) + '%' : 'Unavailable'; }
     function render() {
+        el('timing').hidden = false;
+        el('rate-note').textContent = 'The first rate covers eligible content and tool schemas; the second includes protected history and uses compression savings only. These are token estimates, not measured Codex quota savings.';
         var modes = {optimized: 'Optimized connection', direct: 'Direct connection — compression unavailable',
             offline: 'Request connection offline', paused: 'Request compression paused'};
         el('status').textContent = changing ? 'Applying request compression setting...' : modes[state.mode] || 'Checking desktop connection...';
@@ -56,6 +58,29 @@
         el('restart').hidden = !state.restart_required;
         el('restart').textContent = state.restart_required
             ? 'Restart Codex when convenient to apply the connection change to tasks already loaded. You can continue existing tasks after restarting.' : '';
+        if (state.mode === 'opencodex') {
+            el('status').textContent = changing ? 'Applying request compression setting...'
+                : state.effective_enabled ? 'OpenCodex compression enabled'
+                : state.enabled ? 'OpenCodex compression waiting for readiness' : 'OpenCodex compression paused';
+            el('enable').disabled = changing || !state.installed || !state.validated || state.enabled;
+            el('pause').disabled = changing || !state.enabled;
+            el('scope').textContent = 'Historical native-proxy savings · ' + label + ' · all tasks. These totals do not measure the current OpenCodex integration.';
+            el('active-rate').textContent = el('whole-rate').textContent = 'Not reported';
+            el('backend-scope').textContent = 'OpenCodex reports transform outcomes but does not report submitted-content or complete-request token totals. Neither effectiveness percentage can currently be calculated.';
+            el('rate-note').textContent = 'Only eligible tool-result text is submitted for compression. Protected conversation content is preserved. Outcome counts are not token savings or Codex quota savings.';
+            el('diagnostics').textContent = 'Live worker outcomes are separate from the historical savings window above.';
+            el('timing').hidden = true;
+            var outcomes = state.transform_outcomes || {};
+            el('counts').textContent = 'Tool-result batches since worker start: ' + number(outcomes.compressed)
+                + ' compressed; ' + number(outcomes.unchanged) + ' unchanged; ' + number(outcomes.bypassed)
+                + ' bypassed; ' + number(outcomes.error) + ' errors. Includes diagnostic checks; these are not model-request counts.';
+            el('routing').textContent = 'Connection mode: OpenCodex.';
+            el('backend').textContent = state.ready ? 'Local transform worker is ready.' : 'Local transform worker is not ready.';
+            el('recorded').textContent = savings.last_recorded_at
+                ? 'Last native-proxy savings activity: ' + new Date(savings.last_recorded_at).toLocaleString()
+                : 'No historical native-proxy savings recorded.';
+            el('restart').textContent = state.restart_required ? 'OpenCodex must reload its integration settings before compression can become active.' : '';
+        }
     }
     async function loadStatus() {
         if (reading || changing || document.hidden) return;

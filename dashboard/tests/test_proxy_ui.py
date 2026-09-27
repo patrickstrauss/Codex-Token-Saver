@@ -152,7 +152,9 @@ vm.createContext(context);vm.runInContext(source,context);
 async function flush(){for(let i=0;i<10;i++)await Promise.resolve();}
 function view(){return {active:node('request-proxy-active-rate').textContent,
  whole:node('request-proxy-whole-rate').textContent,scope:node('request-proxy-backend-scope').textContent,
- diagnostics:node('request-proxy-diagnostics').textContent,timing:node('request-proxy-timing').textContent};}
+ diagnostics:node('request-proxy-diagnostics').textContent,timing:node('request-proxy-timing').textContent,
+ status:node('request-proxy-status').textContent,savingsScope:node('request-proxy-scope').textContent,
+ counts:node('request-proxy-counts').textContent,timingHidden:node('request-proxy-timing').hidden};}
 (async()=>{
  await flush();const initial=view(),before=calls.length;
  node('request-proxy-window').value='lifetime';node('request-proxy-window').listeners.change();const lifetime=view();
@@ -162,7 +164,11 @@ function view(){return {active:node('request-proxy-active-rate').textContent,
  responses.push({...state,backend_metrics:{...metrics,active_reduction_pct:0,whole_reduction_pct:0,
  diagnostics:{frames_attempted:0,frames_compressed:0,frames_failed:0}}});
  await timers[0]();await flush();const zero=view();
- process.stdout.write(JSON.stringify({initial,lifetime,unavailable,missing,zero,extraCalls:calls.length-before}));
+ responses.push({...state,mode:'opencodex',enabled:true,effective_enabled:true,savings_history_only:true,
+ transform_outcomes:{compressed:3,unchanged:2,bypassed:1,error:0}});
+ await timers[0]();await flush();const opencodex=view();
+ responses.push(state);await timers[0]();await flush();const restored=view();
+ process.stdout.write(JSON.stringify({initial,lifetime,unavailable,missing,zero,opencodex,restored,extraCalls:calls.length-before}));
 })().catch(e=>{process.stderr.write(e.stack);process.exitCode=1;});
 '''
     result = subprocess.run(['node', '-e', harness], input=json.dumps(script), text=True,
@@ -177,11 +183,18 @@ function view(){return {active:node('request-proxy-active-rate').textContent,
     assert 'timeout' not in data['initial']['diagnostics'].lower()
     assert '123.4 ms average' in data['initial']['timing']
     assert '300 measured' in data['initial']['timing']
-    assert data['lifetime'] == data['initial']
+    assert {k:v for k,v in data['lifetime'].items() if k != 'savingsScope'} == {k:v for k,v in data['initial'].items() if k != 'savingsScope'}
     for key in ('unavailable', 'missing'):
         assert data[key]['active'] == data[key]['whole'] == 'Unavailable'
         assert 'Unavailable' in data[key]['diagnostics']
         assert 'Unavailable' in data[key]['timing']
     assert data['zero']['active'] == data['zero']['whole'] == '0%'
     assert '0 attempted' in data['zero']['diagnostics']
-    assert data['extraCalls'] == 3  # Window selection never fetches or changes routing.
+    assert data['opencodex']['active'] == data['opencodex']['whole'] == 'Not reported'
+    assert 'enabled' in data['opencodex']['status']
+    assert 'Historical native-proxy' in data['opencodex']['savingsScope']
+    assert 'does not report' in data['opencodex']['scope']
+    assert '3 compressed' in data['opencodex']['counts']
+    assert data['opencodex']['timingHidden']
+    assert data['restored'] == data['lifetime']
+    assert data['extraCalls'] == 5  # Window selection never fetches or changes routing.

@@ -37,6 +37,40 @@ class FakeControl:
         return self.status()
 
 
+@pytest.mark.parametrize('enabled', [True, False])
+def test_opencodex_panel_uses_extension_control_and_marks_legacy_counters(tmp_path, enabled):
+    from proxy_routes import RequestProxyView
+    (tmp_path / 'proxy').mkdir()
+    settings = tmp_path / 'proxy/settings.json'
+    settings.write_text(json.dumps({'mode': 'opencodex', 'enabled': False}))
+    native = FakeControl()
+    class Extension:
+        def __init__(self):
+            self.calls = []
+        def status(self):
+            return {'managed': True, 'requested_enabled': enabled, 'effective_enabled': enabled,
+                    'ready': True, 'needs_reload': False, 'reason': None if enabled else 'Paused.',
+                    'outcomes': {'compressed': 3, 'unchanged': 1, 'bypassed': 2, 'error': 0}}
+        def set_enabled(self, value):
+            self.calls.append(value)
+    extension = Extension()
+    view = RequestProxyView(tmp_path, native, extension)
+    status = view.status()
+    assert status['mode'] == 'opencodex'
+    assert status['enabled'] is enabled
+    assert status['effective_enabled'] is enabled
+    assert status['restart_required'] is False
+    assert status['savings_history_only'] is True
+    assert status['savings']['saved_tokens'] == 321
+    assert status['backend_metrics'] == {}  # Never reuse native percentages for this mode.
+    assert status['transform_outcomes']['compressed'] == 3
+    view.set_enabled(not enabled)
+    assert extension.calls == [not enabled] and not native.calls
+    settings.write_text(json.dumps({'mode': 'native'}))
+    view.set_enabled(True)
+    assert native.calls == [True]  # Re-read mode after a handoff.
+
+
 @pytest.fixture
 def proxy_api(tmp_path):
     from proxy_routes import register_proxy_routes

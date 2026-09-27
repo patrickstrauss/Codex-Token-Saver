@@ -3,7 +3,8 @@
 The combined folder contains both built applications, checked upgrade scripts and
 source patches. This is a local candidate based on OpenCodex 2.64.0, not an official
 OpenCodex release. Automated local checks pass; your Windows restart and live provider
-acceptance remain to be completed. Development has not changed the live installation.
+acceptance remain separate checks. The steps below describe a first migration;
+an installation already repaired and connected does not need to repeat them.
 
 ## Your steps
 
@@ -28,6 +29,18 @@ There is no need to restart before installing. The scripts never restart the lap
 or kill processes automatically. If a step fails, stop there and retain its output.
 Do not manually copy executables, change provider URLs, or run the ordinary Install.cmd
 over your current installation.
+
+## Dashboard measurements
+
+In OpenCodex mode the request panel reads the managed transform's live status and
+outcome counts. Its saved-token history is explicitly labeled as historical native-proxy
+data. OpenCodex protocol v1 does not report submitted-content or complete-request token
+totals, so effectiveness rates show **Not reported**, not a fabricated percentage.
+Worker outcome counts reset on restart and include diagnostic checks.
+
+RTK's totals cover commands actually routed through RTK. Small output, exact-output
+options, complex shell scripts and ambiguous commands can produce no savings or bypass
+filtering. A ready runtime does not imply every tool call is compressed.
 
 ## What stays yours
 
