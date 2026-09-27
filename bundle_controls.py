@@ -210,6 +210,13 @@ class BundleControls:
         if component not in LABELS or type(enabled) is not bool:
             raise ValueError('Choose a listed component and a boolean value.')
         if component == 'headroom_requests':
+            if enabled:
+                try:
+                    opencodex = self.opencodex()
+                except Exception as exc:
+                    raise RuntimeError('OpenCodex status could not be verified; no route changed.') from exc
+                if opencodex.get('routing_matches') is True:
+                    raise RuntimeError('OpenCodex integration is not qualified for enablement. Local tools remain available.')
             return self.proxy.set_enabled(enabled)
         if enabled:
             row = next(row for row in self.status()['components'] if row['id'] == component)

@@ -49,6 +49,13 @@ def by_id(control, observations=None):
     return {row['id']: row for row in control.status(observations)['components']}
 
 
+def test_opencodex_cannot_enable_native_request_route(control):
+    control.opencodex = lambda: {'routing_matches': True, 'transform_protocol': 1}
+    with pytest.raises(RuntimeError, match='OpenCodex'):
+        control.set_enabled('headroom_requests', True)
+    assert control.proxy.calls == []
+
+
 def test_serena_diagnostics_keep_historical_failure_separate_from_current_health(control):
     import json
     path = control.root / 'serena/activity.json'
