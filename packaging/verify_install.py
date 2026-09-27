@@ -22,6 +22,13 @@ def verify(root):
             RTK_DB_PATH=str(state / 'rtk.db'), RTK_TELEMETRY_DISABLED='1',
         )
         from desktop_headroom import DesktopHeadroom, O200K_URL, O200K_SHA256
+        # Validate packaged integration modules without probing or mutating live OpenCodex.
+        from opencodex_control import fingerprint
+        from request_transform_service import transform_enabled
+        from proxy_runtime import build_proxy_command
+        assert fingerprint(None) == hashlib.sha256(b'null').hexdigest()
+        assert transform_enabled(state) is False
+        assert '--serve-transform' in build_proxy_command(root / 'headroom/.venv', mode='opencodex')
         tokenizer = root / 'headroom/tokenizer-cache' / hashlib.sha1(O200K_URL.encode()).hexdigest()
         assert hashlib.sha256(tokenizer.read_bytes()).hexdigest() == O200K_SHA256
         backend = DesktopHeadroom(state / 'reads', bundle_root=root)

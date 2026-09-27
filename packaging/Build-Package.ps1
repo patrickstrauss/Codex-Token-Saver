@@ -24,8 +24,11 @@ foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena'
 }
 $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'dashboard\static') -File -Recurse |
     Where-Object Extension -in @('.css','.js','.svg','.png','.ico','.woff2')
-foreach ($taskDoc in @('TEAM-INSTALL.md','USING-BUNDLE.md','SERENA-INTEGRATION.md','SERENA-TESTING.md','CONTROL-UI-VALIDATION.md','PERFORMANCE-CHECK.md','PROCESS-RECOVERY.md')) {
+foreach ($taskDoc in @('TEAM-INSTALL.md','USING-BUNDLE.md','SERENA-INTEGRATION.md','SERENA-TESTING.md','CONTROL-UI-VALIDATION.md','PERFORMANCE-CHECK.md','PROCESS-RECOVERY.md','OPENCODEX-INTEGRATION.md','OPENCODEX-COMPATIBILITY.md')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo ('docs\' + $taskDoc))
+}
+foreach ($taskDoc in @('README.md','VALIDATION.md','token-saver-v2.64.0.patch','offline-witness.json')) {
+    $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo ('docs\opencodex\' + $taskDoc))
 }
 foreach ($taskFile in ($taskFiles | Sort-Object FullName -Unique)) {
     if (($taskFile.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Linked source files are not packageable.' }

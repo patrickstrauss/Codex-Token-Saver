@@ -158,10 +158,10 @@ index b072b61..a381f0f 100644
    port: z.number().int().min(0).max(65535).default(10100),
 diff --git a/src/config/token-saver-control.ts b/src/config/token-saver-control.ts
 new file mode 100644
-index 0000000..ad7190a
+index 0000000..f23b621
 --- /dev/null
 +++ b/src/config/token-saver-control.ts
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,44 @@
 +import { createHash } from "node:crypto";
 +import { isAbsolute } from "node:path";
 +import { readConfigDiagnostics, mutatePersistedConfig } from "../config";
@@ -179,6 +179,13 @@ index 0000000..ad7190a
 +  const current = readConfigDiagnostics();
 +  if (current.source !== "file" || current.error) throw new Error("OpenCodex configuration is unavailable");
 +  return state(current.config.tokenSaver);
++}
++
++/** Resolve just this optional policy at each dispatch/readiness boundary. CLI writes do
++ * not reload the server's provider snapshot. Invalid/missing disk state bypasses it. */
++export function runtimeTokenSaverConfig(): TokenSaverConfig | undefined {
++  try { return readTokenSaverControl().value ?? undefined; }
++  catch { return undefined; }
 +}
 +/** Recheck ownership inside OpenCodex's existing mutation transaction, including every rebase. */
 +export function setTokenSaverControl(expected: string, raw: unknown) {
@@ -375,14 +382,20 @@ index 0000000..1c56878
 +  };
 +}
 diff --git a/src/server/index/serve-options.ts b/src/server/index/serve-options.ts
-index 8cd278c..d73a18e 100644
+index 8cd278c..64b445f 100644
 --- a/src/server/index/serve-options.ts
 +++ b/src/server/index/serve-options.ts
-@@ -614,6 +614,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
+@@ -1,4 +1,5 @@
+ import type { Server, ServerWebSocket } from "bun";
++import { runtimeTokenSaverConfig } from "../../config/token-saver-control";
+ import type { StartServerDeps } from "./startup-warnings";
+ import {
+   GUI_PAIRING_EXCHANGE_BODY_LIMIT,
+@@ -614,6 +615,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
            port: ctx.boundPort ?? listenPort,
            status,
            ...readyProtocolMetadata(config, req),
-+          tokenSaver: { protocol: 1, control: 1, enabled: config.tokenSaver?.enabled === true },
++          tokenSaver: { protocol: 1, control: 1, enabled: runtimeTokenSaverConfig()?.enabled === true },
          };
          if (status === "ready") {
            return jsonResponse(body, 200, req, policy);
@@ -432,10 +445,16 @@ index 5e004c5..988195a 100644
  
  /**
 diff --git a/src/server/responses/request-transport.ts b/src/server/responses/request-transport.ts
-index 2b30240..95b91d3 100644
+index 2b30240..b1a2acf 100644
 --- a/src/server/responses/request-transport.ts
 +++ b/src/server/responses/request-transport.ts
-@@ -66,6 +66,8 @@ import {
+@@ -1,4 +1,5 @@
+ import type { ResponsesRequestContext, ResponsesAdmissionState } from "./core-options";
++import { runtimeTokenSaverConfig } from "../../config/token-saver-control";
+ import type { PreparedResponsesRequest } from "./request-prepare";
+ import type { OAuthAccessSnapshot } from "../../oauth";
+ import {
+@@ -66,6 +67,8 @@ import {
  import type { AttemptRecoveryKind } from "../../usage/log";
  import { bindAttemptDeliveryRecorder } from "../../usage/attempt-delivery";
  import { resolvePassiveRouteSubjectId } from "../passive-route-linker";
@@ -444,14 +463,14 @@ index 2b30240..95b91d3 100644
  
  /** Owns live credential selection and adapter bindings for one request. */
  export async function prepareResponsesTransport(
-@@ -82,6 +84,14 @@ export async function prepareResponsesTransport(
+@@ -82,6 +85,14 @@ export async function prepareResponsesTransport(
  ) {
    const { config, logCtx, options, req } = requestContext;
    const { route, parsed, inboundWire, translatorBudget } = requestState;
 +  // Original parsed state stays with replay/history owners. Only buildRequest receives
 +  // the outbound copy. Native steering/injection and runTurn adapters remain unsupported.
 +  const transformOutbound = createTokenSaverTransform(
-+    options.nativeControl ? undefined : config.tokenSaver,
++    options.nativeControl ? undefined : runtimeTokenSaverConfig(),
 +    JSON.stringify([parsed._reasoningReplayScope?.clientPrincipalId ?? "",
 +      parsed._codexOwnThreadId ?? parsed._clientThreadId ?? randomUUID()]),
 +    options.abortSignal ?? req.signal,
@@ -459,7 +478,7 @@ index 2b30240..95b91d3 100644
  
  
    // OAuth providers: swap in a fresh access token (auto-refreshed) as the Bearer key, so the
-@@ -283,6 +293,9 @@ export async function prepareResponsesTransport(
+@@ -283,6 +294,9 @@ export async function prepareResponsesTransport(
    };
    const resolveSelectionAdapter = (provider: OcxProviderConfig, retention = config.cacheRetention): ProviderAdapter => {
      const resolved = resolveAdapter(provider, retention, route.providerName);
@@ -497,10 +516,10 @@ index 465a19a..90251b3 100644
  
  The client-integration subsystem writes one generated OpenCodex provider contribution into a
 diff --git a/structure/config.md b/structure/config.md
-index 9330ca6..b288b6c 100644
+index 9330ca6..43a1ceb 100644
 --- a/structure/config.md
 +++ b/structure/config.md
-@@ -1,5 +1,22 @@
+@@ -1,5 +1,24 @@
  # Config Surface
  
 +The optional `tokenSaver` object in `src/config/schema/config-schema.ts` is disabled when
@@ -517,8 +536,10 @@ index 9330ca6..b288b6c 100644
 +
 +The serving process adds `tokenSaver: { protocol: 1, control: 1, enabled: boolean }`
 +to readyz. Existing PID/port checks validate the process; `ocx ready --json` forwards
-+only those typed fields on success. This advertises extension code and the loaded
-+setting, not transform-service health or release qualification.
++only those typed fields on success. Readiness and each outbound dispatch resolve the
++persisted extension policy, so CLI controls take effect without restarting the server.
++Invalid or unavailable persisted settings bypass compression. This advertises extension
++code and policy, not transform-service health or release qualification.
 +
  Native function-result injection follows [the separate opt-in control contract](transports/streaming-health.md#experimental-native-function-result-injection); this surface does not infer upstream support or alter its defaults.
  
@@ -537,13 +558,19 @@ index a548a7e..0f30eb5 100644
  shared Kiro/Chat splitting and raw display follow [Chat compatibility](providers/chat-compat.md#inline-think-tag-recovery).
  
 diff --git a/structure/transports/responses.md b/structure/transports/responses.md
-index 5674169..a3a5dec 100644
+index 5674169..e53ccd9 100644
 --- a/structure/transports/responses.md
 +++ b/structure/transports/responses.md
-@@ -1,5 +1,24 @@
+@@ -1,5 +1,31 @@
  # Responses Transport
  
 +## Token Saver prototype
++
++The isolated bundle harness also exercises the real server with HTTP/SSE, a WebSocket
++delta turn, full-history replay after reconnect and two concurrent WebSocket chats.
++The fake loopback provider observes exactly eight sends, including live pause and resume
++on an established socket, with model and effort preserved.
++This does not qualify arbitrary reconnect recovery, live providers or native steering.
 +
 +`src/integrations/token-saver.ts` selects string tool-result messages with matching
 +Responses function-call outputs and copies only those fields. The wrapper in
@@ -555,22 +582,23 @@ index 5674169..a3a5dec 100644
 +bypass; native steering/injection and runTurn adapters are unsupported. It neither
 +retries provider sends nor changes model/effort selection.
 +
-+The strict optional config is default-off. This prototype does not advertise a ready
-+capability or provide automatic migration. Real socket/reconnect and lifecycle qualification
-+remain pending. Contract coverage is in `tests/responses/token-saver.test.ts`; the isolated
++The strict optional config is default-off. Readiness publishes protocol/control v1 and
++the persisted enabled setting. Each dispatch reads this optional policy independently
++of the server's provider snapshot; invalid disk state bypasses compression. Windows
++reboot and live-provider qualification remain pending. Contract coverage is in `tests/responses/token-saver.test.ts`; the isolated
 +bundle harness enables `tests/responses/token-saver-wire.test.ts` and
-+`tests/responses/token-saver-pipeline.test.ts`. The latter exercises prepared WebSocket
-+turns at the Responses core, not a real WebSocket connection.
++`tests/responses/token-saver-pipeline.test.ts`. The latter covers both prepared turns
++at the Responses core and actual HTTP/WebSocket server connections.
 +
  Native result continuations and function-result injection follow [the mode-specific result and control contract](streaming-health.md#experimental-native-function-result-injection); this surface does not infer upstream support or alter its defaults.
  
  Native steering follows [the shared WebSocket contract](streaming-health.md#experimental-native-mid-turn-steering); this surface's defaults remain unchanged.
 diff --git a/tests/cli/token-saver-control.test.ts b/tests/cli/token-saver-control.test.ts
 new file mode 100644
-index 0000000..117c4ad
+index 0000000..bc240dd
 --- /dev/null
 +++ b/tests/cli/token-saver-control.test.ts
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,60 @@
 +import { expect, test } from "bun:test";
 +import { spawnSync } from "node:child_process";
 +import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -607,7 +635,8 @@ index 0000000..117c4ad
 +  writeFileSync(configPath, JSON.stringify(initial));
 +  const codex = '# keep comment\nmodel = "chosen"\nmodel_reasoning_effort = "high"\n';
 +  writeFileSync(codexPath, codex);
-+  const run = (args: string[]) => spawnSync(process.execPath, [repoPath("src", "cli", "index.ts"), "config", ...args, "--json"], {
++  const binary = process.env.CTS_TEST_OCX_BINARY;
++  const run = (args: string[]) => spawnSync(binary || process.execPath, [...(binary ? [] : [repoPath("src", "cli", "index.ts")]), "config", ...args, "--json"], {
 +    cwd: repoPath(), env: { ...process.env, OPENCODEX_HOME: dir, CODEX_HOME: dir }, encoding: "utf8", timeout: 20_000,
 +  });
 +  try {
@@ -647,25 +676,149 @@ index 53d5351..2f387e9 100644
    "tool-choice-performance.test.ts": "adapters",
 diff --git a/tests/responses/token-saver-pipeline.test.ts b/tests/responses/token-saver-pipeline.test.ts
 new file mode 100644
-index 0000000..b748858
+index 0000000..20413b4
 --- /dev/null
 +++ b/tests/responses/token-saver-pipeline.test.ts
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,190 @@
 +import { expect, test, spyOn } from "bun:test";
 +import * as http from "node:http";
-+import { mkdtempSync, writeFileSync } from "node:fs";
++import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 +import { join } from "node:path";
 +import { tmpdir } from "node:os";
 +import { handleResponses } from "../../src/server/responses";
 +import type { OcxConfig } from "../../src/types";
 +import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
 +import { removeTreeWithRetry } from "../helpers/remove-tree";
++import { startServer } from "../../src/server";
++import { saveConfig } from "../../src/config";
++import { readTokenSaverControl, setTokenSaverControl } from "../../src/config/token-saver-control";
++import { ownedServiceHomeInspection } from "../helpers/owned-service-home-inspection";
 +
 +const service = process.env.CTS_TRANSFORM_TEST_URL;
 +const pipelineTest = service ? test : test.skip;
++pipelineTest("real server HTTP, WebSocket delta, reconnect and concurrent chats preserve provider requests", async () => {
++  const directory = mkdtempSync(join(tmpdir(), "cts-sockets-"));
++  const oldHome = process.env.OPENCODEX_HOME, oldCodex = process.env.CODEX_HOME;
++  process.env.OPENCODEX_HOME = join(directory, "ocx");
++  process.env.CODEX_HOME = join(directory, "codex");
++  mkdirSync(process.env.CODEX_HOME, { recursive: true });
++  const tokenFile = join(directory, "token");
++  writeFileSync(tokenFile, "a".repeat(64));
++  const bodies: any[] = [];
++  const upstream = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(req) {
++    if (!new URL(req.url).pathname.endsWith("/responses")) return Response.json({ data: [] });
++    bodies.push(await req.json());
++    const id = "resp_cts_" + bodies.length;
++    return new Response("event: response.completed\ndata: " + JSON.stringify({
++      type: "response.completed", response: { id, status: "completed", output: [
++        { type: "function_call", id: "fc_next", call_id: "next_call", name: "exec", arguments: "{}", status: "completed" },
++      ] },
++    }) + "\n\n", { headers: { "content-type": "text/event-stream" } });
++  } });
++  const originalFetch = globalThis.fetch;
++  globalThis.fetch = ((input: any, init: any) => {
++    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
++    if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") throw new Error("Only isolated loopback traffic is permitted");
++    return originalFetch(input, init);
++  }) as typeof fetch;
++  const request = http.request;
++  const local = spyOn(http, "request").mockImplementation(((options: any, callback: any) => {
++    expect(options.host).toBe("127.0.0.1"); expect(options.port).toBe(8789);
++    return request({ ...options, port: Number(new URL(service!).port) }, callback);
++  }) as typeof http.request);
++  let server: ReturnType<typeof startServer> | undefined;
++  const sockets: WebSocket[] = [];
++  const original = "socket original output 中🙂\n".repeat(180);
++  const input = (text: string) => [
++    { type: "function_call", call_id: "first_call", name: "exec", arguments: "{}" },
++    { type: "function_call_output", call_id: "first_call", output: text },
++  ];
++  const payload = (text: string) => ({ model: "fixture/gpt-5.6-sol", stream: true, reasoning: { effort: "high" }, input: input(text) });
++  const terminal = (ws: WebSocket) => new Promise<any>((resolve, reject) => {
++    const done = (event: MessageEvent) => {
++      const value = JSON.parse(String(event.data));
++      if (value.type === "error" || value.type === "response.failed") { cleanup(); reject(new Error(JSON.stringify(value))); }
++      else if (value.type === "response.completed") { cleanup(); resolve(value); }
++    };
++    const timer = setTimeout(() => { cleanup(); reject(new Error("Socket terminal timeout")); }, 10_000);
++    function cleanup() { clearTimeout(timer); ws.removeEventListener("message", done); }
++    ws.addEventListener("message", done);
++  });
++  const connect = async () => {
++    const url = new URL("/v1/responses", server!.url); url.protocol = "ws:";
++    const ws = new WebSocket(url, { headers: { authorization: "Bearer fixture-caller" } } as unknown as string[]);
++    sockets.push(ws);
++    await new Promise<void>((resolve, reject) => {
++      const timer = setTimeout(() => reject(new Error("Socket open timeout")), 5_000);
++      ws.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
++      ws.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Socket open failed")); }, { once: true });
++    });
++    return ws;
++  };
++  try {
++    saveConfig({ port: 0, defaultProvider: "fixture", websockets: true,
++      tokenSaver: { enabled: true, protocol: 1, endpoint: "http://127.0.0.1:8789", tokenFile },
++      providers: { fixture: { adapter: "openai-responses", authMode: "api-key", apiKey: "fixture",
++        baseUrl: upstream.url.origin + "/v1", allowPrivateNetwork: true, upstreamWebsocket: false } },
++    } as OcxConfig);
++    server = startServer(0, { inspectNativeCodexOwnership: ownedServiceHomeInspection("Token Saver socket fixture") });
++    const ready: any = await (await fetch(new URL("/readyz", server.url))).json();
++    expect(ready.tokenSaver).toEqual({ protocol: 1, control: 1, enabled: true });
++    const response = await fetch(new URL("/v1/responses", server.url), { method: "POST",
++      headers: { "content-type": "application/json", authorization: "Bearer fixture-caller" }, body: JSON.stringify(payload(original)) });
++    expect(response.status).toBe(200); expect(await response.text()).toContain("response.completed");
++    const ws = await connect();
++    const first = terminal(ws); ws.send(JSON.stringify({ type: "response.create", ...payload(original) }));
++    const completed = await first;
++    const delta = terminal(ws); ws.send(JSON.stringify({ type: "response.create", model: "fixture/gpt-5.6-sol",
++      reasoning: { effort: "high" }, previous_response_id: completed.response.id,
++      input: [{ type: "function_call_output", call_id: "next_call", output: original + "delta" }] }));
++    await delta;
++    ws.close();
++    const reconnected = await connect();
++    const replay = terminal(reconnected); reconnected.send(JSON.stringify({ type: "response.create", ...payload(original + "reconnect") }));
++    await replay;
++    await Promise.all(["chat-a", "chat-b"].map(async chat => {
++      const client = await connect(), done = terminal(client);
++      client.send(JSON.stringify({ type: "response.create", ...payload(original + chat) }));
++      await done;
++    }));
++    expect(bodies).toHaveLength(6);
++    for (const body of bodies) {
++      expect(body.model).toBe("gpt-5.6-sol"); expect(body.reasoning.effort).toBe("high");
++      expect(body.input.filter((item: any) => item.type === "function_call_output").at(-1).output).toContain("Headroom request overview v1");
++    }
++    expect(bodies[2].input.some((item: any) => item.call_id === "next_call")).toBe(true);
++    expect(input(original)[1]!.output).toBe(original);
++    const current = readTokenSaverControl();
++    const paused = setTokenSaverControl(current.fingerprint, { ...current.value!, enabled: false });
++    const pausedReady: any = await (await fetch(new URL("/readyz", server.url))).json();
++    expect(pausedReady.tokenSaver.enabled).toBe(false);
++    const unchanged = terminal(reconnected);
++    reconnected.send(JSON.stringify({ type: "response.create", ...payload(original + "paused") }));
++    await unchanged;
++    expect(bodies.at(-1).input.filter((item: any) => item.type === "function_call_output").at(-1).output).toBe(original + "paused");
++    setTokenSaverControl(paused.fingerprint, current.value);
++    const resumed = terminal(reconnected);
++    reconnected.send(JSON.stringify({ type: "response.create", ...payload(original + "resumed") }));
++    await resumed;
++    expect(bodies.at(-1).input.filter((item: any) => item.type === "function_call_output").at(-1).output).toContain("Headroom request overview v1");
++    expect(bodies).toHaveLength(8);
++  } finally {
++    for (const socket of sockets) socket.close();
++    await server?.stop(true); await upstream.stop(true);
++    local.mockRestore(); globalThis.fetch = originalFetch;
++    if (oldHome === undefined) delete process.env.OPENCODEX_HOME; else process.env.OPENCODEX_HOME = oldHome;
++    if (oldCodex === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = oldCodex;
++    removeTreeWithRetry(directory);
++  }
++}, 45_000);
++
 +pipelineTest("HTTP and WS-prepared core dispatch use the transformer, including native forwarding", async () => {
 +  expect(service).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
 +  const directory = mkdtempSync(join(tmpdir(), "cts-pipeline-"));
++  const oldHome = process.env.OPENCODEX_HOME;
++  process.env.OPENCODEX_HOME = join(directory, "ocx");
 +  const tokenFile = join(directory, "token");
 +  writeFileSync(tokenFile, "a".repeat(64));
 +  const release = acquireOwnedSpendHome();
@@ -691,8 +844,10 @@ index 0000000..b748858
 +        tokenSaver: { enabled: true, protocol: 1, endpoint: "http://127.0.0.1:8789", tokenFile },
 +        providers: { [providerName]: { adapter: "openai-responses", authMode, apiKey: "fixture",
 +          baseUrl: authMode === "forward" ? "https://chatgpt.com/backend-api/codex" : "https://provider.invalid/v1",
-+          codexAccountMode: "direct", upstreamWebsocket: false } },
++          ...(authMode === "forward" ? { codexAccountMode: "direct" } : {}), upstreamWebsocket: false } },
 +      } as OcxConfig;
++      saveConfig(config);
++      expect(readTokenSaverControl().value).toEqual(config.tokenSaver);
 +      const original = "pipeline original diagnostic output line 中🙂\n".repeat(90);
 +      const response = await handleResponses(new Request("http://localhost/v1/responses", {
 +        method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer fixture-token" },
@@ -711,6 +866,7 @@ index 0000000..b748858
 +    expect(bodies).toHaveLength(3); expect(local).toHaveBeenCalledTimes(3);
 +  } finally {
 +    globalThis.fetch = realFetch; local.mockRestore(); release();
++    if (oldHome === undefined) delete process.env.OPENCODEX_HOME; else process.env.OPENCODEX_HOME = oldHome;
 +    removeTreeWithRetry(directory);
 +  }
 +});

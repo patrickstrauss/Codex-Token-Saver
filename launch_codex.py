@@ -128,19 +128,41 @@ def run_cli(executable, arguments):
     return subprocess.call([str(executable)] + list(arguments), env=environment)
 
 
+def resolve_launch_command(arguments, *, mode='native', probe=None):
+    if mode not in ('native', 'opencodex'):
+        raise RuntimeError('Unknown request mode; check bundle configuration.')
+    if mode == 'opencodex':
+        if probe is None:
+            from opencodex_integration import discovery_status
+            probe = discovery_status()
+        if probe.get('ready') is not True or probe.get('routing_matches') is not True:
+            raise RuntimeError('Start OpenCodex and confirm its Codex connection before launching. No route was changed.')
+    executable = find_codex().resolve()
+    if executable.parent == (ROOT / 'bin').resolve():
+        raise RuntimeError('Codex launcher resolves back to the bundle; reinstall the Codex runtime.')
+    # Use the resolved real runtime after verifying the selected route. Executing
+    # a shell shim or "ocx ensure" here could rewrite config or reinterpret argv.
+    return [str(executable), *arguments]
+
+
 def main():
+    from desktop_proxy_control import _json
+    mode = _json(ROOT / 'proxy/settings.json').get('mode', 'native')
     arguments = sys.argv[1:]
     experimental = bool(arguments and arguments[0] == '--experimental-headroom')
     if experimental:
         arguments.pop(0)
+        if mode == 'opencodex':
+            raise RuntimeError('Experimental Headroom cannot be stacked on the OpenCodex connection.')
     if arguments and arguments[0] == '--':
         arguments.pop(0)
-    return run_cli(find_codex(), prepare_arguments(arguments, experimental))
+    command = resolve_launch_command(prepare_arguments(arguments, experimental), mode=mode)
+    return run_cli(command[0], command[1:])
 
 
 if __name__ == '__main__':
     try:
         sys.exit(main())
-    except (OSError, RuntimeError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         print(f'Codex launcher: {exc}', file=sys.stderr)
         sys.exit(1)

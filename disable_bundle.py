@@ -235,20 +235,25 @@ def _disable_locked(root, config_home, *, plan):
     # Expect only the controller's documented route/pause changes. Edits to any
     # other field or file during pause must not be silently adopted.
     value = json.loads((expected[settings] or b'{}').decode('utf-8-sig'))
-    value.update(installed=value.get('installed') is True, enabled=False)
-    value.setdefault('upstream_mode', 'auto')
-    expected[settings] = _encode(value)
-    if tomllib.loads((expected[config] or b'').decode('utf-8-sig')).get('openai_base_url') == LOCAL_URL:
-        route = json.loads((expected[receipt] or b'{}').decode('utf-8-sig'))
-        expected[config] = _without_route(expected[config])
-        if route.get('previous_present'):
-            expected[config] = _with_route(expected[config], route.get('previous_value'))
-        expected[receipt] = _encode(dict(route, restart_required=True))
-    # A failed safe route restoration must leave runtime/startup available.
-    # Pausing is intentionally retained if a later integration write fails.
-    result = DesktopProxyControl(root, config_home=config_home).set_enabled(False)
-    if result.get('route_enabled') or result.get('enabled'):
-        raise RuntimeError('The owned endpoint could not be restored; services must remain available.')
+    if value.get('mode') == 'opencodex':
+        from opencodex_control import OpenCodexControl
+        result = OpenCodexControl(root, config_home=config_home).disconnect()
+        if result.get('effective_enabled') or result.get('requested_enabled'):
+            raise RuntimeError('The extension could not be disconnected; services must remain available.')
+    else:
+        value.update(installed=value.get('installed') is True, enabled=False)
+        value.setdefault('upstream_mode', 'auto')
+        expected[settings] = _encode(value)
+        if tomllib.loads((expected[config] or b'').decode('utf-8-sig')).get('openai_base_url') == LOCAL_URL:
+            route = json.loads((expected[receipt] or b'{}').decode('utf-8-sig'))
+            expected[config] = _without_route(expected[config])
+            if route.get('previous_present'):
+                expected[config] = _with_route(expected[config], route.get('previous_value'))
+            expected[receipt] = _encode(dict(route, restart_required=True))
+        # A failed safe route restoration leaves runtime/startup available.
+        result = DesktopProxyControl(root, config_home=config_home).set_enabled(False)
+        if result.get('route_enabled') or result.get('enabled'):
+            raise RuntimeError('The owned endpoint could not be restored; services must remain available.')
     if any(read(path) != before for path, before in expected.items()):
         raise RuntimeError('Bundle or Codex configuration changed during route pause; integration changes were stopped. The pause remains in effect.')
     changes = planned_changes(root, config_home)

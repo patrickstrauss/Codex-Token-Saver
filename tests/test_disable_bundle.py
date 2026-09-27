@@ -17,6 +17,24 @@ except ImportError:
 
 
 class DisableBundleTests(unittest.TestCase):
+    def test_opencodex_disable_disconnects_only_extension_and_preserves_provider_route(self):
+        from unittest.mock import Mock
+        document = tomlkit.parse(self.config.read_text())
+        document['model_provider'] = 'opencodex'
+        document['model_providers'] = {'opencodex': {'name': 'OpenCodex', 'base_url': 'http://127.0.0.1:10100/v1'}}
+        self.config.write_text(tomlkit.dumps(document))
+        self.settings.write_text('{"installed":true,"enabled":false,"mode":"opencodex","custom":"keep"}')
+        controller = Mock()
+        controller.disconnect.return_value = {'effective_enabled': False, 'requested_enabled': False}
+        with patch('opencodex_control.OpenCodexControl', return_value=controller), patch('disable_bundle.DesktopProxyControl') as native:
+            self.run_disable()
+            controller.disconnect.assert_called_once()
+            native.assert_not_called()
+        after = tomllib.loads(self.config.read_text())
+        self.assertEqual(after['model_provider'], 'opencodex')
+        self.assertEqual(after['model_providers'], document['model_providers'].unwrap())
+        self.assertEqual(self.auth.read_bytes(), b'private-auth-do-not-touch')
+
     def setUp(self):
         self.assertIsNotNone(disable_bundle, 'The supported bundle disable helper is missing')
         temporary = tempfile.TemporaryDirectory(prefix='bundle disable ')

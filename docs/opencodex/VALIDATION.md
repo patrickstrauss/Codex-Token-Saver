@@ -1,50 +1,43 @@
 # Validation — 2026-09-27
 
-Candidate branch: codex/opencodex-compatibility. OpenCodex baseline:
-4cb43cb0a8c6b60318cf0d63ffa8e57fd18407b2 (v2.64.0).
-Current source commit: 4e13350 (clean validation checkout; original prototype e76750c).
+OpenCodex baseline: 4cb43cb0a8c6b60318cf0d63ffa8e57fd18407b2 (v2.64.0).
+Candidate source: c7afc595633f41e27ab36bcb46c3d8965cf48bd9.
+Bundle branch: codex/opencodex-compatibility.
 
-Continuation verification: **762 focused tests passed**: 224 bundle Python tests in
-14 suites, 138 dashboard tests, 398 OpenCodex tests in seven files, and two offline
-wire/core witness tests. TypeScript, structure and privacy checks passed. The exported
-patch is checked against the baseline using a disposable Git index.
+## Current candidate evidence
 
-New cases cover conditional extension updates, readiness sanitization, external removal,
-lost replies followed by cold starts, offline pause/disconnect cancelling warmup, damaged
-settings, live policy gating, retrieval retention, owned-worker drain, and automatic
-pending activation. Process/clock transition tests are isolated simulations, not reboot
-or live migration evidence. Dashboard/legacy controls delegate to the extension.
+- Offline wire/core/real-server witness: **3 tests, 85 assertions passed**. Real
+  HTTP/SSE and WebSocket sockets cover delta, reconnect full replay, concurrent chats,
+  plus pause/resume on an existing socket. The socket provider receives eight sends.
+- OpenCodex focused regressions: **374 tests passed across six files** (130 + 244).
+  Includes consumer, CLI control/readiness, process liveness, native Responses passthrough
+  and test layout. Two CLI cases also passed against the rebuilt executable (18 assertions).
+- Bundle discovery/control/migration, source upgrade, launcher and disable checks:
+  34 + 9 + 17 + 16 tests respectively after the final migration regressions.
+- TypeScript, structure SSOT and privacy checks passed. GUI TypeScript/Vite build passed.
+  The standalone Windows x64 executable was rebuilt after the live-policy correction.
+- Full bundle candidate-1 smoke passed: fresh pinned Headroom/RTK/dashboard/Serena/
+  LangMem/llama runtimes, repair, quality benchmark, repeated installation and isolated
+  config-preservation checks. Candidate-2 adds source upgrade and handoff tooling;
+  its separate upgrade/runtime/rollback report is in the final delivery folder.
+- All PowerShell upgrade entry points parse successfully.
 
-The following table records the earlier checkpoint; its counts are not additional tests
-to add to the continuation total.
+The live-policy regression first demonstrated stale readiness after a persisted Pause;
+the fix passes without restarting the server. A fixture-only invalid codexAccountMode
+was corrected to apply only to the built-in OpenAI provider. No provider validation
+was weakened. Python tests use the existing SDK interpreter for tomlkit-dependent
+suites; the dashboard interpreter lacks that dependency.
 
-| Check | Result |
-| --- | --- |
-| Bundle Python discovery, transform, retrieval, native runtime, integrations, disable, launch and summary coverage | 142 tests passed across 13 suites |
-| Dashboard controls, app and component routes | 137 tests passed |
-| Native C# launchers | Built in the isolated checkout; all four included launcher tests passed |
-| Install configuration script | Passed transaction, rollback, concurrency, disabled-settings and idempotence assertions |
-| OpenCodex consumer, Responses passthrough, test layout and optional-subsystem boundary | 240 tests passed in five files |
-| Offline service/adapter/core witness | Two tests passed, 40 assertions; see offline-witness.json |
-| OpenCodex TypeScript compiler | Passed with the installed TypeScript 7.0.2 entry point |
-| OpenCodex structure and privacy scripts | Passed with direct Bun invocation |
-| Patch application | git apply --check and apply passed against a clean baseline clone |
-| Actual local compression SDK | Synthetic 7,475-character log compressed; one replacement; exact original recovered |
+The earlier checkpoint's 762 focused tests remains historical evidence, not an
+additional count to add to this run. Process/clock drain tests do not prove a real reboot.
 
-The witness uses a deterministic compressor inside the actual HTTP transform service.
-The separate local SDK witness verifies the compression engine. Neither substitutes for
-real provider billing or correctness comparisons.
+## Scope
 
-Environment corrections: the isolated bundle initially lacked compiled launcher binaries;
-they were built before rerunning the four launcher checks. Bun's package-bin wrapper failed,
-so compiler and validation scripts ran directly with the same pinned dependencies.
+The witness uses deterministic compression inside the real local service, with a
+separate prior installed-SDK compression/exact-recovery witness. No paid provider was
+called. No live install, route, credentials, chosen model or effort was modified.
 
-The broad changed-test run was stopped without a suite result. It left an inaccessible
-temporary test directory; the focused layout checks were rerun successfully in a clean
-clone with the exact exported patch. No runtime code was relaxed to pass those checks.
-The public documentation site build, full upstream suite, real WebSocket sockets/reconnects,
-real providers, complete route migration, live install, login/reboot and upgrade qualification
-remain pending.
-
-The shared weekly meter was 0% at the initial checkpoint and 3% at this continuation
-checkpoint. It is a coarse account meter, not exact per-chat accounting.
+Windows reboot/login, real OpenAI/Azure/LM Studio usage, automatic reverse routing,
+and live voice/catalog/native-steering qualification remain open. The full upstream
+suite and docs-site build were not rerun under the user's weekly quota cap.
+The shared meter last read 4%; the user raised the cap from 5% to 8%.

@@ -12,6 +12,28 @@ import launch_codex
 
 
 class LauncherTests(unittest.TestCase):
+    def test_opencodex_launch_requires_live_matching_route_and_keeps_literal_argv(self):
+        resolve = getattr(launch_codex, 'resolve_launch_command', None)
+        self.assertIsNotNone(resolve)
+        args = ['exec', 'ไทย "quotes" & literal', '-m', 'chosen', '-c', 'model_reasoning_effort="high"']
+        binary = (Path(self.home.name) / 'Codex 空間' / 'codex.exe').resolve()
+        with patch.object(launch_codex, 'find_codex', return_value=binary):
+            ready = {'ready': True, 'routing_matches': True}
+            self.assertEqual(resolve(args, mode='opencodex', probe=ready), [str(binary), *args])
+            for state in ({}, {'ready': True, 'routing_matches': False}, {'ready': False, 'routing_matches': True}):
+                with self.assertRaisesRegex(RuntimeError, 'OpenCodex'):
+                    resolve(args, mode='opencodex', probe=state)
+
+    def test_opencodex_mode_never_stacks_experimental_proxy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'proxy').mkdir()
+            (root / 'proxy/settings.json').write_text('{"mode":"opencodex"}')
+            with patch.object(launch_codex, 'ROOT', root), patch.object(sys, 'argv', ['launcher', '--experimental-headroom', '--version']), patch.object(launch_codex, 'ensure_headroom') as ensure:
+                with self.assertRaisesRegex(RuntimeError, 'OpenCodex'):
+                    launch_codex.main()
+                ensure.assert_not_called()
+
     def setUp(self):
         self.home = tempfile.TemporaryDirectory()
         self.addCleanup(self.home.cleanup)
