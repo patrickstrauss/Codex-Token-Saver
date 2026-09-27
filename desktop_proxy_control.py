@@ -384,6 +384,15 @@ class DesktopProxyControl:
     def set_enabled(self, enabled):
         if type(enabled) is not bool:
             raise ValueError('Enabled must be a boolean.')
+        # Legacy tray and CLI controls share the integration's transaction.
+        # Delegate before acquiring the common routing lock.
+        try:
+            mode = _json(self.settings_file).get('mode')
+        except (ValueError, UnicodeError):
+            mode = 'opencodex' if (self.state / 'opencodex-receipt.json').is_file() else None
+        if mode == 'opencodex':
+            from opencodex_control import OpenCodexControl
+            return OpenCodexControl(self.root, config_home=self.config_home).set_enabled(enabled)
         with routing_lock(self.state / 'routing.lock'):
             old_settings = _read(self.settings_file)
             try:
@@ -394,6 +403,8 @@ class DesktopProxyControl:
                 # A damaged settings file already makes the gateway pass direct.
                 # Preserve that fallback on subsequent logins as well.
                 settings = {'installed': True, 'enabled': False}
+            if settings.get('mode') == 'opencodex':
+                raise RuntimeError('Request mode changed concurrently; retry with the OpenCodex controls.')
             if not enabled:
                 self._pause(settings, old_settings)
                 return self.status()

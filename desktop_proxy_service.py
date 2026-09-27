@@ -184,6 +184,7 @@ class Worker:
     started_at: float = 0.0
     last_error: str | None = None
     ready: bool = False
+    mode: str = 'native'
 
 
 class DesktopProxyService:
@@ -197,12 +198,20 @@ class DesktopProxyService:
         self._opener = build_opener(ProxyHandler({}))
         self._frontdoor_was_started = False
         self._identity = process_identity(os.getpid())
+        self.mode = 'native'
+        self._drain_since = None
+        self._control_retry_at = 0.0
+        self._control_error = None
 
     def _settings(self):
         try:
             settings = _read_json(self.settings_path)
             if type(settings.get('installed', False)) is not bool or type(settings.get('enabled', False)) is not bool:
                 raise ValueError('Settings flags must be booleans')
+            mode = settings.get('mode', 'native')
+            if mode not in ('native', 'opencodex') or (mode == 'opencodex' and settings.get('enabled') is True):
+                raise ValueError('Invalid request worker mode')
+            self.mode = mode
             installed = settings.get('installed') is True
             return installed, installed and settings.get('enabled') is True, None
         except FileNotFoundError:
@@ -224,7 +233,8 @@ class DesktopProxyService:
             if name == 'frontdoor':
                 return (value.get('service') == 'codex-token-saver-proxy' and
                         value.get('status') == 'ok' and value.get('ready') is True)
-            return ServiceController.valid_health('headroom', value)
+            return (ServiceController.valid_health('headroom', value)
+                    and (value.get('mode') == 'transform-only') == (self.mode == 'opencodex'))
         except (OSError, ValueError):
             return False
 
@@ -245,7 +255,7 @@ class DesktopProxyService:
             # the backend child, keeping startup of the gateway independent.
             from proxy_runtime import build_proxy_command
             from runtime_selection import selected_runtime
-            command = build_proxy_command(selected_runtime(self.root), host='127.0.0.1', port=self.ports[name])
+            command = build_proxy_command(selected_runtime(self.root), host='127.0.0.1', port=self.ports[name], mode=self.mode)
         if not Path(command[0]).is_file():
             raise FileNotFoundError('Managed Python executable is unavailable')
         return command
@@ -265,6 +275,56 @@ class DesktopProxyService:
         worker.retry_at = self.clock() + BACKOFF[min(worker.failures - 1, len(BACKOFF) - 1)]
         worker.last_error = message
 
+    def _native_idle(self):
+        try:
+            with self._opener.open(f'http://127.0.0.1:{self.ports["frontdoor"]}/health', timeout=.4) as response:
+                raw = response.read(16385)
+            value = json.loads(raw) if len(raw) <= 16384 else {}
+            active = value.get('requests', {}).get('active')
+            return (value.get('service') == 'codex-token-saver-proxy' and value.get('ready') is True
+                    and value.get('enabled') is False and type(active) is int and active == 0)
+        except (OSError, ValueError, AttributeError):
+            return False
+
+    def _switch_owned_backend(self, worker):
+        if worker.mode == self.mode:
+            self._drain_since = None
+            return True
+        worker.ready = False
+        if self.mode != 'opencodex':
+            worker.last_error = 'Transform worker retained for original retrieval; reverse migration requires qualification.'
+            return False
+        worker.last_error = 'Native worker retained until requests finish and the 30-minute original-retention window expires.'
+        if not self._native_idle():
+            self._drain_since = None
+            return False
+        if self._drain_since is None:
+            self._drain_since = self.clock()
+        if self.clock() - self._drain_since < 1800:
+            return False
+        result = ServiceController.cleanup_created_process(worker.process)
+        if not result.get('stopped'):
+            return False
+        worker.process = None
+        worker.retry_at = 0
+        self._drain_since = None
+        return True
+
+    def _resume_pending(self):
+        if self.mode != 'opencodex' or not self.workers['backend'].ready or self.clock() < self._control_retry_at:
+            return
+        self._control_retry_at = self.clock() + 30
+        try:
+            receipt = _read_json(self.root / 'proxy/opencodex-receipt.json')
+            if receipt.get('requested_enabled') is True and receipt.get('phase') in ('warming', 'extension_pending'):
+                from opencodex_control import OpenCodexControl
+                OpenCodexControl(self.root, config_home=receipt.get('codex_home')).set_enabled(True)
+            self._control_error = None
+        except FileNotFoundError:
+            pass
+        except Exception:
+            self._control_error = 'OpenCodex activation is pending; configuration was preserved. Check the integration controls.'
+
     def _tick_worker(self, name, required):
         worker = self.workers[name]
         now = self.clock()
@@ -276,6 +336,8 @@ class DesktopProxyService:
                 worker.process = None
                 self._retry(worker, f'{name} exited with code {exit_code}; restart pending.' if required else
                             f'{name} exited with code {exit_code}; optimization is paused.')
+        if name == 'backend' and worker.process is not None and not self._switch_owned_backend(worker):
+            return
         worker.ready = self.probe(name)
         if worker.ready:
             worker.last_error = None
@@ -306,6 +368,7 @@ class DesktopProxyService:
                     creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
                 )
             worker.started_at = now
+            worker.mode = self.mode if name == 'backend' else 'native'
             worker.last_error = None
             worker.ready = self.probe(name)
         except Exception as exc:
@@ -320,13 +383,16 @@ class DesktopProxyService:
         # After installation, preserve the cached local URL even if someone
         # removes the settings file. Only explicit shutdown tears it down.
         self._tick_worker('frontdoor', installed or self._frontdoor_was_started)
-        self._tick_worker('backend', enabled)
+        self._tick_worker('backend', enabled or (installed and self.mode == 'opencodex'))
+        if installed and not settings_error:
+            self._resume_pending()
         result = {
             'schema': 1, 'service': 'codex-token-saver-proxy-supervisor',
             'available': True, 'pid': os.getpid(),
             'process_identity': self._identity,
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'installed': installed, 'enabled': enabled, 'settings_error': settings_error,
+            'mode': self.mode, 'control_error': self._control_error,
         }
         for name, worker in self.workers.items():
             result[name] = {
@@ -340,6 +406,8 @@ class DesktopProxyService:
             }
         result['phase'] = ('unavailable' if not result['frontdoor']['ready'] else
                            'optimized' if enabled and result['backend']['ready'] else 'direct')
+        if self.mode == 'opencodex':
+            result['phase'] = 'transform_ready' if result['backend']['ready'] else 'transform_pending'
         try:
             _write_json(self.status_path, result)
         except OSError:

@@ -51,6 +51,69 @@ class DesktopProxyServiceTests(unittest.TestCase):
         self.spawn.assert_not_called()
         self.assertFalse(result['installed'])
 
+    def test_opencodex_pause_keeps_retrieval_worker_required(self):
+        self.settings(installed=True, enabled=False, mode='opencodex')
+        result = self.service.step()
+        self.assertEqual(self.spawn.call_count, 2)
+        self.assertEqual(result['mode'], 'opencodex')
+        self.children[1].poll.return_value = 7
+        self.service.step()
+        self.clock[0] = 2
+        self.service.step()
+        self.assertEqual(self.spawn.call_count, 3)
+        self.cleanup.assert_not_called()
+
+    def test_switch_waits_for_quiet_retention_window_and_only_stops_owned_backend(self):
+        self.settings(installed=True, enabled=True)
+        self.service.step()
+        old_backend = self.children[1]
+        self.settings(installed=True, enabled=False, mode='opencodex')
+        self.service._native_idle = Mock(return_value=True)
+        self.service.step()
+        self.clock[0] = 1799
+        self.service.step()
+        self.cleanup.assert_not_called()
+        self.clock[0] = 1800
+        self.service.step()
+        self.cleanup.assert_called_once_with(old_backend)
+        self.assertEqual(self.spawn.call_count, 3)
+        self.assertEqual(self.service.workers['backend'].mode, 'opencodex')
+
+    def test_active_native_requests_reset_drain_and_reverse_switch_is_deferred(self):
+        self.settings(installed=True, enabled=True)
+        self.service.step()
+        self.settings(installed=True, enabled=False, mode='opencodex')
+        self.service._native_idle = Mock(return_value=True)
+        self.service.step()
+        self.clock[0] = 1900
+        self.service._native_idle.return_value = False
+        self.service.step()
+        self.service._native_idle.return_value = True
+        self.clock[0] = 2000
+        self.service.step()
+        self.cleanup.assert_not_called()
+        self.clock[0] = 3800
+        self.service.step()
+        self.settings(installed=True, enabled=True)
+        result = self.service.step()
+        self.assertFalse(result['backend']['ready'])
+        self.assertIn('retained', result['backend']['last_error'])
+        self.assertEqual(self.cleanup.call_count, 1)
+
+    def test_ready_worker_resumes_pending_owned_enable_with_backoff(self):
+        self.settings(installed=True, enabled=False, mode='opencodex')
+        receipt = self.root / 'proxy/opencodex-receipt.json'
+        receipt.write_text('{"phase":"warming","requested_enabled":true}')
+        self.service.probe.return_value = True
+        with patch('opencodex_control.OpenCodexControl') as controller:
+            controller.return_value.set_enabled.side_effect = RuntimeError('offline')
+            self.service.step()
+            self.service.step()
+            controller.return_value.set_enabled.assert_called_once_with(True)
+            self.clock[0] = 31
+            self.service.step()
+            self.assertEqual(controller.return_value.set_enabled.call_count, 2)
+
     def test_explicit_installed_paused_starts_only_frontdoor(self):
         self.settings(installed=True, enabled=False)
         result = self.service.step()

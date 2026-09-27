@@ -72,6 +72,12 @@ class ProxyRuntimeTests(unittest.TestCase):
         self.assertEqual(args[0], str(runtime / 'Scripts/python.exe'))
         self.assertEqual(args[1], str(ROOT / 'proxy_runtime.py'))
         self.assertEqual(args[2:], ['--serve', '--host', '127.0.0.1', '--port', '8789'])
+        transformed = build_proxy_command(runtime, mode='opencodex')
+        self.assertEqual(transformed[2], '--serve-transform')
+        with self.assertRaises(ValueError):
+            build_proxy_command(runtime, mode='opencodex', port=8790)
+        with self.assertRaises(ValueError):
+            build_proxy_command(runtime, mode='unknown')
 
     def test_installed_sdk_effective_config_keeps_requests_and_profile(self):
         from proxy_runtime import validate_proxy_runtime

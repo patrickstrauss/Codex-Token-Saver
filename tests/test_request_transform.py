@@ -47,6 +47,21 @@ class TransformTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.retrieve(entry['retrieval_reference']), self.text)
         self.assertLess(len(entry['replacement']), len(self.text))
 
+    async def test_live_policy_pauses_cached_results_but_preserves_originals(self):
+        policy = [True]
+        service = module.TransformService(lambda text: 'Summary.', self.store,
+            root=self.root, token_counter=len, enabled_reader=lambda: policy[0])
+        self.addCleanup(service.close)
+        first = await service.transform(request(self.text))
+        self.assertEqual(first['outcome'], 'compressed')
+        policy[0] = False
+        self.assertEqual((await service.transform(request(self.text)))['outcome'], 'bypassed')
+        self.assertEqual(self.store.retrieve(first['replacements'][0]['retrieval_reference']), self.text)
+        policy[0] = 'true'
+        self.assertFalse(service.enabled)
+        policy[0] = True
+        self.assertTrue(service.enabled)
+
     async def test_invalid_entries_reject_entire_request_without_compressing(self):
         for mutation in ('hash', 'duplicate', 'unknown', 'oversize'):
             value = request(self.text)

@@ -2,7 +2,21 @@
 
 Candidate branch: codex/opencodex-compatibility. OpenCodex baseline:
 4cb43cb0a8c6b60318cf0d63ffa8e57fd18407b2 (v2.64.0).
-Prototype source commit: e76750c.
+Current source commit: 4e13350 (clean validation checkout; original prototype e76750c).
+
+Continuation verification: **762 focused tests passed**: 224 bundle Python tests in
+14 suites, 138 dashboard tests, 398 OpenCodex tests in seven files, and two offline
+wire/core witness tests. TypeScript, structure and privacy checks passed. The exported
+patch is checked against the baseline using a disposable Git index.
+
+New cases cover conditional extension updates, readiness sanitization, external removal,
+lost replies followed by cold starts, offline pause/disconnect cancelling warmup, damaged
+settings, live policy gating, retrieval retention, owned-worker drain, and automatic
+pending activation. Process/clock transition tests are isolated simulations, not reboot
+or live migration evidence. Dashboard/legacy controls delegate to the extension.
+
+The following table records the earlier checkpoint; its counts are not additional tests
+to add to the continuation total.
 
 | Check | Result |
 | --- | --- |
@@ -29,8 +43,8 @@ The broad changed-test run was stopped without a suite result. It left an inacce
 temporary test directory; the focused layout checks were rerun successfully in a clean
 clone with the exact exported patch. No runtime code was relaxed to pass those checks.
 The public documentation site build, full upstream suite, real WebSocket sockets/reconnects,
-real providers, migration receipts, live install, login/reboot and upgrade qualification
+real providers, complete route migration, live install, login/reboot and upgrade qualification
 remain pending.
 
-The shared weekly meter was 0% at the initial checkpoint and 2% at the last verification
+The shared weekly meter was 0% at the initial checkpoint and 3% at this continuation
 checkpoint. It is a coarse account meter, not exact per-chat accounting.

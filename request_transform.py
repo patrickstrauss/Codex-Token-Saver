@@ -93,15 +93,27 @@ def _reply(request_id, outcome, replacements=None, reason=None):
 
 
 class TransformService:
-    def __init__(self, compressor, store, *, root, token_counter, clock=time.monotonic):
+    def __init__(self, compressor, store, *, root, token_counter, clock=time.monotonic, enabled_reader=None):
         self.compressor, self.store, self.root = compressor, store, Path(root)
         self.token_counter, self.clock = token_counter, clock
-        self.enabled, self.ready = True, True
+        self._enabled, self.ready = True, True
+        self._enabled_reader = enabled_reader
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='headroom-transform')
         self._lock = threading.RLock()
         self._active, self._failures, self._open_until = 0, 0, 0.0
         self._cache, self._cache_bytes = OrderedDict(), 0
         self.counts = {key: 0 for key in ('compressed', 'unchanged', 'bypassed', 'error')}
+
+    @property
+    def enabled(self):
+        try:
+            return self._enabled and (self._enabled_reader is None or self._enabled_reader() is True)
+        except Exception:
+            return False
+
+    @enabled.setter
+    def enabled(self, value):
+        self._enabled = value is True
 
     def close(self):
         self.enabled = False
@@ -166,7 +178,7 @@ class TransformService:
         except (ValueError, TypeError, RecursionError):
             return _reply(None, 'error', reason='invalid_request')
         request_id = value['request_id']
-        # Service instances are bound to one policy/runtime generation.
+        # Every request rechecks policy before using cached output.
         key = (value['scope_id'], tuple((e['id'], e['original_sha256']) for e in value['entries']))
         with self._lock:
             if not self.enabled or not self.ready:
@@ -188,6 +200,8 @@ class TransformService:
         future.add_done_callback(self._consume)
         try:
             replacements = await asyncio.wait_for(asyncio.shield(future), value['budget_ms'] / 1000)
+            if not self.enabled:
+                return _reply(request_id, 'bypassed', reason='unavailable')
             result = _reply(request_id, 'compressed' if replacements else 'unchanged', replacements)
             if len(json.dumps(result, ensure_ascii=False).encode('utf-8')) > MAX_BYTES:
                 raise ValueError('Reply exceeds limit')

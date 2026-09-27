@@ -50,6 +50,14 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(result.endpoint, 'http://127.0.0.1:10421/v1')
         self.assertEqual(result.config_home, self.root)
 
+    def test_control_capability_is_typed_and_contains_no_untrusted_fields(self):
+        self.readiness['tokenSaver'] = {'protocol': 1, 'control': 1, 'enabled': False, 'secret': 'hidden'}
+        result = self.probe()
+        self.assertEqual(result.control_protocol, 1)
+        self.assertIs(result.extension_enabled, False)
+        self.readiness['tokenSaver']['control'] = True
+        self.assertIsNone(self.probe().control_protocol)
+
     def test_probe_is_read_only(self):
         before = list(self.root.iterdir())
         self.probe()

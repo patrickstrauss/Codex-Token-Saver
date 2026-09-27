@@ -114,7 +114,7 @@ def tool_compression_config():
     return config
 
 
-def create_sdk_service(root):
+def create_sdk_service(root, *, enabled_reader=None):
     """Initialize the pinned offline SDK once in the supervised backend child."""
     import threading
     import headroom
@@ -139,7 +139,17 @@ def create_sdk_service(root):
         return result.messages[0].get('content')
 
     return TransformService(compress, OriginalStore(root / 'proxy/transform-state/originals.db'),
-                            root=root, token_counter=counter._count)
+                            root=root, token_counter=counter._count, enabled_reader=enabled_reader)
+
+
+def transform_enabled(root):
+    try:
+        with (Path(root) / 'proxy/opencodex-policy.json').open('rb') as stream:
+            raw = stream.read(1025)
+        value = json.loads(raw) if len(raw) <= 1024 else {}
+        return type(value.get('schema')) is int and value['schema'] == 1 and value.get('enabled') is True
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 def serve_transform(root, *, host='127.0.0.1', port=8789):
@@ -149,7 +159,7 @@ def serve_transform(root, *, host='127.0.0.1', port=8789):
     if host != '127.0.0.1' or port != 8789:
         raise ValueError('Protocol v1 binds only to 127.0.0.1:8789')
     _configure_sdk(host, port)
-    service = create_sdk_service(root)
+    service = create_sdk_service(root, enabled_reader=lambda: transform_enabled(root))
     token = ensure_transform_token(root)
     app = create_transform_app(service, token=token)
 

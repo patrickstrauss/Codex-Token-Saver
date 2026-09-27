@@ -1,9 +1,9 @@
 diff --git a/docs-site/src/content/docs/guides/token-saver-prototype.md b/docs-site/src/content/docs/guides/token-saver-prototype.md
 new file mode 100644
-index 0000000..30a1965
+index 0000000..7bf0a77
 --- /dev/null
 +++ b/docs-site/src/content/docs/guides/token-saver-prototype.md
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,28 @@
 +---
 +title: Token Saver prototype
 +description: Pending local tool-result transformation integration.
@@ -17,31 +17,128 @@ index 0000000..30a1965
 +The optional `tokenSaver` object contains `enabled`, `protocol: 1`,
 +`endpoint: "http://127.0.0.1:8789"` and an absolute `tokenFile` path.
 +Absence disables it. Only the separately prepared transform service understands this
-+protocol. The native Token Saver backend uses the same port; automatic migration and
-+service ownership are not implemented in this prototype.
++protocol. The native Token Saver backend uses the same port. The bundle prototype
++supports a mode-aware worker and pauses compression locally before extension changes.
++An owned native worker is retained until requests finish and a 30-minute retention
++window expires. Unknown listeners are preserved. Reverse migration remains unqualified.
 +
 +Responses adapter builds support matching plain text function results. Multipart,
 +encrypted and compaction inputs bypass. Native steering/injection and runTurn adapters
 +are unsupported. Voice, catalog and image routes are not transformed.
 +
-+The bundle keeps request compression unavailable until capability publication,
-+reversible lifecycle controls and real transport qualification are completed.
++The serving process advertises the typed extension capability through `ocx ready --json`.
++Conditional config commands update only the owned extension; the bundle's receipt detects
++external edits and recovers lost replies. Unmodified releases remain unavailable.
++Full WebSocket/reconnect, provider, packaging and reboot qualification are still pending.
 +Use the offline source witness for evaluation. Do not treat its result as deployment
 +approval or proof of lower provider billing.
 diff --git a/scripts/test-layout/layout.json b/scripts/test-layout/layout.json
-index 518fa8c..775ff6f 100644
+index 518fa8c..e54e9b3 100644
 --- a/scripts/test-layout/layout.json
 +++ b/scripts/test-layout/layout.json
-@@ -1593,6 +1593,9 @@
+@@ -1593,6 +1593,10 @@
      "thought-signature-credential-scope.test.ts": "responses",
      "token-estimate.test.ts": "lib",
      "token-guardian.test.ts": "codex-integration",
++    "token-saver-control.test.ts": "cli",
 +    "token-saver-pipeline.test.ts": "responses",
 +    "token-saver-wire.test.ts": "responses",
 +    "token-saver.test.ts": "responses",
      "tool-argument-integers.test.ts": "adapters",
      "tool-catalog-nudge.test.ts": "adapters",
      "tool-choice-performance.test.ts": "adapters",
+diff --git a/src/cli/config-command.ts b/src/cli/config-command.ts
+index 0c7cda8..5452489 100644
+--- a/src/cli/config-command.ts
++++ b/src/cli/config-command.ts
+@@ -7,12 +7,15 @@ import { normalizeVisionReasoningForModel } from "../vision/reasoning";
+ import type { ServiceApiTokenState } from "../lib/service-secrets";
+ import { redactUrlForLog } from "../lib/redact";
+ import { CliUsageError, printData, rejectArgs, runCliAction, takeFlag } from "./runtime-api";
++import { readTokenSaverControl, setTokenSaverControl } from "../config/token-saver-control";
+ 
+ const USAGE = `Usage:
+   ocx config [show] [--json] [--source]
+   ocx config get <dot.path> [--json]
+   ocx config set <dot.path> <json-or-string> [--json]
+   ocx config unset <dot.path> [--json]
++  ocx config token-saver-state --json
++  ocx config token-saver-set <expected-sha256> <json-or-null> --json
+   ocx config validate [path|-] [--json]
+   ocx config export <path|->
+   ocx config import <path|-> --yes [--json]`;
+@@ -207,6 +210,20 @@ export async function handleConfigCommand(argv: string[]): Promise<number> {
+     const args = [...argv];
+     const action = (args.shift() ?? "show").toLowerCase();
+     const wantsJson = takeFlag(args, "--json");
++    if (action === "token-saver-state") {
++      rejectArgs(args, USAGE);
++      printData(readTokenSaverControl(), true);
++      return;
++    }
++    if (action === "token-saver-set") {
++      const expected = args.shift(), raw = args.shift();
++      if (!expected || raw === undefined) throw new CliUsageError("Fingerprint and value are required", USAGE);
++      rejectArgs(args, USAGE);
++      let value: unknown;
++      try { value = JSON.parse(raw); } catch { throw new CliUsageError("Invalid Token Saver JSON"); }
++      printData(setTokenSaverControl(expected, value), true);
++      return;
++    }
+     if (action === "show") {
+       const source = takeFlag(args, "--source");
+       rejectArgs(args, USAGE);
+diff --git a/src/cli/ready.ts b/src/cli/ready.ts
+index de91860..db6b4c1 100644
+--- a/src/cli/ready.ts
++++ b/src/cli/ready.ts
+@@ -16,6 +16,7 @@
+  *    provider, account, or error data.
+  */
+ import { DEFAULT_PROBE_TIMEOUT_MS, findLiveProxy, probeReadiness } from "../server/proxy-liveness";
++import { tokenSaverCapability, type TokenSaverCapability } from "../server/proxy-liveness";
+ 
+ /** Default --wait deadline (45s). */
+ export const DEFAULT_READY_WAIT_TIMEOUT_SECONDS = 45;
+@@ -98,6 +99,7 @@ export interface ReadyLive {
+ }
+ 
+ export interface ReadyProbe {
++  tokenSaver?: TokenSaverCapability;
+   ready: boolean;
+   status: "ready" | "pending" | "failed" | null;
+   pid: number | null;
+@@ -143,9 +145,11 @@ function report(
+   pid: number | null,
+   port: number | null,
+   stdout: { log: (s: string) => void },
++  capability?: TokenSaverCapability,
+ ): void {
+   if (args.json) {
+-    stdout.log(JSON.stringify({ ready, status, pid, port }));
++    const tokenSaver = ready ? tokenSaverCapability(capability) : undefined;
++    stdout.log(JSON.stringify({ ready, status, pid, port, ...(tokenSaver ? { tokenSaver } : {}) }));
+     return;
+   }
+   switch (status) {
+@@ -208,7 +212,7 @@ export async function runReady(args: ReadyArgs, io: ReadyIo = {}): Promise<numbe
+     }
+     const p = await probe(live.port, { hostname: live.hostname, expectedPid: live.pid ?? undefined }, undefined);
+     if (p?.ready) {
+-      report(args, true, "ready", p.pid, live.port, stdout);
++      report(args, true, "ready", p.pid, live.port, stdout, p.tokenSaver);
+       return 0;
+     }
+     const status: CliReadinessStatus = sanitizeProbeStatus(p?.status ?? null);
+@@ -276,7 +280,7 @@ export async function runReady(args: ReadyArgs, io: ReadyIo = {}): Promise<numbe
+         return 1;
+       }
+       if (p?.ready) {
+-        report(args, true, "ready", p.pid, live.port, stdout);
++        report(args, true, "ready", p.pid, live.port, stdout, p.tokenSaver);
+         return 0;
+       }
+     } else {
 diff --git a/src/config/schema/config-schema.ts b/src/config/schema/config-schema.ts
 index b072b61..a381f0f 100644
 --- a/src/config/schema/config-schema.ts
@@ -59,6 +156,49 @@ index b072b61..a381f0f 100644
    codexNativeSteering: z.boolean().optional().catch(false),
    codexNativeInjection: z.boolean().optional().catch(false),
    port: z.number().int().min(0).max(65535).default(10100),
+diff --git a/src/config/token-saver-control.ts b/src/config/token-saver-control.ts
+new file mode 100644
+index 0000000..ad7190a
+--- /dev/null
++++ b/src/config/token-saver-control.ts
+@@ -0,0 +1,37 @@
++import { createHash } from "node:crypto";
++import { isAbsolute } from "node:path";
++import { readConfigDiagnostics, mutatePersistedConfig } from "../config";
++import { configSchema } from "./schema/config-schema";
++import type { TokenSaverConfig } from "../integrations/token-saver";
++
++export function tokenSaverFingerprint(value: TokenSaverConfig | null): string {
++  const canonical = value ? [value.protocol, value.enabled, value.endpoint, value.tokenFile] : null;
++  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
++}
++function state(value: TokenSaverConfig | undefined) {
++  return { protocol: 1, value: value ?? null, fingerprint: tokenSaverFingerprint(value ?? null) };
++}
++export function readTokenSaverControl() {
++  const current = readConfigDiagnostics();
++  if (current.source !== "file" || current.error) throw new Error("OpenCodex configuration is unavailable");
++  return state(current.config.tokenSaver);
++}
++/** Recheck ownership inside OpenCodex's existing mutation transaction, including every rebase. */
++export function setTokenSaverControl(expected: string, raw: unknown) {
++  if (!/^[a-f0-9]{64}$/.test(expected)) throw new Error("Invalid configuration fingerprint");
++  const parsed = raw === null ? null : configSchema.shape.tokenSaver.safeParse(raw);
++  if (parsed && (!parsed.success || !parsed.data || !isAbsolute(parsed.data.tokenFile))) {
++    throw new Error("Invalid Token Saver configuration");
++  }
++  const value = parsed?.success ? parsed.data : undefined;
++  const result = mutatePersistedConfig(current => {
++    const before = state(current.tokenSaver);
++    if (before.fingerprint !== expected) throw new Error("Token Saver configuration changed; no update applied");
++    if (value) current.tokenSaver = value;
++    else delete current.tokenSaver;
++    const after = state(value);
++    return { changed: before.fingerprint !== after.fingerprint, value: after };
++  });
++  if (result.status === "unavailable") throw new Error("OpenCodex configuration changed or is unavailable");
++  return result.value;
++}
 diff --git a/src/integrations/token-saver.ts b/src/integrations/token-saver.ts
 new file mode 100644
 index 0000000..1c56878
@@ -234,6 +374,63 @@ index 0000000..1c56878
 +      ...(rawInput ? { _rawBody: { ...(parsed._rawBody as object), input: rawInput } } : {}) };
 +  };
 +}
+diff --git a/src/server/index/serve-options.ts b/src/server/index/serve-options.ts
+index 8cd278c..d73a18e 100644
+--- a/src/server/index/serve-options.ts
++++ b/src/server/index/serve-options.ts
+@@ -614,6 +614,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
+           port: ctx.boundPort ?? listenPort,
+           status,
+           ...readyProtocolMetadata(config, req),
++          tokenSaver: { protocol: 1, control: 1, enabled: config.tokenSaver?.enabled === true },
+         };
+         if (status === "ready") {
+           return jsonResponse(body, 200, req, policy);
+diff --git a/src/server/proxy-liveness.ts b/src/server/proxy-liveness.ts
+index 5e004c5..988195a 100644
+--- a/src/server/proxy-liveness.ts
++++ b/src/server/proxy-liveness.ts
+@@ -546,6 +546,7 @@ export async function probePortOwner(
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ interface ReadyzBody {
++  tokenSaver?: unknown;
+   service?: unknown;
+   version?: unknown;
+   uptime?: unknown;
+@@ -561,6 +562,7 @@ interface ReadyzBody {
+ }
+ 
+ export interface ReadinessProbeResult {
++  tokenSaver?: TokenSaverCapability;
+   /** True ONLY for a valid 200 + status="ready" body with a matching pid. */
+   ready: boolean;
+   /** Fixed sanitized status. A foreign/unreadable body yields a `null` RESULT, never a `null` status. */
+@@ -578,6 +580,14 @@ export interface ReadinessProbeIo {
+ 
+ const READYZ_STATUS_VALUES = new Set<"ready" | "pending" | "failed">(["ready", "pending", "failed"]);
+ 
++export interface TokenSaverCapability { protocol: 1; control: 1; enabled: boolean }
++export function tokenSaverCapability(value: unknown): TokenSaverCapability | undefined {
++  if (!value || typeof value !== "object") return undefined;
++  const candidate = value as Record<string, unknown>;
++  return candidate.protocol === 1 && candidate.control === 1 && typeof candidate.enabled === "boolean"
++    ? { protocol: 1, control: 1, enabled: candidate.enabled } : undefined;
++}
++
+ /**
+  * Validate a parsed /readyz body against the strict contract. Returns the
+  * sanitized probe result, or `null` when the body is foreign, legacy,
+@@ -605,7 +615,8 @@ export function validateReadyzBody(
+   if (typeof b.status !== "string" || !READYZ_STATUS_VALUES.has(b.status as "ready" | "pending" | "failed")) return null;
+   const status = b.status as "ready" | "pending" | "failed";
+   if (opts.expectedPid !== undefined && b.pid !== opts.expectedPid) return null;
+-  return { ready: status === "ready", status, pid: b.pid, port: b.port };
++  const tokenSaver = tokenSaverCapability(b.tokenSaver);
++  return { ready: status === "ready", status, pid: b.pid, port: b.port, ...(tokenSaver ? { tokenSaver } : {}) };
+ }
+ 
+ /**
 diff --git a/src/server/responses/request-transport.ts b/src/server/responses/request-transport.ts
 index 2b30240..95b91d3 100644
 --- a/src/server/responses/request-transport.ts
@@ -300,15 +497,28 @@ index 465a19a..90251b3 100644
  
  The client-integration subsystem writes one generated OpenCodex provider contribution into a
 diff --git a/structure/config.md b/structure/config.md
-index 9330ca6..ff30b74 100644
+index 9330ca6..b288b6c 100644
 --- a/structure/config.md
 +++ b/structure/config.md
-@@ -1,5 +1,9 @@
+@@ -1,5 +1,22 @@
  # Config Surface
  
 +The optional `tokenSaver` object in `src/config/schema/config-schema.ts` is disabled when
 +absent. Its strict protocol-v1 configuration accepts only the fixed local transform origin.
 +It does not configure a provider. See the [prototype contract](transports/responses.md#token-saver-prototype).
++
++`src/config/token-saver-control.ts` exposes only this subtree through
++`ocx config token-saver-state --json` and
++`ocx config token-saver-set <expected-sha256> <json-or-null> --json`.
++The fingerprint hashes UTF-8 JSON of [protocol, enabled, endpoint, tokenFile], or null.
++Writes recheck that fingerprint inside the existing persisted-config transaction on every
++rebase; stale callers cannot overwrite an external extension edit. Provider credentials
++are neither returned nor changed. Protocol v1 requires an absolute token path.
++
++The serving process adds `tokenSaver: { protocol: 1, control: 1, enabled: boolean }`
++to readyz. Existing PID/port checks validate the process; `ocx ready --json` forwards
++only those typed fields on success. This advertises extension code and the loaded
++setting, not transform-service health or release qualification.
 +
  Native function-result injection follows [the separate opt-in control contract](transports/streaming-health.md#experimental-native-function-result-injection); this surface does not infer upstream support or alter its defaults.
  
@@ -355,14 +565,80 @@ index 5674169..a3a5dec 100644
  Native result continuations and function-result injection follow [the mode-specific result and control contract](streaming-health.md#experimental-native-function-result-injection); this surface does not infer upstream support or alter its defaults.
  
  Native steering follows [the shared WebSocket contract](streaming-health.md#experimental-native-mid-turn-steering); this surface's defaults remain unchanged.
+diff --git a/tests/cli/token-saver-control.test.ts b/tests/cli/token-saver-control.test.ts
+new file mode 100644
+index 0000000..117c4ad
+--- /dev/null
++++ b/tests/cli/token-saver-control.test.ts
+@@ -0,0 +1,59 @@
++import { expect, test } from "bun:test";
++import { spawnSync } from "node:child_process";
++import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { repoPath } from "../helpers/repo-root";
++import { removeTreeWithRetry } from "../helpers/remove-tree";
++import { validateReadyzBody } from "../../src/server/proxy-liveness";
++import { runReady } from "../../src/cli/ready";
++
++test("ready publishes only validated capability fields from the serving process", async () => {
++  const metadata = { protocol: 1, control: 1, enabled: false };
++  const body = { service: "opencodex", version: "fixture", uptime: 1, pid: 123, port: 10100, status: "ready",
++    tokenSaver: { ...metadata, secret: "must-not-escape" } };
++  const probe = validateReadyzBody(body, 10100, { expectedPid: 123 })!;
++  expect((probe as any).tokenSaver).toEqual(metadata);
++  const lines: string[] = [];
++  expect(await runReady({ json: true, wait: false, timeoutSeconds: 45 }, {
++    findLive: async () => ({ pid: 123, port: 10100 }), probe: async () => probe,
++    stdout: { log: s => lines.push(s) },
++  })).toBe(0);
++  expect(JSON.parse(lines[0]!).tokenSaver).toEqual(metadata);
++  expect(lines.join("")).not.toContain("must-not-escape");
++  expect((validateReadyzBody({ ...body, tokenSaver: { ...metadata, protocol: 9 } }, 10100) as any).tokenSaver).toBeUndefined();
++  expect(validateReadyzBody(body, 10100, { expectedPid: 999 })).toBeNull();
++});
++
++test("conditional extension writes preserve providers and Codex bytes; stale writes fail", () => {
++  const dir = mkdtempSync(join(tmpdir(), "cts-control-"));
++  const initial = { port: 10100, defaultProvider: "fixture", providers: {
++    fixture: { adapter: "openai-chat", baseUrl: "https://provider.invalid/v1", authMode: "api-key", apiKey: "fixture-private-key" },
++  } };
++  const configPath = join(dir, "config.json"), codexPath = join(dir, "config.toml");
++  writeFileSync(configPath, JSON.stringify(initial));
++  const codex = '# keep comment\nmodel = "chosen"\nmodel_reasoning_effort = "high"\n';
++  writeFileSync(codexPath, codex);
++  const run = (args: string[]) => spawnSync(process.execPath, [repoPath("src", "cli", "index.ts"), "config", ...args, "--json"], {
++    cwd: repoPath(), env: { ...process.env, OPENCODEX_HOME: dir, CODEX_HOME: dir }, encoding: "utf8", timeout: 20_000,
++  });
++  try {
++    const before = run(["token-saver-state"]);
++    expect(before.status).toBe(0);
++    const empty = JSON.parse(before.stdout); expect(empty.value).toBeNull();
++    const value = { protocol: 1, enabled: true, endpoint: "http://127.0.0.1:8789", tokenFile: join(dir, "token 中.txt") };
++    const enabled = run(["token-saver-set", empty.fingerprint, JSON.stringify(value)]);
++    expect(enabled.status).toBe(0); expect(JSON.parse(enabled.stdout).value).toEqual(value);
++    const stale = run(["token-saver-set", empty.fingerprint, "null"]);
++    expect(stale.status).not.toBe(0);
++    expect(JSON.parse(readFileSync(configPath, "utf8")).tokenSaver).toEqual(value);
++    expect(enabled.stdout + enabled.stderr + stale.stdout + stale.stderr).not.toContain("fixture-private-key");
++    const current = JSON.parse(enabled.stdout);
++    expect(run(["token-saver-set", current.fingerprint, JSON.stringify({ ...value, endpoint: "https://elsewhere.invalid" })]).status).not.toBe(0);
++    const removed = run(["token-saver-set", current.fingerprint, "null"]);
++    expect(removed.status).toBe(0);
++    expect(JSON.parse(readFileSync(configPath, "utf8")).tokenSaver).toBeUndefined();
++    expect(JSON.parse(readFileSync(configPath, "utf8")).providers.fixture.apiKey).toBe("fixture-private-key");
++    expect(readFileSync(codexPath, "utf8")).toBe(codex);
++  } finally { removeTreeWithRetry(dir); }
++}, 120_000);
 diff --git a/tests/fixtures/test-layout-expected.json b/tests/fixtures/test-layout-expected.json
-index 53d5351..bf066e3 100644
+index 53d5351..2f387e9 100644
 --- a/tests/fixtures/test-layout-expected.json
 +++ b/tests/fixtures/test-layout-expected.json
-@@ -1425,6 +1425,9 @@
+@@ -1425,6 +1425,10 @@
    "thought-signature-credential-scope.test.ts": "responses",
    "token-estimate.test.ts": "lib",
    "token-guardian.test.ts": "codex-integration",
++  "token-saver-control.test.ts": "cli",
 +  "token-saver-pipeline.test.ts": "responses",
 +  "token-saver-wire.test.ts": "responses",
 +  "token-saver.test.ts": "responses",

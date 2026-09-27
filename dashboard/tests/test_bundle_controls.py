@@ -56,6 +56,25 @@ def test_opencodex_cannot_enable_native_request_route(control):
     assert control.proxy.calls == []
 
 
+def test_opencodex_controls_use_extension_and_report_live_status(control):
+    from unittest.mock import Mock
+    control.opencodex = lambda: {'routing_matches': True, 'transform_protocol': 1, 'control_protocol': 1}
+    extension = Mock()
+    extension.status.return_value = {'requested_enabled': True, 'effective_enabled': True,
+        'ready': True, 'phase': 'complete', 'needs_reload': False, 'outcomes': {'compressed': 4}}
+    control.ocx_control = extension
+    control.set_enabled('headroom_requests', True)
+    control.set_enabled('headroom_requests', False)
+    assert [call.args for call in extension.set_enabled.call_args_list] == [(True,), (False,)]
+    assert control.proxy.calls == []
+    row = by_id(control)['headroom_requests']
+    assert row['effective_enabled'] and row['state'] == 'ready'
+    assert row['outcomes'] == {'compressed': 4}
+    extension.status.return_value['effective_enabled'] = False
+    extension.status.return_value['needs_reload'] = True
+    assert by_id(control)['headroom_requests']['state'] == 'needs_restart'
+
+
 def test_serena_diagnostics_keep_historical_failure_separate_from_current_health(control):
     import json
     path = control.root / 'serena/activity.json'

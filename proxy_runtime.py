@@ -134,10 +134,12 @@ def _python(runtime):
     return str(python)
 
 
-def build_proxy_command(runtime, host='127.0.0.1', port=8789):
+def build_proxy_command(runtime, host='127.0.0.1', port=8789, *, mode='native'):
     """Return argv for a dedicated interpreter; caller uses shell=False."""
     _endpoint(host, port)
-    return [_python(runtime), str(Path(__file__).resolve()), '--serve',
+    if mode not in ('native', 'opencodex') or (mode == 'opencodex' and port != 8789):
+        raise ValueError('Unsupported request worker mode or endpoint')
+    return [_python(runtime), str(Path(__file__).resolve()), '--serve-transform' if mode == 'opencodex' else '--serve',
             '--host', host, '--port', str(port)]
 
 

@@ -23,6 +23,8 @@ class OpenCodexProbe:
     endpoint: str | None = None
     ready: bool = False
     transform_protocol: int | None = None
+    control_protocol: int | None = None
+    extension_enabled: bool | None = None
     reason: str | None = None
 
 
@@ -80,7 +82,12 @@ def probe_opencodex(*, executable, run=_run):
         extension = ready.get('tokenSaver', {})
         protocol = extension.get('protocol') if isinstance(extension, dict) else None
         protocol = protocol if type(protocol) is int and protocol == 1 else None
+        control = extension.get('control') if isinstance(extension, dict) else None
+        control = control if protocol == 1 and type(control) is int and control == 1 else None
+        enabled = extension.get('enabled') if isinstance(extension, dict) else None
+        enabled = enabled if type(enabled) is bool else None
         return OpenCodexProbe(**base, ready=True, transform_protocol=protocol,
+                              control_protocol=control, extension_enabled=enabled,
                               reason=None if protocol else 'OpenCodex integration required.')
     except (OSError, ValueError, TypeError, AttributeError, RecursionError, subprocess.SubprocessError):
         # Never return raw process output, which can contain configuration or secrets.

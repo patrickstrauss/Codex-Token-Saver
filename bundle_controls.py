@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from bundle_preferences import preference_status, set_preference
-from desktop_proxy_control import _latest_timestamp
+from desktop_proxy_control import _latest_timestamp, _json
 
 LABELS = {
     'rtk': 'RTK command filtering',
@@ -48,7 +48,7 @@ def serena_diagnostics(activity):
 
 
 class BundleControls:
-    def __init__(self, root, *, proxy=None, integrations=None, summaries=None, opencodex=None):
+    def __init__(self, root, *, proxy=None, integrations=None, summaries=None, opencodex=None, ocx_control=None):
         self.root = Path(root).resolve()
         if proxy is None:
             from desktop_proxy_control import DesktopProxyControl
@@ -61,6 +61,19 @@ class BundleControls:
             from opencodex_integration import discovery_status
             opencodex = discovery_status
         self.opencodex = opencodex
+        self.ocx_control = ocx_control
+
+    def _managed_opencodex(self):
+        try:
+            return _json(self.root / 'proxy/settings.json').get('mode') == 'opencodex'
+        except (OSError, ValueError, UnicodeError):
+            return (self.root / 'proxy/opencodex-receipt.json').is_file()
+
+    def _extension(self):
+        if self.ocx_control is None:
+            from opencodex_control import OpenCodexControl
+            self.ocx_control = OpenCodexControl(self.root)
+        return self.ocx_control
 
     def _summary_status(self):
         if self.summaries is None:
@@ -146,6 +159,22 @@ class BundleControls:
                 if opencodex.get('routing_matches') is True:
                     row.update(available=False, effective_enabled=False, state='unavailable',
                                reason='Unavailable: OpenCodex integration required. Local tools remain available.')
+                if self._managed_opencodex() or (opencodex.get('routing_matches') is True
+                                                and opencodex.get('control_protocol') == 1):
+                    try:
+                        extension = self._extension().status()
+                        requested = extension.get('requested_enabled') is True
+                        effective = extension.get('effective_enabled') is True
+                        reload = extension.get('needs_reload') is True
+                        row.update(available=opencodex.get('control_protocol') == 1,
+                            requested_enabled=requested, effective_enabled=effective,
+                            state='ready' if effective else 'needs_restart' if reload else 'bypassed' if requested else 'off',
+                            restart_required=reload, last_error=None, last_use=None,
+                            reason='Experimental OpenCodex transform integration.' if effective else extension.get('reason', ''),
+                            outcomes=extension.get('outcomes', {}), mode='opencodex')
+                    except Exception:
+                        row.update(available=False, effective_enabled=False, state='error',
+                                   reason='OpenCodex integration status could not be verified.')
             elif name in ('serena', 'local_summaries'):
                 integration = integrations.get(name, {})
                 row['available'] = integration.get('installed') is True
@@ -210,12 +239,19 @@ class BundleControls:
         if component not in LABELS or type(enabled) is not bool:
             raise ValueError('Choose a listed component and a boolean value.')
         if component == 'headroom_requests':
+            if self._managed_opencodex():
+                return self._extension().set_enabled(enabled)
+            if not enabled:
+                if self.opencodex().get('routing_matches') is True:
+                    return self._extension().set_enabled(False)
             if enabled:
                 try:
                     opencodex = self.opencodex()
                 except Exception as exc:
                     raise RuntimeError('OpenCodex status could not be verified; no route changed.') from exc
                 if opencodex.get('routing_matches') is True:
+                    if opencodex.get('control_protocol') == 1 and opencodex.get('transform_protocol') == 1:
+                        return self._extension().set_enabled(True)
                     raise RuntimeError('OpenCodex integration is not qualified for enablement. Local tools remain available.')
             return self.proxy.set_enabled(enabled)
         if enabled:

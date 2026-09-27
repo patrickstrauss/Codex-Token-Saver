@@ -13,6 +13,22 @@ except ImportError:
 
 
 class EndpointTests(unittest.IsolatedAsyncioTestCase):
+    def test_file_policy_requires_explicit_typed_enable_and_fails_closed(self):
+        from request_transform_service import transform_enabled
+        root = Path(self.folder.name)
+        policy = root / 'proxy/opencodex-policy.json'
+        self.assertFalse(transform_enabled(root))
+        policy.parent.mkdir()
+        for text, expected in (
+            ('{"schema":1,"enabled":true}', True),
+            ('{"schema":1,"enabled":false}', False),
+            ('{"schema":true,"enabled":true}', False),
+            ('{"schema":1,"enabled":"true"}', False), ('[]', False), ('broken', False),
+            (' ' * 1025, False),
+        ):
+            policy.write_text(text)
+            self.assertIs(transform_enabled(root), expected)
+
     def test_tool_config_does_not_reapply_recent_conversation_protection(self):
         config = module.tool_compression_config()
         self.assertEqual(config.protect_recent, 0)
