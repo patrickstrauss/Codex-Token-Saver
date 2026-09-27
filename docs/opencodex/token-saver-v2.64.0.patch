@@ -1,0 +1,640 @@
+diff --git a/docs-site/src/content/docs/guides/token-saver-prototype.md b/docs-site/src/content/docs/guides/token-saver-prototype.md
+new file mode 100644
+index 0000000..30a1965
+--- /dev/null
++++ b/docs-site/src/content/docs/guides/token-saver-prototype.md
+@@ -0,0 +1,24 @@
++---
++title: Token Saver prototype
++description: Pending local tool-result transformation integration.
++---
++
++This source prototype is not included in OpenCodex 2.64.0. It is not release-qualified.
++OpenCodex retains provider routing, authentication, model selection and reasoning settings.
++Codex Token Saver supplies a local service that returns smaller tool-result text together
++with a recoverable-original reference. Stored history remains unchanged.
++
++The optional `tokenSaver` object contains `enabled`, `protocol: 1`,
++`endpoint: "http://127.0.0.1:8789"` and an absolute `tokenFile` path.
++Absence disables it. Only the separately prepared transform service understands this
++protocol. The native Token Saver backend uses the same port; automatic migration and
++service ownership are not implemented in this prototype.
++
++Responses adapter builds support matching plain text function results. Multipart,
++encrypted and compaction inputs bypass. Native steering/injection and runTurn adapters
++are unsupported. Voice, catalog and image routes are not transformed.
++
++The bundle keeps request compression unavailable until capability publication,
++reversible lifecycle controls and real transport qualification are completed.
++Use the offline source witness for evaluation. Do not treat its result as deployment
++approval or proof of lower provider billing.
+diff --git a/scripts/test-layout/layout.json b/scripts/test-layout/layout.json
+index 518fa8c..775ff6f 100644
+--- a/scripts/test-layout/layout.json
++++ b/scripts/test-layout/layout.json
+@@ -1593,6 +1593,9 @@
+     "thought-signature-credential-scope.test.ts": "responses",
+     "token-estimate.test.ts": "lib",
+     "token-guardian.test.ts": "codex-integration",
++    "token-saver-pipeline.test.ts": "responses",
++    "token-saver-wire.test.ts": "responses",
++    "token-saver.test.ts": "responses",
+     "tool-argument-integers.test.ts": "adapters",
+     "tool-catalog-nudge.test.ts": "adapters",
+     "tool-choice-performance.test.ts": "adapters",
+diff --git a/src/config/schema/config-schema.ts b/src/config/schema/config-schema.ts
+index b072b61..a381f0f 100644
+--- a/src/config/schema/config-schema.ts
++++ b/src/config/schema/config-schema.ts
+@@ -63,6 +63,12 @@ import { parseDesktopProfile } from "../../claude/desktop-profile";
+ import { DEFAULT_APP_OWNED_MEMORY_BUDGET_BYTES, MAX_APP_OWNED_MEMORY_BUDGET_MB, MIN_APP_OWNED_MEMORY_BUDGET_MB } from "../../lib/app-owned-memory";
+ 
+ export const configSchema = z.object({
++  tokenSaver: z.object({
++    enabled: z.boolean(),
++    endpoint: z.literal("http://127.0.0.1:8789"),
++    tokenFile: z.string().min(1).max(4096),
++    protocol: z.literal(1),
++  }).strict().optional(),
+   codexNativeSteering: z.boolean().optional().catch(false),
+   codexNativeInjection: z.boolean().optional().catch(false),
+   port: z.number().int().min(0).max(65535).default(10100),
+diff --git a/src/integrations/token-saver.ts b/src/integrations/token-saver.ts
+new file mode 100644
+index 0000000..1c56878
+--- /dev/null
++++ b/src/integrations/token-saver.ts
+@@ -0,0 +1,169 @@
++import { createHash, randomUUID } from "node:crypto";
++import { open } from "node:fs/promises";
++import { isAbsolute } from "node:path";
++import { request as httpRequest } from "node:http";
++import type { OcxParsedRequest } from "../types";
++
++export interface TokenSaverConfig {
++  enabled: boolean;
++  endpoint: string;
++  tokenFile: string;
++  protocol: 1;
++}
++const LIMIT = 8 * 1024 * 1024;
++const hash = (s: string) => createHash("sha256").update(s).digest("hex");
++type Entry = { id: string; original_sha256: string; text: string };
++type Replacement = { id: string; original_sha256: string; replacement: string; retrieval_reference: string };
++type Io = {
++  now?: () => number;
++  readToken?: (path: string) => Promise<string>;
++  localFetch?: (url: string, init: RequestInit) => Promise<Response>;
++};
++
++async function untilAborted<T>(work: Promise<T>, signal: AbortSignal, fallback: T): Promise<T> {
++  let onAbort: () => void = () => {};
++  const expired = new Promise<T>(resolve => {
++    onAbort = () => resolve(fallback);
++    if (signal.aborted) onAbort();
++    else signal.addEventListener("abort", onAbort, { once: true });
++  });
++  try { return await Promise.race([work, expired]); }
++  finally { signal.removeEventListener("abort", onAbort); }
++}
++
++async function readToken(path: string): Promise<string> {
++  if (!isAbsolute(path)) throw new Error("Token path must be absolute");
++  const file = await open(path, "r");
++  try {
++    const bytes = Buffer.alloc(65);
++    const { bytesRead } = await file.read(bytes, 0, 65, 0);
++    const token = bytes.subarray(0, bytesRead).toString("ascii");
++    if (!/^[a-f0-9]{64}$/.test(token)) throw new Error("Invalid local token");
++    return token;
++  } finally { await file.close(); }
++}
++
++/** Fixed loopback destination; node:http neither reads proxy env nor follows redirects. */
++function localPost(_url: string, init: RequestInit): Promise<Response> {
++  return new Promise((resolve, reject) => {
++    const body = String(init.body);
++    const req = httpRequest({
++      host: "127.0.0.1", port: 8789, path: "/v1/transform/tool-results", method: "POST",
++      headers: { ...Object.fromEntries(new Headers(init.headers)), "Content-Length": Buffer.byteLength(body) },
++      signal: init.signal ?? undefined, agent: false,
++    }, res => {
++      const chunks: Buffer[] = []; let size = 0;
++      res.on("data", (chunk: Buffer) => {
++        size += chunk.length;
++        if (size > LIMIT) { res.destroy(); req.destroy(new Error("Oversized reply")); return; }
++        chunks.push(chunk);
++      });
++      res.on("error", reject);
++      res.on("end", () => resolve(new Response(Buffer.concat(chunks), { status: res.statusCode ?? 500 })));
++    });
++    req.on("error", reject);
++    req.end(body);
++  });
++}
++
++function select(parsed: OcxParsedRequest) {
++  const entries: Entry[] = [];
++  const positions = new Map<string, { message: number; raw?: number }>();
++  const body = parsed._rawBody as { input?: unknown } | undefined;
++  const input = body && Array.isArray(body.input) ? body.input as Record<string, unknown>[] : undefined;
++  for (const [index, message] of parsed.context.messages.entries()) {
++    if (message.role !== "toolResult" || message.containsEncryptedContent || typeof message.content !== "string") continue;
++    const text = message.content;
++    if (Buffer.byteLength(text) < 1024 || text.trimStart().startsWith("{") || text.trimStart().startsWith("[") || text.includes("<<ccr:")) continue;
++    let raw: number | undefined;
++    if (body) {
++      if (!input) continue;
++      const matches = input.flatMap((item, i) => item && item.type === "function_call_output"
++        && item.call_id === message.toolCallId && item.output === text ? [i] : []);
++      if (matches.length !== 1) continue;
++      raw = matches[0];
++    }
++    const id = `m${index}`;
++    entries.push({ id, original_sha256: hash(text), text });
++    positions.set(id, { message: index, raw });
++    if (entries.length > 128) return null;
++  }
++  return { entries, positions, input };
++}
++
++function validate(value: any, requestId: string, entries: Entry[]): Replacement[] {
++  if (!value || value.protocol !== 1 || value.request_id !== requestId || !Array.isArray(value.replacements)
++      || !["compressed", "unchanged", "bypassed", "error"].includes(value.outcome)
++      || Object.keys(value).some(k => !["protocol", "request_id", "outcome", "replacements", "reason"].includes(k))) throw new Error("Invalid reply");
++  if (value.outcome !== "compressed") {
++    if (value.replacements.length) throw new Error("Unexpected replacements");
++    return [];
++  }
++  const seen = new Set<string>();
++  for (const r of value.replacements) {
++    const entry = r && entries.find(e => e.id === r.id);
++    if (!entry || seen.has(r.id) || Object.keys(r).sort().join(",") !== "id,original_sha256,replacement,retrieval_reference"
++        || r.original_sha256 !== entry.original_sha256 || r.retrieval_reference !== entry.original_sha256.slice(0, 12)
++        || typeof r.replacement !== "string" || Buffer.byteLength(r.replacement) >= Buffer.byteLength(entry.text)
++        || !r.replacement.startsWith(`[Headroom request overview v1; exact original: headroom_retrieve(content_hash="${r.retrieval_reference}")]\n`)
++        || r.replacement.includes("<<ccr:")) throw new Error("Invalid replacement");
++    seen.add(r.id);
++  }
++  return value.replacements;
++}
++
++/** One decision per content version, shared by adapters/rebuilds within one logical request. */
++export function createTokenSaverTransform(config: TokenSaverConfig | undefined, scope: string, signal: AbortSignal, io: Io = {}) {
++  const decisions = new Map<string, Promise<Replacement[]>>();
++  const created = new Map<string, number>();
++  const now = io.now ?? Date.now;
++  let cachedBytes = 0;
++  return async (parsed: OcxParsedRequest): Promise<OcxParsedRequest> => {
++    if (!config?.enabled || config.protocol !== 1 || config.endpoint !== "http://127.0.0.1:8789"
++        || signal.aborted || parsed._compactionRequest || parsed._portableCompaction) return parsed;
++    const selected = select(parsed);
++    if (!selected?.entries.length) return parsed;
++    const { entries, positions, input } = selected;
++    const key = hash(JSON.stringify(entries.map(e => [e.id, e.original_sha256])));
++    let decision = decisions.get(key);
++    // Refuse reuse before the service's 30-minute original retention expires.
++    if (decision && now() - created.get(key)! >= 25 * 60_000) return parsed;
++    if (!decision) {
++      // Bounds all versions retained by a long-running sidecar loop; bypass after the limit.
++      const requestId = randomUUID();
++      const body = JSON.stringify({ protocol: 1, request_id: requestId, scope_id: hash(scope), budget_ms: 450, entries });
++      if (Buffer.byteLength(body) > LIMIT || decisions.size >= 8 || cachedBytes + Buffer.byteLength(body) > 32 * 1024 * 1024) return parsed;
++      cachedBytes += Buffer.byteLength(body);
++      decision = (async () => {
++        const deadline = AbortSignal.any([signal, AbortSignal.timeout(500)]);
++        try {
++          const token = await untilAborted((io.readToken ?? readToken)(config.tokenFile), deadline, "");
++          if (deadline.aborted || !/^[a-f0-9]{64}$/.test(token)) return [];
++          const response = await untilAborted<Response | null>((io.localFetch ?? localPost)(config.endpoint + "/v1/transform/tool-results", {
++            method: "POST", body, signal: deadline,
++            headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
++          }), deadline, null);
++          if (!response?.ok || deadline.aborted) return [];
++          const bytes = await untilAborted(response.text(), deadline, "");
++          if (Buffer.byteLength(bytes) > LIMIT || deadline.aborted) return [];
++          return validate(JSON.parse(bytes), requestId, entries);
++        } catch { return []; }
++      })();
++      decisions.set(key, decision);
++      created.set(key, now());
++    }
++    const replacements = await decision;
++    if (signal.aborted || !replacements.length) return parsed;
++    const messages = [...parsed.context.messages];
++    const rawInput = input ? [...input] : undefined;
++    for (const replacement of replacements) {
++      const position = positions.get(replacement.id)!;
++      const original = messages[position.message]!;
++      if (original.role !== "toolResult") return parsed;
++      messages[position.message] = { ...original, content: replacement.replacement };
++      if (rawInput && position.raw !== undefined) rawInput[position.raw] = { ...rawInput[position.raw], output: replacement.replacement };
++    }
++    return { ...parsed, context: { ...parsed.context, messages },
++      ...(rawInput ? { _rawBody: { ...(parsed._rawBody as object), input: rawInput } } : {}) };
++  };
++}
+diff --git a/src/server/responses/request-transport.ts b/src/server/responses/request-transport.ts
+index 2b30240..95b91d3 100644
+--- a/src/server/responses/request-transport.ts
++++ b/src/server/responses/request-transport.ts
+@@ -66,6 +66,8 @@ import {
+ import type { AttemptRecoveryKind } from "../../usage/log";
+ import { bindAttemptDeliveryRecorder } from "../../usage/attempt-delivery";
+ import { resolvePassiveRouteSubjectId } from "../passive-route-linker";
++import { createTokenSaverTransform } from "../../integrations/token-saver";
++import { randomUUID } from "node:crypto";
+ 
+ /** Owns live credential selection and adapter bindings for one request. */
+ export async function prepareResponsesTransport(
+@@ -82,6 +84,14 @@ export async function prepareResponsesTransport(
+ ) {
+   const { config, logCtx, options, req } = requestContext;
+   const { route, parsed, inboundWire, translatorBudget } = requestState;
++  // Original parsed state stays with replay/history owners. Only buildRequest receives
++  // the outbound copy. Native steering/injection and runTurn adapters remain unsupported.
++  const transformOutbound = createTokenSaverTransform(
++    options.nativeControl ? undefined : config.tokenSaver,
++    JSON.stringify([parsed._reasoningReplayScope?.clientPrincipalId ?? "",
++      parsed._codexOwnThreadId ?? parsed._clientThreadId ?? randomUUID()]),
++    options.abortSignal ?? req.signal,
++  );
+ 
+ 
+   // OAuth providers: swap in a fresh access token (auto-refreshed) as the Bearer key, so the
+@@ -283,6 +293,9 @@ export async function prepareResponsesTransport(
+   };
+   const resolveSelectionAdapter = (provider: OcxProviderConfig, retention = config.cacheRetention): ProviderAdapter => {
+     const resolved = resolveAdapter(provider, retention, route.providerName);
++    const serialize = resolved.buildRequest.bind(resolved);
++    resolved.buildRequest = async (requestParsed, incoming) =>
++      serialize(await transformOutbound(requestParsed), incoming);
+     if (route.provider.authMode === "forward") return resolved;
+     const binding: DispatchBinding | undefined = route.provider.authMode === "oauth"
+       ? oauthSelection && servingOAuthSnapshot
+diff --git a/src/types/config.ts b/src/types/config.ts
+index 6fc6939..d70ed0f 100644
+--- a/src/types/config.ts
++++ b/src/types/config.ts
+@@ -422,6 +422,8 @@ export interface OcxClientConnectionConfig {
+ }
+ 
+ export interface OcxConfig {
++  /** Optional local tool-result transformer; never owns provider routing. */
++  tokenSaver?: import("../integrations/token-saver").TokenSaverConfig;
+   port: number;
+   /** Runtime topology role. Absence preserves the historical standalone behavior. */
+   runtimeRole?: OcxRuntimeRole;
+diff --git a/structure/clients/integrations.md b/structure/clients/integrations.md
+index 465a19a..90251b3 100644
+--- a/structure/clients/integrations.md
++++ b/structure/clients/integrations.md
+@@ -1,5 +1,9 @@
+ # Client Integrations
+ 
++The optional prototype in `src/integrations/token-saver.ts` transforms selected outbound
++tool-result text through a fixed loopback service. See the
++[prototype contract](../transports/responses.md#token-saver-prototype).
++
+ Shared parsing and streaming follow the [request-copy](../transports/byte-accounting.md#request-copy-accounting) and [stream-buffer accounting](../transports/byte-accounting.md#stream-buffer-accounting) contracts.
+ 
+ The client-integration subsystem writes one generated OpenCodex provider contribution into a
+diff --git a/structure/config.md b/structure/config.md
+index 9330ca6..ff30b74 100644
+--- a/structure/config.md
++++ b/structure/config.md
+@@ -1,5 +1,9 @@
+ # Config Surface
+ 
++The optional `tokenSaver` object in `src/config/schema/config-schema.ts` is disabled when
++absent. Its strict protocol-v1 configuration accepts only the fixed local transform origin.
++It does not configure a provider. See the [prototype contract](transports/responses.md#token-saver-prototype).
++
+ Native function-result injection follows [the separate opt-in control contract](transports/streaming-health.md#experimental-native-function-result-injection); this surface does not infer upstream support or alter its defaults.
+ 
+ Native steering follows [the shared WebSocket contract](transports/streaming-health.md#experimental-native-mid-turn-steering); this surface's defaults remain unchanged.
+diff --git a/structure/providers-and-adapters.md b/structure/providers-and-adapters.md
+index a548a7e..0f30eb5 100644
+--- a/structure/providers-and-adapters.md
++++ b/structure/providers-and-adapters.md
+@@ -1,5 +1,8 @@
+ # Providers And Adapters
+ 
++The optional `OcxConfig.tokenSaver` type in `src/types/config.ts` describes a local transform,
++with no provider identity or credentials. See [the prototype contract](transports/responses.md#token-saver-prototype).
++
+ The opt-in `inlineThinkTagModels` list follows static-policy override and model-rename rules;
+ shared Kiro/Chat splitting and raw display follow [Chat compatibility](providers/chat-compat.md#inline-think-tag-recovery).
+ 
+diff --git a/structure/transports/responses.md b/structure/transports/responses.md
+index 5674169..a3a5dec 100644
+--- a/structure/transports/responses.md
++++ b/structure/transports/responses.md
+@@ -1,5 +1,24 @@
+ # Responses Transport
+ 
++## Token Saver prototype
++
++`src/integrations/token-saver.ts` selects string tool-result messages with matching
++Responses function-call outputs and copies only those fields. The wrapper in
++`src/server/responses/request-transport.ts` runs before adapter serialization, including
++forward-auth adapters, after replay reconstruction. History owners retain the original.
++One closure per request shares bounded content decisions across adapter rebuilds.
++Its fixed loopback HTTP client ignores proxy environment variables and redirects.
++Invalid, unavailable, disabled, oversized, encrypted, multipart and compaction inputs
++bypass; native steering/injection and runTurn adapters are unsupported. It neither
++retries provider sends nor changes model/effort selection.
++
++The strict optional config is default-off. This prototype does not advertise a ready
++capability or provide automatic migration. Real socket/reconnect and lifecycle qualification
++remain pending. Contract coverage is in `tests/responses/token-saver.test.ts`; the isolated
++bundle harness enables `tests/responses/token-saver-wire.test.ts` and
++`tests/responses/token-saver-pipeline.test.ts`. The latter exercises prepared WebSocket
++turns at the Responses core, not a real WebSocket connection.
++
+ Native result continuations and function-result injection follow [the mode-specific result and control contract](streaming-health.md#experimental-native-function-result-injection); this surface does not infer upstream support or alter its defaults.
+ 
+ Native steering follows [the shared WebSocket contract](streaming-health.md#experimental-native-mid-turn-steering); this surface's defaults remain unchanged.
+diff --git a/tests/fixtures/test-layout-expected.json b/tests/fixtures/test-layout-expected.json
+index 53d5351..bf066e3 100644
+--- a/tests/fixtures/test-layout-expected.json
++++ b/tests/fixtures/test-layout-expected.json
+@@ -1425,6 +1425,9 @@
+   "thought-signature-credential-scope.test.ts": "responses",
+   "token-estimate.test.ts": "lib",
+   "token-guardian.test.ts": "codex-integration",
++  "token-saver-pipeline.test.ts": "responses",
++  "token-saver-wire.test.ts": "responses",
++  "token-saver.test.ts": "responses",
+   "tool-argument-integers.test.ts": "adapters",
+   "tool-catalog-nudge.test.ts": "adapters",
+   "tool-choice-performance.test.ts": "adapters",
+diff --git a/tests/responses/token-saver-pipeline.test.ts b/tests/responses/token-saver-pipeline.test.ts
+new file mode 100644
+index 0000000..b748858
+--- /dev/null
++++ b/tests/responses/token-saver-pipeline.test.ts
+@@ -0,0 +1,63 @@
++import { expect, test, spyOn } from "bun:test";
++import * as http from "node:http";
++import { mkdtempSync, writeFileSync } from "node:fs";
++import { join } from "node:path";
++import { tmpdir } from "node:os";
++import { handleResponses } from "../../src/server/responses";
++import type { OcxConfig } from "../../src/types";
++import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
++import { removeTreeWithRetry } from "../helpers/remove-tree";
++
++const service = process.env.CTS_TRANSFORM_TEST_URL;
++const pipelineTest = service ? test : test.skip;
++pipelineTest("HTTP and WS-prepared core dispatch use the transformer, including native forwarding", async () => {
++  expect(service).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
++  const directory = mkdtempSync(join(tmpdir(), "cts-pipeline-"));
++  const tokenFile = join(directory, "token");
++  writeFileSync(tokenFile, "a".repeat(64));
++  const release = acquireOwnedSpendHome();
++  const request = http.request;
++  // Only remap the test service's TCP port; exercise production token I/O and HTTP framing.
++  const local = spyOn(http, "request").mockImplementation(((options: any, callback: any) => {
++    expect(options.host).toBe("127.0.0.1"); expect(options.port).toBe(8789);
++    return request({ ...options, port: Number(new URL(service!).port) }, callback);
++  }) as typeof http.request);
++  const realFetch = globalThis.fetch;
++  const bodies: any[] = [];
++  globalThis.fetch = (async (_url: any, init: any) => {
++    bodies.push(JSON.parse(init.body));
++    return new Response('data: {"type":"response.completed","response":{"id":"resp_fixture","status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok"}]}]}}\n\n',
++      { headers: { "content-type": "text/event-stream" } });
++  }) as typeof fetch;
++  try {
++    for (const [authMode, inboundTransport] of [
++      ["api-key", "http"], ["forward", "http"], ["forward", "websocket"],
++    ] as const) {
++      const providerName = authMode === "forward" ? "openai" : "fixture";
++      const config = { port: 0, defaultProvider: providerName,
++        tokenSaver: { enabled: true, protocol: 1, endpoint: "http://127.0.0.1:8789", tokenFile },
++        providers: { [providerName]: { adapter: "openai-responses", authMode, apiKey: "fixture",
++          baseUrl: authMode === "forward" ? "https://chatgpt.com/backend-api/codex" : "https://provider.invalid/v1",
++          codexAccountMode: "direct", upstreamWebsocket: false } },
++      } as OcxConfig;
++      const original = "pipeline original diagnostic output line 中🙂\n".repeat(90);
++      const response = await handleResponses(new Request("http://localhost/v1/responses", {
++        method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer fixture-token" },
++        body: JSON.stringify({ model: providerName + "/gpt-5.6-sol", stream: true, reasoning: { effort: "high" }, input: [
++          { type: "function_call", call_id: "c1", name: "exec", arguments: "{}" },
++          { type: "function_call_output", call_id: "c1", output: original },
++        ] }),
++      }), config, { model: "", provider: "" }, { inboundTransport });
++      expect(response.status).toBe(200);
++      expect(await response.text()).toContain("response.completed");
++      const observed = bodies.at(-1);
++      expect(observed.input.find((i: any) => i.type === "function_call_output").output).toContain("Headroom request overview v1");
++      expect(observed.reasoning.effort).toBe("high");
++      expect(observed.model).toBe("gpt-5.6-sol");
++    }
++    expect(bodies).toHaveLength(3); expect(local).toHaveBeenCalledTimes(3);
++  } finally {
++    globalThis.fetch = realFetch; local.mockRestore(); release();
++    removeTreeWithRetry(directory);
++  }
++});
+diff --git a/tests/responses/token-saver-wire.test.ts b/tests/responses/token-saver-wire.test.ts
+new file mode 100644
+index 0000000..84cb541
+--- /dev/null
++++ b/tests/responses/token-saver-wire.test.ts
+@@ -0,0 +1,64 @@
++import { expect, test } from "bun:test";
++import { createTokenSaverTransform } from "../../src/integrations/token-saver";
++import { createResponsesPassthroughAdapter } from "../../src/adapters/openai-responses";
++import { createOpenAIChatAdapter } from "../../src/adapters/openai-chat";
++import { parseRequest } from "../../src/responses/parser";
++import { withTestTranslatorBudget } from "../helpers/translator-budget";
++
++// Run only through the bundle witness, which starts the real service on an isolated port.
++const service = process.env.CTS_TRANSFORM_TEST_URL;
++const wireTest = service ? test : test.skip;
++wireTest("real service transforms hydrated copies for Responses and Chat without extra provider sends", async () => {
++  expect(service).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
++  const original = "Unicode 中🙂 exact worker detail 123456789\n".repeat(90);
++  const raw = { model: "chosen", reasoning: { effort: "high" }, stream: false, input: [
++    { role: "user", content: "Inspect the tool output" },
++    { type: "function_call", call_id: "c1", name: "exec", arguments: "{}" },
++    { type: "function_call_output", call_id: "c1", output: original },
++  ] };
++  const input = parseRequest(raw);
++  const before = structuredClone(input);
++  let transforms = 0, sends = 0;
++  const provider = Bun.serve({
++    hostname: "127.0.0.1", port: 0,
++    async fetch(req) {
++      sends++; return Response.json({ observed: await req.json() });
++    },
++  });
++  try {
++    const config = { enabled: true, protocol: 1 as const, endpoint: "http://127.0.0.1:8789", tokenFile: "fixture" };
++    const transform = createTokenSaverTransform(config, "wire-fixture", new AbortController().signal, {
++      readToken: async () => "a".repeat(64),
++      localFetch: async (_url, init) => {
++        transforms++;
++        return fetch(service + "/v1/transform/tool-results", { ...init, proxy: "" });
++      },
++    });
++    const transformed = await transform(input);
++    expect(transformed).not.toBe(input);
++    expect(input).toEqual(before);
++    expect(transformed.options).toBe(input.options);
++    expect(transformed.modelId).toBe(input.modelId);
++    const tool = transformed.context.messages.find(m => m.role === "toolResult")!;
++    expect(tool.content).toContain("Headroom request overview v1");
++    const ref = String(tool.content).match(/content_hash="([a-f0-9]{12})"/)![1];
++    const exact = await fetch(service + "/v1/retrieve/" + ref, { proxy: "", headers: { Authorization: "Bearer " + "a".repeat(64) } });
++    const recovered = await exact.json() as any;
++    expect(recovered.original_content).toBe(original);
++    for (const kind of ["responses", "chat"] as const) {
++      const providerConfig = { adapter: kind === "responses" ? "openai-responses" : "openai-chat",
++        baseUrl: `http://127.0.0.1:${provider.port}/v1`, authMode: "api-key" as const, apiKey: "fixture" };
++      const adapter = withTestTranslatorBudget(kind === "responses"
++        ? createResponsesPassthroughAdapter(providerConfig) : createOpenAIChatAdapter(providerConfig));
++      const request = await adapter.buildRequest(await transform(input), { headers: new Headers() });
++      try {
++        const response = await fetch(request.url, { method: "POST", headers: request.headers, body: request.body, proxy: "" });
++        const result = await response.json() as any;
++        expect(JSON.stringify(result.observed)).toContain("Headroom request overview v1");
++        expect(JSON.stringify(result.observed)).not.toContain(original);
++        expect(result.observed.model).toBe("chosen");
++      } finally { request.releaseBodyObservation?.(); }
++    }
++    expect(sends).toBe(2); expect(transforms).toBe(1); expect(input).toEqual(before);
++  } finally { await provider.stop(true); }
++});
+diff --git a/tests/responses/token-saver.test.ts b/tests/responses/token-saver.test.ts
+new file mode 100644
+index 0000000..15c09fa
+--- /dev/null
++++ b/tests/responses/token-saver.test.ts
+@@ -0,0 +1,124 @@
++import { test, expect } from "bun:test";
++import { createTokenSaverTransform } from "../../src/integrations/token-saver";
++import type { OcxParsedRequest } from "../../src/types";
++import { configSchema } from "../../src/config/schema/config-schema";
++
++const text = "worker output line with details\n".repeat(100);
++const config = { enabled: true, endpoint: "http://127.0.0.1:8789", tokenFile: "unused", protocol: 1 as const };
++function parsed(): OcxParsedRequest {
++  return { modelId: "chosen", stream: true, options: { reasoningEffort: "high" },
++    context: { systemPrompt: ["system"], messages: [
++      { role: "user", content: text, timestamp: 1 },
++      { role: "toolResult", toolCallId: "call1", toolName: "exec", content: text, isError: false, timestamp: 2 },
++    ] }, _rawBody: { model: "chosen", reasoning: { effort: "high" }, input: [
++      { type: "function_call", call_id: "call1", name: "exec", arguments: "{}" },
++      { type: "function_call_output", call_id: "call1", output: text },
++    ] } };
++}
++function reply(body: any) {
++  return { protocol: 1, request_id: body.request_id, outcome: "compressed", replacements: body.entries.map((e: any) => ({
++    id: e.id, original_sha256: e.original_sha256,
++    replacement: `[Headroom request overview v1; exact original: headroom_retrieve(content_hash="${e.original_sha256.slice(0, 12)}")]\nworker summary`,
++    retrieval_reference: e.original_sha256.slice(0, 12),
++  })) };
++}
++function setup(change = (r: any) => r) {
++  const sent: any[] = [];
++  const transform = createTokenSaverTransform(config, "scope", new AbortController().signal, {
++    readToken: async () => "a".repeat(64),
++    localFetch: async (_url: any, init: any) => {
++      const body = JSON.parse(init.body); sent.push(body);
++      return Response.json(change(reply(body)));
++    },
++  });
++  return { transform, sent };
++}
++test("only outbound tool text changes; raw history, roles, pairing and settings survive", async () => {
++  const p = parsed(), before = structuredClone(p), { transform, sent } = setup();
++  const result = await transform(p);
++  expect(p).toEqual(before);
++  expect(result).not.toBe(p);
++  expect(result.context.messages[0]).toBe(p.context.messages[0]);
++  expect(result.context.messages[1]!.content).toContain("worker summary");
++  expect((result._rawBody as any).input[1].output).toBe(result.context.messages[1]!.content);
++  expect(result.options).toBe(p.options);
++  expect(sent[0].entries).toHaveLength(1);
++  expect(JSON.stringify(sent[0])).not.toContain("chosen");
++});
++test("retry reuses a decision and applies it to the latest untouched fields", async () => {
++  const { transform, sent } = setup(); const p = parsed();
++  await transform(p); p.modelId = "existing-provider-recovery";
++  const again = await transform(p);
++  expect(sent).toHaveLength(1); expect(again.modelId).toBe(p.modelId);
++});
++test.each(["id", "original_sha256", "retrieval_reference"])("invalid %s rejects the whole reply", async key => {
++  const { transform } = setup(r => { r.replacements[0][key] = "invalid"; return r; });
++  const p = parsed(); expect(await transform(p)).toBe(p);
++});
++test("duplicate replacements, errors and non-shrinking output bypass", async () => {
++  for (const change of [
++    (r: any) => ({ ...r, replacements: [...r.replacements, ...r.replacements] }),
++    (r: any) => ({ ...r, request_id: "wrong" }),
++    (r: any) => { r.replacements[0].replacement = text; return r; },
++  ]) { const { transform } = setup(change), p = parsed(); expect(await transform(p)).toBe(p); }
++});
++test("multimodal, encrypted and compaction inputs bypass without sending", async () => {
++  for (const patch of [{ _compactionRequest: true }, { _portableCompaction: true }]) {
++    const { transform, sent } = setup(), p = { ...parsed(), ...patch };
++    expect(await transform(p)).toBe(p); expect(sent).toHaveLength(0);
++  }
++  const p = parsed(); (p.context.messages[1] as any).containsEncryptedContent = true;
++  const { transform, sent } = setup(); expect(await transform(p)).toBe(p); expect(sent).toHaveLength(0);
++});
++test("disabled and invalid endpoint do no I/O", async () => {
++  for (const cfg of [{ ...config, enabled: false }, { ...config, endpoint: "https://example.com" }]) {
++    const p = parsed(); const transform = createTokenSaverTransform(cfg, "scope", new AbortController().signal, {
++      readToken: async () => { throw new Error("must not read"); },
++      localFetch: async () => { throw new Error("must not send"); },
++    }); expect(await transform(p)).toBe(p);
++  }
++});
++
++test("schema leaves the extension off by default and rejects foreign destinations", () => {
++  expect(configSchema.shape.tokenSaver.parse(undefined)).toBeUndefined();
++  expect(configSchema.shape.tokenSaver.safeParse({ ...config, endpoint: "https://example.com" }).success).toBe(false);
++});
++
++test("abort and local failures preserve the original and are stable for retries", async () => {
++  const controller = new AbortController(); let calls = 0;
++  const transform = createTokenSaverTransform(config, "scope", controller.signal, {
++    readToken: async () => "a".repeat(64),
++    localFetch: async () => { calls++; throw new Error("local failure"); },
++  });
++  const p = parsed();
++  expect(await transform(p)).toBe(p); expect(await transform(p)).toBe(p);
++  expect(calls).toBe(1); controller.abort();
++  expect(await transform(p)).toBe(p); expect(calls).toBe(1);
++});
++
++test("wire disagreement and multipart outputs are not flattened", async () => {
++  const p = parsed(); (p._rawBody as any).input[1].output = [{ type: "input_text", text }];
++  const { transform, sent } = setup(); expect(await transform(p)).toBe(p); expect(sent).toHaveLength(0);
++});
++
++test("a long-running request cannot reuse an expired retrieval reference", async () => {
++  let now = 0, calls = 0;
++  const transform = createTokenSaverTransform(config, "scope", new AbortController().signal, {
++    now: () => now, readToken: async () => "a".repeat(64),
++    localFetch: async (_url, init) => { calls++; return Response.json(reply(JSON.parse(String(init.body)))); },
++  });
++  const p = parsed(); expect(await transform(p)).not.toBe(p);
++  now = 25 * 60_000;
++  expect(await transform(p)).toBe(p); expect(calls).toBe(1);
++});
++
++test("the deadline also bounds token-file I/O before HTTP starts", async () => {
++  const p = parsed();
++  const transform = createTokenSaverTransform(config, "scope", new AbortController().signal, {
++    readToken: () => new Promise<string>(() => {}),
++    localFetch: async () => { throw new Error("must not send"); },
++  });
++  const started = Date.now();
++  expect(await transform(p)).toBe(p);
++  expect(Date.now() - started).toBeLessThan(1500);
++});

@@ -1,2 +1,4 @@
 * text=auto eol=lf
 *.ico binary
+# Unified-diff context lines intentionally contain one space for blank source lines.
+docs/opencodex/*.patch -whitespace

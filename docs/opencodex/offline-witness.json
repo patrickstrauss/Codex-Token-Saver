@@ -1,0 +1,38 @@
+{
+  "kind": "offline-consumer-adapter-witness",
+  "passed": true,
+  "coverage": [
+    "real-transform-http",
+    "unicode-exact-retrieval",
+    "responses-serialization",
+    "chat-serialization",
+    "original-unchanged",
+    "one-transform-for-rebuilds",
+    "two-expected-local-provider-sends",
+    "three-expected-mocked-core-sends",
+    "http-and-websocket-prepared-core",
+    "native-forward-core"
+  ],
+  "not_qualified": [
+    "full-server-http-websocket",
+    "native-steering-injection",
+    "migration",
+    "windows-reboot",
+    "real-openai-azure-lm-studio"
+  ],
+  "transform_counts": {
+    "compressed": 4,
+    "unchanged": 0,
+    "bypassed": 0,
+    "error": 0
+  },
+  "elapsed_seconds": 3.695,
+  "cleanup_ok": true,
+  "failure": null,
+  "source_hashes": {
+    "tests/responses/token-saver-wire.test.ts": "3706ed72f75ba69485360dafc747612eab350e656f9251eb6fc790fd6699c4c4",
+    "src/integrations/token-saver.ts": "2805a229d2fa45970248e988465920f6a9b8a2f1b181062205ceb4feb1416de5",
+    "tests/responses/token-saver-pipeline.test.ts": "7fee1dcc0c28d870b94f45e0cab144a510afed405d97eec77a4c5e4b59db3150",
+    "src/server/responses/request-transport.ts": "484875d18485874d72d3856ad05141bc78bb60d1023ac331ee9527c4541c3077"
+  }
+}
