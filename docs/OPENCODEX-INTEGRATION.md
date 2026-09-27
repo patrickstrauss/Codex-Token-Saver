@@ -64,7 +64,8 @@ one normal request with your selected provider, then one tool-heavy request and 
 the bundle dashboard's request counters move. Test your usual Azure/LM Studio routes
 if you use them. Enable/Pause should work without restarting OpenCodex. Exact retrieval
 must still work after Pause. Native steering/injection and unsupported structured
-results bypass compression. Savings estimates are not provider billing measurements.
+results bypass compression. Plain text function and custom-tool results are eligible,
+including arrays containing only unannotated input_text blocks. Savings estimates are not provider billing measurements.
 
 The automated witness covers real local HTTP/SSE, WebSocket delta turns, full replay
 after reconnect, simultaneous chats, and live pause/resume on an existing socket.

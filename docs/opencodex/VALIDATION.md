@@ -58,3 +58,25 @@ Windows reboot/login, real OpenAI/Azure/LM Studio usage, automatic reverse routi
 and live voice/catalog/native-steering qualification remain open. The full upstream
 suite and docs-site build were not rerun under the user's weekly quota cap.
 The full upstream suite was not repeated for these focused repairs under the quota cap.
+
+## 2026-09-27 current Codex tool-result format repair
+
+Observed real local replay shapes (counts only, no request content copied):
+90 text-only tool outputs across three recent replay files, mostly custom-tool
+outputs, with 74 larger than the selection threshold. The original integration
+accepted only string function outputs, so these were all skipped.
+
+OpenCodex now accepts both function/custom-tool outputs and text-only input_text
+arrays that exactly match parsed text. Mixed-media, annotated, unknown and encrypted
+blocks remain unchanged. Original history, call identity and array wire shape are preserved.
+Three regressions failed before the change, then 19 focused tests passed (82 assertions).
+The isolated real-service/adapter/server witness passed 3 tests (85 assertions),
+including custom text blocks and forwarded function text blocks. Exact retrieval,
+HTTP/WebSocket and retry reuse were verified without live provider probes.
+TypeScript, structure and privacy checks passed. The rebuilt executable passed its
+two CLI control tests (18 assertions) and version check.
+
+The checked replacement executable is installed with the prior executable backed up.
+Automatic approval review blocked restarting the running OpenCodex process. Until
+the user quits/reopens OpenCodex, the old process remains active. Real traffic through
+the repaired process is not yet verified. No Windows restart is needed.

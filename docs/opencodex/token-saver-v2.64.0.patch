@@ -1,9 +1,9 @@
 diff --git a/docs-site/src/content/docs/guides/token-saver-prototype.md b/docs-site/src/content/docs/guides/token-saver-prototype.md
 new file mode 100644
-index 0000000..7bf0a77
+index 0000000..62e12be
 --- /dev/null
 +++ b/docs-site/src/content/docs/guides/token-saver-prototype.md
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,30 @@
 +---
 +title: Token Saver prototype
 +description: Pending local tool-result transformation integration.
@@ -22,8 +22,10 @@ index 0000000..7bf0a77
 +An owned native worker is retained until requests finish and a 30-minute retention
 +window expires. Unknown listeners are preserved. Reverse migration remains unqualified.
 +
-+Responses adapter builds support matching plain text function results. Multipart,
-+encrypted and compaction inputs bypass. Native steering/injection and runTurn adapters
++Responses adapter builds support matching plain text function and custom-tool results,
++including arrays made entirely of unannotated `input_text` blocks. Original history
++and call identity remain unchanged; compressed arrays retain their array wire shape.
++Mixed-media, annotated, encrypted and compaction inputs bypass. Native steering/injection and runTurn adapters
 +are unsupported. Voice, catalog and image routes are not transformed.
 +
 +The serving process advertises the typed extension capability through `ocx ready --json`.
@@ -208,10 +210,10 @@ index 0000000..f23b621
 +}
 diff --git a/src/integrations/token-saver.ts b/src/integrations/token-saver.ts
 new file mode 100644
-index 0000000..1c56878
+index 0000000..bc73681
 --- /dev/null
 +++ b/src/integrations/token-saver.ts
-@@ -0,0 +1,169 @@
+@@ -0,0 +1,183 @@
 +import { createHash, randomUUID } from "node:crypto";
 +import { open } from "node:fs/promises";
 +import { isAbsolute } from "node:path";
@@ -280,6 +282,15 @@ index 0000000..1c56878
 +  });
 +}
 +
++/** Match the parser's text concatenation only for unannotated, text-only wire blocks. */
++function wireText(output: unknown): string | undefined {
++  if (typeof output === "string") return output;
++  if (!Array.isArray(output) || !output.length || !output.every(part =>
++    part && part.type === "input_text" && typeof part.text === "string"
++      && Object.keys(part).sort().join(",") === "text,type")) return undefined;
++  return output.map(part => part.text).join("");
++}
++
 +function select(parsed: OcxParsedRequest) {
 +  const entries: Entry[] = [];
 +  const positions = new Map<string, { message: number; raw?: number }>();
@@ -292,8 +303,9 @@ index 0000000..1c56878
 +    let raw: number | undefined;
 +    if (body) {
 +      if (!input) continue;
-+      const matches = input.flatMap((item, i) => item && item.type === "function_call_output"
-+        && item.call_id === message.toolCallId && item.output === text ? [i] : []);
++      const matches = input.flatMap((item, i) => item
++        && (item.type === "function_call_output" || item.type === "custom_tool_call_output")
++        && item.call_id === message.toolCallId && wireText(item.output) === text ? [i] : []);
 +      if (matches.length !== 1) continue;
 +      raw = matches[0];
 +    }
@@ -375,7 +387,11 @@ index 0000000..1c56878
 +      const original = messages[position.message]!;
 +      if (original.role !== "toolResult") return parsed;
 +      messages[position.message] = { ...original, content: replacement.replacement };
-+      if (rawInput && position.raw !== undefined) rawInput[position.raw] = { ...rawInput[position.raw], output: replacement.replacement };
++      if (rawInput && position.raw !== undefined) {
++        const item = rawInput[position.raw]!;
++        rawInput[position.raw] = { ...item, output: Array.isArray(item.output)
++          ? [{ type: "input_text", text: replacement.replacement }] : replacement.replacement };
++      }
 +    }
 +    return { ...parsed, context: { ...parsed.context, messages },
 +      ...(rawInput ? { _rawBody: { ...(parsed._rawBody as object), input: rawInput } } : {}) };
@@ -584,10 +600,10 @@ index a548a7e..0f30eb5 100644
  shared Kiro/Chat splitting and raw display follow [Chat compatibility](providers/chat-compat.md#inline-think-tag-recovery).
  
 diff --git a/structure/transports/responses.md b/structure/transports/responses.md
-index 5674169..e53ccd9 100644
+index 5674169..2f0ed90 100644
 --- a/structure/transports/responses.md
 +++ b/structure/transports/responses.md
-@@ -1,5 +1,31 @@
+@@ -1,5 +1,34 @@
  # Responses Transport
  
 +## Token Saver prototype
@@ -599,12 +615,15 @@ index 5674169..e53ccd9 100644
 +This does not qualify arbitrary reconnect recovery, live providers or native steering.
 +
 +`src/integrations/token-saver.ts` selects string tool-result messages with matching
-+Responses function-call outputs and copies only those fields. The wrapper in
++Responses function or custom-tool outputs and copies only those fields. String
++outputs and arrays containing only unannotated `input_text` blocks are supported;
++text blocks must concatenate exactly to the parsed tool text. Replacements retain
++the output's string/array shape and call identity. The wrapper in
 +`src/server/responses/request-transport.ts` runs before adapter serialization, including
 +forward-auth adapters, after replay reconstruction. History owners retain the original.
 +One closure per request shares bounded content decisions across adapter rebuilds.
 +Its fixed loopback HTTP client ignores proxy environment variables and redirects.
-+Invalid, unavailable, disabled, oversized, encrypted, multipart and compaction inputs
++Invalid, unavailable, disabled, oversized, encrypted, mixed-content and compaction inputs
 +bypass; native steering/injection and runTurn adapters are unsupported. It neither
 +retries provider sends nor changes model/effort selection.
 +
@@ -716,7 +735,7 @@ index d58c3a7..e8e51be 100644
  
 diff --git a/tests/responses/token-saver-pipeline.test.ts b/tests/responses/token-saver-pipeline.test.ts
 new file mode 100644
-index 0000000..20413b4
+index 0000000..79537f8
 --- /dev/null
 +++ b/tests/responses/token-saver-pipeline.test.ts
 @@ -0,0 +1,190 @@
@@ -893,13 +912,13 @@ index 0000000..20413b4
 +        method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer fixture-token" },
 +        body: JSON.stringify({ model: providerName + "/gpt-5.6-sol", stream: true, reasoning: { effort: "high" }, input: [
 +          { type: "function_call", call_id: "c1", name: "exec", arguments: "{}" },
-+          { type: "function_call_output", call_id: "c1", output: original },
++          { type: "function_call_output", call_id: "c1", output: [{ type: "input_text", text: original }] },
 +        ] }),
 +      }), config, { model: "", provider: "" }, { inboundTransport });
 +      expect(response.status).toBe(200);
 +      expect(await response.text()).toContain("response.completed");
 +      const observed = bodies.at(-1);
-+      expect(observed.input.find((i: any) => i.type === "function_call_output").output).toContain("Headroom request overview v1");
++      expect(observed.input.find((i: any) => i.type === "function_call_output").output[0].text).toContain("Headroom request overview v1");
 +      expect(observed.reasoning.effort).toBe("high");
 +      expect(observed.model).toBe("gpt-5.6-sol");
 +    }
@@ -912,10 +931,10 @@ index 0000000..20413b4
 +});
 diff --git a/tests/responses/token-saver-wire.test.ts b/tests/responses/token-saver-wire.test.ts
 new file mode 100644
-index 0000000..84cb541
+index 0000000..952d72b
 --- /dev/null
 +++ b/tests/responses/token-saver-wire.test.ts
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,66 @@
 +import { expect, test } from "bun:test";
 +import { createTokenSaverTransform } from "../../src/integrations/token-saver";
 +import { createResponsesPassthroughAdapter } from "../../src/adapters/openai-responses";
@@ -931,8 +950,10 @@ index 0000000..84cb541
 +  const original = "Unicode 中🙂 exact worker detail 123456789\n".repeat(90);
 +  const raw = { model: "chosen", reasoning: { effort: "high" }, stream: false, input: [
 +    { role: "user", content: "Inspect the tool output" },
-+    { type: "function_call", call_id: "c1", name: "exec", arguments: "{}" },
-+    { type: "function_call_output", call_id: "c1", output: original },
++    { type: "custom_tool_call", call_id: "c1", name: "exec", input: "fixture" },
++    { type: "custom_tool_call_output", call_id: "c1", output: [
++      { type: "input_text", text: original.slice(0, 100) }, { type: "input_text", text: original.slice(100) },
++    ] },
 +  ] };
 +  const input = parseRequest(raw);
 +  const before = structuredClone(input);
@@ -982,14 +1003,15 @@ index 0000000..84cb541
 +});
 diff --git a/tests/responses/token-saver.test.ts b/tests/responses/token-saver.test.ts
 new file mode 100644
-index 0000000..15c09fa
+index 0000000..ff52d5d
 --- /dev/null
 +++ b/tests/responses/token-saver.test.ts
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,164 @@
 +import { test, expect } from "bun:test";
 +import { createTokenSaverTransform } from "../../src/integrations/token-saver";
 +import type { OcxParsedRequest } from "../../src/types";
 +import { configSchema } from "../../src/config/schema/config-schema";
++import { parseRequest } from "../../src/responses/parser";
 +
 +const text = "worker output line with details\n".repeat(100);
 +const config = { enabled: true, endpoint: "http://127.0.0.1:8789", tokenFile: "unused", protocol: 1 as const };
@@ -1084,9 +1106,48 @@ index 0000000..15c09fa
 +  expect(await transform(p)).toBe(p); expect(calls).toBe(1);
 +});
 +
-+test("wire disagreement and multipart outputs are not flattened", async () => {
-+  const p = parsed(); (p._rawBody as any).input[1].output = [{ type: "input_text", text }];
++test("wire disagreement is not overwritten", async () => {
++  const p = parsed(); (p._rawBody as any).input[1].output = [{ type: "input_text", text: text + "different" }];
 +  const { transform, sent } = setup(); expect(await transform(p)).toBe(p); expect(sent).toHaveLength(0);
++});
++
++test.each(["function", "custom_tool"])("%s text-block outputs reach compression without changing retained history", async kind => {
++  const raw = { model: "chosen", input: [
++    { type: kind + "_call", call_id: "c1", name: "exec", ...(kind === "function" ? { arguments: "{}" } : { input: "fixture" }) },
++    { type: kind + "_call_output", call_id: "c1", output: [
++      { type: "input_text", text: text.slice(0, 80) },
++      { type: "input_text", text: text.slice(80) },
++    ] },
++  ] };
++  const p = parseRequest(raw), before = structuredClone(p), { transform, sent } = setup();
++  const result = await transform(p);
++  expect(sent).toHaveLength(1); expect(sent[0].entries[0].text).toBe(text);
++  expect(p).toEqual(before);
++  const output = (result._rawBody as any).input[1];
++  expect(output.type).toBe(kind + "_call_output"); expect(output.call_id).toBe("c1");
++  expect(output.output).toEqual([{ type: "input_text", text: result.context.messages[1]!.content }]);
++  expect(output.output[0].text).toContain("worker summary");
++});
++
++test("custom-tool string outputs reach compression", async () => {
++  const p = parsed(); (p._rawBody as any).input[1].type = "custom_tool_call_output";
++  const { transform, sent } = setup();
++  expect((await transform(p)).context.messages[1]!.content).toContain("worker summary");
++  expect(sent).toHaveLength(1);
++});
++
++test("mixed, encrypted, annotated and unknown tool blocks bypass intact", async () => {
++  for (const extra of [
++    { type: "input_image", image_url: "data:image/png;base64,fixture" },
++    { type: "encrypted_content", encrypted_content: "opaque" },
++    { type: "input_audio", audio_url: "fixture" },
++    { type: "input_text", text: "", annotations: ["preserve"] },
++    { type: "unknown", text: "" },
++  ]) {
++    const p = parsed(); (p._rawBody as any).input[1].output = [{ type: "input_text", text }, extra];
++    const { transform, sent } = setup();
++    expect(await transform(p)).toBe(p); expect(sent).toHaveLength(0);
++  }
 +});
 +
 +test("a long-running request cannot reuse an expired retrieval reference", async () => {

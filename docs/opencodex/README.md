@@ -2,7 +2,9 @@
 
 The token-saver-v2.64.0.patch file targets OpenCodex v2.64.0, commit
 4cb43cb0a8c6b60318cf0d63ffa8e57fd18407b2. Candidate source commit:
-f6278f4b99ed24ce421838eea728b03d42aaeef9.
+d51b66a104f5cf200058c253038d2407768779bc.
+
+Text-only arrays and custom-tool outputs now reach compression; mixed-media and annotated blocks stay unchanged.
 
 The patch adds optional outbound transforms, strict default-off configuration,
 conditional extension commands, live persisted policy, validated runtime readiness,
