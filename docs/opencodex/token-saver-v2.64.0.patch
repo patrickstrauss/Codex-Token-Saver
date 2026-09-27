@@ -381,6 +381,19 @@ index 0000000..1c56878
 +      ...(rawInput ? { _rawBody: { ...(parsed._rawBody as object), input: rawInput } } : {}) };
 +  };
 +}
+diff --git a/src/lib/standalone.ts b/src/lib/standalone.ts
+index 72cc9f3..2ec158c 100644
+--- a/src/lib/standalone.ts
++++ b/src/lib/standalone.ts
+@@ -7,7 +7,7 @@ export function isStandaloneBinary(): boolean {
+ }
+ 
+ export function isStandaloneModuleUrl(url: string): boolean {
+-  return url.includes("/$bunfs/") || /^file:\/\/\/[A-Za-z]:\/~BUN\//.test(url);
++  return url.includes("/$bunfs/") || /^file:\/\/\/[A-Za-z]:\/(?:~|%7[Ee])BUN\//.test(url);
+ }
+ 
+ /** Directory containing the compiled executable and its copied runtime assets. */
 diff --git a/src/server/index/serve-options.ts b/src/server/index/serve-options.ts
 index 8cd278c..64b445f 100644
 --- a/src/server/index/serve-options.ts
@@ -544,6 +557,19 @@ index 9330ca6..43a1ceb 100644
  Native function-result injection follows [the separate opt-in control contract](transports/streaming-health.md#experimental-native-function-result-injection); this surface does not infer upstream support or alter its defaults.
  
  Native steering follows [the shared WebSocket contract](transports/streaming-health.md#experimental-native-mid-turn-steering); this surface's defaults remain unchanged.
+diff --git a/structure/ops/service-and-sidecars.md b/structure/ops/service-and-sidecars.md
+index ff2c772..26b7d44 100644
+--- a/structure/ops/service-and-sidecars.md
++++ b/structure/ops/service-and-sidecars.md
+@@ -218,7 +218,7 @@ The service loads the optional `compactionRouting` block from persisted configur
+ [Responses ingress](../transports/responses-failover.md#compaction-routing-overrides) applies it to individual compaction
+ requests whose trigger the block names.
+ 
+-Standalone binaries use `src/lib/standalone.ts` to detect the Bun `$bunfs` runtime and
++Standalone binaries use `src/lib/standalone.ts` to detect Bun's `$bunfs` or Windows `~BUN` runtime (including URL-encoded `%7EBUN`) and
+ `src/service/state.ts` to compose durable service commands as `<execPath> start`, without a
+ source-tree CLI path. The copied `gui/dist` directory is located by `src/server/gui-static.ts`;
+ `OPENCODEX_GUI_DIST` remains an explicit override.
 diff --git a/structure/providers-and-adapters.md b/structure/providers-and-adapters.md
 index a548a7e..0f30eb5 100644
 --- a/structure/providers-and-adapters.md
@@ -674,6 +700,20 @@ index 53d5351..2f387e9 100644
    "tool-argument-integers.test.ts": "adapters",
    "tool-catalog-nudge.test.ts": "adapters",
    "tool-choice-performance.test.ts": "adapters",
+diff --git a/tests/lib/standalone.test.ts b/tests/lib/standalone.test.ts
+index d58c3a7..e8e51be 100644
+--- a/tests/lib/standalone.test.ts
++++ b/tests/lib/standalone.test.ts
+@@ -14,6 +14,9 @@ test("source Bun processes are not identified as compiled binaries", () => {
+ test("compiled module URL markers are recognized on POSIX and Windows", () => {
+   expect(isStandaloneModuleUrl("file:///$bunfs/root/src/cli/index.ts")).toBe(true);
+   expect(isStandaloneModuleUrl("file:///B:/~BUN/root/src/cli/index.ts")).toBe(true);
++  expect(isStandaloneModuleUrl("file:///B:/%7EBUN/root/ocx.exe")).toBe(true);
++  expect(isStandaloneModuleUrl("file:///B:/%7eBUN/root/ocx.exe")).toBe(true);
++  expect(isStandaloneModuleUrl("file:///C:/source/%7EBUN/standalone.ts")).toBe(false);
+   expect(isStandaloneModuleUrl("file:///Users/x/src/lib/standalone.ts")).toBe(false);
+ });
+ 
 diff --git a/tests/responses/token-saver-pipeline.test.ts b/tests/responses/token-saver-pipeline.test.ts
 new file mode 100644
 index 0000000..20413b4

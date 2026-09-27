@@ -1,10 +1,26 @@
 # Validation — 2026-09-27
 
 OpenCodex baseline: 4cb43cb0a8c6b60318cf0d63ffa8e57fd18407b2 (v2.64.0).
-Candidate source: c7afc595633f41e27ab36bcb46c3d8965cf48bd9.
+Candidate source: f6278f4b99ed24ce421838eea728b03d42aaeef9.
 Bundle branch: codex/opencodex-compatibility.
 
-## Current candidate evidence
+## Installed repairs
+
+- Windows GUI path regression reproduced, then fixed: 8 focused OpenCodex tests,
+  46 assertions, TypeScript and structure checks passed. The rebuilt executable served
+  HTML and both entry assets from an isolated home without a GUI-path override.
+- Installed with a checksum-checked executable backup and restarted through `ocx restart`.
+  The live dashboard rendered Online with its three configured providers.
+- Token Saver runtime smoke passed. A cold synthetic transform timed out and safely
+  bypassed; a fresh request compressed successfully and retrieved the exact original.
+- Serena's Codex-side disabled flag was outside the bundle's comment marker.
+  Enable/disable now handles that field as part of the owned MCP table: 16 tests passed.
+  The user approved restoration; a live stdio session activated this checkout and read
+  symbols and original bodies. Existing Codex tasks still need to reload their MCP tools.
+- Installed runtime and dashboard checks are local; no provider probe was sent.
+  Shared weekly meter: 5%, within the approved 8% cap.
+
+## Earlier candidate evidence
 
 - Offline wire/core/real-server witness: **3 tests, 85 assertions passed**. Real
   HTTP/SSE and WebSocket sockets cover delta, reconnect full replay, concurrent chats,
@@ -35,9 +51,10 @@ additional count to add to this run. Process/clock drain tests do not prove a re
 
 The witness uses deterministic compression inside the real local service, with a
 separate prior installed-SDK compression/exact-recovery witness. No paid provider was
-called. No live install, route, credentials, chosen model or effort was modified.
+called by that witness. Subsequent live repairs are recorded above. Provider settings,
+credentials, chosen model and effort were preserved.
 
 Windows reboot/login, real OpenAI/Azure/LM Studio usage, automatic reverse routing,
 and live voice/catalog/native-steering qualification remain open. The full upstream
 suite and docs-site build were not rerun under the user's weekly quota cap.
-The shared meter last read 4%; the user raised the cap from 5% to 8%.
+The full upstream suite was not repeated for these focused repairs under the quota cap.
