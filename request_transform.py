@@ -119,34 +119,68 @@ class TransformService:
         self.enabled = False
         self._executor.shutdown(wait=True, cancel_futures=True)
 
-    def _work(self, entries):
+    def _work(self, entries, deadline):
         replacements = []
+        complete = True
         for entry in entries:
-            text = entry['text']
-            if (len(text.encode('utf-8')) < 1024 or not text.strip()
-                    or text.lstrip().startswith(('{', '['))
-                    or '<<ccr:' in text or '[Headroom request overview v1' in text
-                    or exact_response_is_verified(text, root=self.root)):
-                continue
-            compressed = self.compressor(text)
-            if not isinstance(compressed, str) or not compressed.strip():
-                raise ValueError('Invalid compressor result')
-            # SDK CCR state is process-local; expose only our durable reference.
-            compressed = re.sub(r'<<ccr:[0-9a-f]{12},[^\r\n]*?>>', '', compressed).strip()
-            if not compressed or '<<ccr:' in compressed:
-                continue
-            ref = hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]
-            replacement = f'[Headroom request overview v1; exact original: headroom_retrieve(content_hash="{ref}")]\n{compressed}'
-            if (len(replacement.encode('utf-8')) >= len(text.encode('utf-8'))
-                    or self.token_counter(replacement) >= self.token_counter(text)):
-                continue
-            if self.store.put(text) != ref or self.store.retrieve(ref) != text:
-                raise ValueError('Original could not be retained')
-            replacements.append({'id': entry['id'], 'original_sha256': entry['original_sha256'],
-                                 'replacement': replacement, 'retrieval_reference': ref})
-        return replacements
+            # Replayed history must not recompress every old output when a new
+            # entry arrives. Keep completed work even if its batch times out.
+            key = ('entry', entry['original_sha256'])
+            result = self._cached(key)
+            if result is None:
+                if time.monotonic() >= deadline:
+                    complete = False
+                    continue  # Later cache hits remain useful even after timeout.
+                replacement = self._compress_entry(entry)
+                result = _reply(None, 'compressed' if replacement else 'unchanged',
+                                [replacement] if replacement else [])
+                self._remember(key, result)
+            replacements.extend(dict(item, id=entry['id']) for item in result['replacements'])
+        return replacements, complete
+
+    def _compress_entry(self, entry):
+        text = entry['text']
+        if (len(text.encode('utf-8')) < 1024 or not text.strip()
+                or text.lstrip().startswith(('{', '['))
+                or '<<ccr:' in text or '[Headroom request overview v1' in text
+                or exact_response_is_verified(text, root=self.root)):
+            return None
+        compressed = self.compressor(text)
+        if not isinstance(compressed, str) or not compressed.strip():
+            raise ValueError('Invalid compressor result')
+        # SDK CCR state is process-local; expose only our durable reference.
+        compressed = re.sub(r'<<ccr:[0-9a-f]{12},[^\r\n]*?>>', '', compressed).strip()
+        if not compressed or '<<ccr:' in compressed:
+            return None
+        ref = hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]
+        replacement = f'[Headroom request overview v1; exact original: headroom_retrieve(content_hash="{ref}")]\n{compressed}'
+        if (len(replacement.encode('utf-8')) >= len(text.encode('utf-8'))
+                or self.token_counter(replacement) >= self.token_counter(text)):
+            return None
+        if self.store.put(text) != ref or self.store.retrieve(ref) != text:
+            raise ValueError('Original could not be retained')
+        return {'id': entry['id'], 'original_sha256': entry['original_sha256'],
+                'replacement': replacement, 'retrieval_reference': ref}
+
+    def _cached(self, key):
+        with self._lock:
+            cached = self._cache.get(key)
+            if cached is None:
+                return None
+            if self.clock() - cached[0] < TTL_SECONDS:
+                try:
+                    for entry in cached[1]['replacements']:
+                        self.store.retrieve(entry['retrieval_reference'])
+                    self._cache.move_to_end(key)
+                    return cached[1]
+                except (KeyError, ValueError, sqlite3.Error):
+                    pass
+            self._cache_bytes -= self._cache.pop(key)[2]
+            return None
 
     def _remember(self, key, result):
+        if result['outcome'] not in ('compressed', 'unchanged'):
+            return  # A transient bypass must never become a 30-minute decision.
         size = len(json.dumps(result, ensure_ascii=False).encode('utf-8'))
         if size > MAX_BYTES:
             return
@@ -155,12 +189,12 @@ class TransformService:
                 self._cache_bytes -= self._cache.pop(key)[2]
             self._cache[key] = (self.clock(), result, size)
             self._cache_bytes += size
-            while len(self._cache) > 128 or self._cache_bytes > 32 * 1024 * 1024:
+            while len(self._cache) > 512 or self._cache_bytes > 32 * 1024 * 1024:
                 self._cache_bytes -= self._cache.popitem(last=False)[1][2]
 
-    def _run_work(self, entries):
+    def _run_work(self, entries, deadline):
         try:
-            return self._work(entries)
+            return self._work(entries, deadline)
         finally:
             # Release on real worker completion, not an event-loop callback that
             # can be delayed across several immediately completed awaits.
@@ -178,45 +212,44 @@ class TransformService:
         except (ValueError, TypeError, RecursionError):
             return _reply(None, 'error', reason='invalid_request')
         request_id = value['request_id']
-        # Every request rechecks policy before using cached output.
-        key = (value['scope_id'], tuple((e['id'], e['original_sha256']) for e in value['entries']))
+        deadline = time.monotonic() + value['budget_ms'] / 1000
+        # Every request rechecks policy and durable originals before cache reuse.
         with self._lock:
             if not self.enabled or not self.ready:
                 return _reply(request_id, 'bypassed', reason='unavailable')
-            cached = self._cache.get(key)
-            if cached and self.clock() - cached[0] < TTL_SECONDS:
-                try:
-                    for entry in cached[1]['replacements']:
-                        self.store.retrieve(entry['retrieval_reference'])
-                    return dict(cached[1], request_id=request_id)
-                except (KeyError, ValueError, sqlite3.Error):
-                    pass
+            replacements, complete = self._work(value['entries'], 0)
+            if complete:
+                return _reply(request_id, 'compressed' if replacements else 'unchanged', replacements)
             if self.clock() < self._open_until:
-                return _reply(request_id, 'bypassed', reason='circuit_open')
+                return _reply(request_id, 'compressed' if replacements else 'bypassed', replacements, reason='circuit_open')
             if self._active >= 2 or (self._failures >= 3 and self._active):
-                return _reply(request_id, 'bypassed', reason='busy')
+                return _reply(request_id, 'compressed' if replacements else 'bypassed', replacements, reason='busy')
             self._active += 1
-        future = asyncio.get_running_loop().run_in_executor(self._executor, self._run_work, value['entries'])
+        future = asyncio.get_running_loop().run_in_executor(self._executor, self._run_work, value['entries'], deadline)
         future.add_done_callback(self._consume)
         try:
-            replacements = await asyncio.wait_for(asyncio.shield(future), value['budget_ms'] / 1000)
+            replacements, complete = await asyncio.wait_for(asyncio.shield(future), max(.001, deadline - time.monotonic()))
             if not self.enabled:
                 return _reply(request_id, 'bypassed', reason='unavailable')
+            if not complete:
+                raise TimeoutError()
             result = _reply(request_id, 'compressed' if replacements else 'unchanged', replacements)
             if len(json.dumps(result, ensure_ascii=False).encode('utf-8')) > MAX_BYTES:
                 raise ValueError('Reply exceeds limit')
             with self._lock:
                 self._failures, self._open_until = 0, 0.0
         except asyncio.CancelledError:
-            self._remember(key, _reply(request_id, 'bypassed', reason='cancelled'))
             raise
         except Exception as error:
-            result = _reply(request_id, 'bypassed', reason='timeout' if isinstance(error, TimeoutError) else 'transform_failed')
+            if not self.enabled:
+                return _reply(request_id, 'bypassed', reason='unavailable')
+            replacements, _ = self._work(value['entries'], 0)
+            result = _reply(request_id, 'compressed' if replacements else 'bypassed', replacements,
+                            reason='timeout' if isinstance(error, TimeoutError) else 'transform_failed')
             with self._lock:
                 self._failures += 1
                 if self._failures >= 3:
                     self._open_until = self.clock() + 30
-        self._remember(key, result)
         with self._lock:
             self.counts[result['outcome']] += 1
         return result

@@ -46,6 +46,13 @@ The ledger contains only a timestamp, token counts and outcome; measurement fail
 cannot fail compression. Bounded reads disclose partial ledger coverage.
 Worker outcome counts reset on restart, exclude cache hits, and include diagnostic checks.
 
+The worker reuses completed results for identical tool text across request histories.
+Temporary failures are not cached. When the request deadline expires, completed
+replacements can still be returned while remaining text passes through unchanged.
+Background work stops before starting another output after that deadline; an inference
+already running can finish and supply a reusable result for a later request. Cached
+originals are checked before reuse, and cache memory remains bounded.
+
 RTK's totals cover commands actually routed through RTK. Small output, exact-output
 options, complex shell scripts and ambiguous commands can produce no savings or bypass
 filtering. A ready runtime does not imply every tool call is compressed.

@@ -119,6 +119,93 @@ class TransformTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['replacements'], [])
         self.assertNotIn('PRIVATE', json.dumps(result))
 
+    async def test_completed_work_after_timeout_is_reused_on_retry(self):
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        def slow(text):
+            self.calls += 1
+            gate.wait(2)
+            return 'Useful summary.'
+        self.service.compressor = slow
+        timed_out = await self.service.transform(request(self.text, budget_ms=10))
+        self.assertEqual(timed_out['reason'], 'timeout')
+        gate.set()
+        async with asyncio.timeout(2):
+            while self.service._active:
+                await asyncio.sleep(.005)
+        reply = await self.service.transform(request(self.text, request_id='retry'))
+        self.assertEqual(reply['outcome'], 'compressed')
+        self.assertEqual(self.calls, 1)
+        self.assertEqual(self.store.retrieve(reply['replacements'][0]['retrieval_reference']), self.text)
+
+    async def test_growing_history_reuses_outputs_across_requests_and_ids(self):
+        await self.service.transform(request(self.text))
+        value = request(self.text, scope_id='another-request')
+        value['entries'][0]['id'] = 'changed-position'
+        value['entries'].append(request(self.text + 'New details.')['entries'][0])
+        result = await self.service.transform(value)
+        self.assertEqual(self.calls, 2)
+        self.assertEqual([x['id'] for x in result['replacements']], ['changed-position', 'e1'])
+
+    async def test_timeout_keeps_partial_savings_and_stops_starting_more_work(self):
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        calls = []
+        def compress(text):
+            calls.append(text)
+            if text.endswith('slow'):
+                gate.wait(2)
+            return 'Useful summary.'
+        self.service.compressor = compress
+        value = request(self.text, budget_ms=40)
+        for suffix in ('slow', 'later'):
+            entry = request(self.text + suffix)['entries'][0]
+            entry['id'] = suffix
+            value['entries'].append(entry)
+        reply = await self.service.transform(value)
+        self.assertEqual(reply['outcome'], 'compressed')
+        self.assertEqual([x['id'] for x in reply['replacements']], ['e1'])
+        gate.set()
+        async with asyncio.timeout(2):
+            while self.service._active:
+                await asyncio.sleep(.005)
+        self.assertEqual(len(calls), 2, 'Must not start another output after the deadline')
+        reply = await self.service.transform(dict(value, budget_ms=500))
+        self.assertEqual(len(reply['replacements']), 3)
+        self.assertEqual(len(calls), 3)
+
+    async def test_busy_workers_can_still_return_cached_savings(self):
+        await self.service.transform(request(self.text))
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        self.service.compressor = lambda text: gate.wait(2) and 'Useful summary.'
+        await asyncio.gather(
+            self.service.transform(request(self.text + 'slow', budget_ms=10)),
+            self.service.transform(request(self.text + 'slow2', budget_ms=10)))
+        reply = await self.service.transform(request(self.text, scope_id='new-request'))
+        self.assertEqual(reply['outcome'], 'compressed')
+        gate.set()
+
+    async def test_transient_failure_is_not_cached_for_thirty_minutes(self):
+        self.service.compressor = lambda text: (_ for _ in ()).throw(ValueError('PRIVATE'))
+        self.assertEqual((await self.service.transform(request(self.text)))['outcome'], 'bypassed')
+        self.service.compressor = lambda text: 'Recovered summary.'
+        self.assertEqual((await self.service.transform(request(self.text)))['outcome'], 'compressed')
+
+    async def test_unchanged_output_is_also_reused_in_growing_history(self):
+        calls = []
+        self.service.compressor = lambda text: calls.append(text) or text
+        await self.service.transform(request(self.text))
+        await self.service.transform(request(self.text, scope_id='new-request'))
+        self.assertEqual(calls, [self.text])
+
+    async def test_entry_cache_rechecks_original_expiry_across_request_scopes(self):
+        await self.service.transform(request(self.text))
+        self.now += 1801
+        reply = await self.service.transform(request(self.text, scope_id='later-request'))
+        self.assertEqual(self.calls, 2)
+        self.assertEqual(self.store.retrieve(reply['replacements'][0]['retrieval_reference']), self.text)
+
     async def test_pause_keeps_originals_and_restart_can_retrieve(self):
         reply = await self.service.transform(request(self.text))
         ref = reply['replacements'][0]['retrieval_reference']

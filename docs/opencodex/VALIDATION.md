@@ -101,3 +101,23 @@ ordinary traffic increased the visible total to 22,494. The dashboard screenshot
 and LIVE-METRICS-VALIDATION.json are in the combined candidate folder. New totals
 begin at installation; old savings cannot be backfilled. These are worker-response
 token estimates, not verified provider acceptance, whole-request or quota savings.
+
+## Recover compression after batch timeouts — 2026-09-29
+
+A local replay of 100 real tool outputs (842,146 bytes) timed out in 484ms and
+returned the same cached timeout in 31ms on retry. Whole-batch failure caching and
+recompressing growing histories could suppress savings for 30 minutes. An initial
+candidate also exposed excessive background processing after the response deadline.
+
+The final worker caches individual completed outputs, checks durable originals,
+does not cache transient bypasses, preserves partial savings on timeout/busy/circuit
+fallback, and stops starting new outputs after the deadline. Seven regression tests
+cover timeout recovery, growing histories, unchanged output reuse, expiry, partial
+results, and busy-worker cache access. All 20 core/ledger tests and 5 endpoint tests
+passed. The real-engine replay returned 2 then 3 replacements in 467ms and 468ms;
+all referenced originals matched, without a provider request.
+
+Only the owned worker was restarted after a checked source backup. Normal traffic
+then advanced today's ledger from 4,279,938 to 4,282,598 (2,660 estimated tokens).
+No local HTTP diagnostic was sent after installation. This verifies the observed
+live connection; it is not a quota measurement or a qualification of every provider.
