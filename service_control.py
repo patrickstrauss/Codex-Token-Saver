@@ -142,7 +142,11 @@ class ServiceController:
                 self.logs.mkdir(parents=True, exist_ok=True)
                 with (self.logs / f'{name}.stdout.log').open('ab') as stdout, (self.logs / f'{name}.stderr.log').open('ab') as stderr:
                     process = subprocess.Popen(command, cwd=folder, env=environment, stdin=subprocess.DEVNULL,
-                        stdout=stdout, stderr=stderr, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                        stdout=stdout, stderr=stderr,
+                        # CREATE_NO_WINDOW alone still inherits Codex/terminal
+                        # job lifetime: closing that starter can kill services.
+                        creationflags=(subprocess.CREATE_NO_WINDOW | subprocess.CREATE_BREAKAWAY_FROM_JOB)
+                                      if os.name == 'nt' else 0)
                 deadline = time.monotonic() + (60 if name == 'headroom' else 15)
                 while time.monotonic() < deadline:
                     if self.probe(name):

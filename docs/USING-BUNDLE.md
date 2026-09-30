@@ -50,6 +50,8 @@ Checks and installs are manual. Model GGUF files are not automatically replaced.
 
 ## If something stops working
 
+The Windows dashboard starts independently of the Codex or terminal process that launches it. Closing that starter should not stop the dashboard. If `http://127.0.0.1:8095/` refuses a connection, click the Token Saver tray icon to check/start the service, then refresh the page; the tray also retries automatically once a minute.
+
 Check the affected component's status, latest activity and error. No recent use can mean the current workload did not invoke that component. A selected but bypassed request compressor is a different condition from a broken RTK launcher.
 
 Use the dashboard controls for routine changes. If the local request relay prevents Codex from connecting, run `Restore-Codex-Direct.ps1` from the installed bundle and restart Codex. Preserve state and backup directories during repairs. Compression is lossy; exact-output bypasses, original retrieval and task-level validation are required whenever omitted details could change the result.
