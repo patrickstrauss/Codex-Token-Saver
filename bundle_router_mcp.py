@@ -10,7 +10,7 @@ from bundle_router import query
 from exact_retrieval import sign_exact_response
 
 ROOT = Path(__file__).resolve().parent
-server = Server('codex-token-saver', instructions='Experimental Laya-first bundle query. Supply a bounded intent and explicit project/arguments. Laya selects among enabled tools; ambiguous decisions return without executing. This does not intercept other tools or change Codex models. Use exact=true before precise edits or quotations. Summary start requires an explicit user request; browsers must already have a named session.')
+server = Server('codex-token-saver', instructions='Main entry point for explicit Codex Token Saver work. Call bundle_query with a bounded intent and explicit project/arguments; Laya selects enabled tools and delivery sequence. Direct bundle adapters also route through Laya. Ambiguous decisions stop without execution. Automatic compression and command hooks remain fast. Codex models and other tools are unchanged. Use exact=true before precise edits or quotations. Supply caller_task_id only when the current chat UUID is known. Summary start requires an explicit user request; browsers must already have a named session.')
 
 
 @server.list_tools()
@@ -20,7 +20,8 @@ async def list_tools():
                'pattern': 'Literal ast-grep syntax pattern; never shell code.',
                'language': 'ast-grep language, for example javascript or python.',
                'browser_session': 'Existing named Playwright CLI session; read-only snapshot only.',
-               'task_id': 'Explicit local task UUID for summaries.'}
+               'task_id': 'Explicit local task UUID for summaries.',
+               'caller_task_id': 'Current caller chat UUID for activity attribution, if known. Never use the summary target or another chat ID.'}
     properties = {'intent': {'type': 'string', 'maxLength': 1200}, 'project': {'type': 'string'},
                   **{key: {'type': 'string', 'description': description, 'maxLength': 500} for key, description in strings.items()},
                   'git_operation': {'enum': ['status', 'diff', 'log']},

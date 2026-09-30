@@ -231,3 +231,15 @@ def test_serena_configuration_and_history_do_not_establish_loaded_task_readiness
     assert row['restart_required'] is False
     assert snapshot['unverified_count'] == 1
     assert 'unverified' in row['reason']
+
+
+def test_new_verified_calls_stay_separate_from_legacy_counters(control):
+    from bundle_activity import record
+    record(control.root, 'serena', 'completed', kind='informational')
+    row = by_id(control)['serena']
+    assert row.get('activity_source') == 'legacy_mixed'
+    assert row.get('last_verified_call') is None
+    record(control.root, 'serena', 'completed')
+    row = by_id(control)['serena']
+    assert row['last_verified_call']
+    assert row['activity'] == {}

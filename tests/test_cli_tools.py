@@ -52,6 +52,7 @@ def test_invocation_preserves_argv_cwd_exit_and_records_only_metadata(tmp_path):
     set_preference(tmp_path, 'ast_grep', True)
     args = ['run', '-p', '$A.foo("a&b")', 'space path.js']
     with patch.object(cli_tools, 'runtime_status', return_value={'available': True, 'versions': {}}), \
+         patch.object(cli_tools, 'authorize_explicit'), \
          patch.object(cli_tools, 'command', return_value=['fixture.exe']) as command, \
          patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 7)) as run:
         assert cli_tools.run(tmp_path, 'ast_grep', args) == 7

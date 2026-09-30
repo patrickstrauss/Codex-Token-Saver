@@ -40,6 +40,24 @@ def _serena_guidance(before, enabled):
     return before + SERENA_GUIDANCE if enabled else before
 
 
+def laya_guidance(before, enabled):
+    start, end = (f'<!-- {kind} CODEX TOKEN SAVER LAYA -->'.encode() for kind in ('BEGIN', 'END'))
+    pattern = re.compile(rb'\r?\n' + re.escape(start) + rb'\r?\n.*?' + re.escape(end) + rb'\r?\n', re.S)
+    matches = list(pattern.finditer(before))
+    if len(matches) > 1 or before.count(start) != len(matches) or before.count(end) != len(matches):
+        raise ValueError('Managed Laya guidance markers are damaged; nothing changed.')
+    text = (b'All explicit Codex Token Saver work goes through Laya. Prefer bundle_laya_router.bundle_query with a short intent, '
+            b'absolute project, and the arguments needed for a file read, symbol lookup, structural search, Git report, browser snapshot, or summary. '
+            b'For structural code matches provide pattern and language; use literal search for plain text. '
+            b'Direct bundle MCP/CLI compatibility entry points also consult Laya before executing. '
+            b'If a decision is ambiguous, narrow the request; do not bypass the gateway by invoking bundled runtime paths. '
+            b'For exact source or edits set exact=true. Include caller_task_id only when the current chat UUID is known; otherwise omit it. '
+            b'Automatic Headroom request compression and RTK command hooks retain their fast paths. '
+            b'Codex model/provider routing and non-bundle tools are unchanged. Respect all component toggles; never enable them automatically.\n')
+    block = b'\n' + start + b'\n' + text + end + b'\n' if enabled else b''
+    return pattern.sub(lambda _: block, before) if matches else before + block
+
+
 def _read(path):
     try:
         data = path.read_bytes()
@@ -137,12 +155,13 @@ class BundleIntegrations:
                 original = _read(agents)
                 changes.append((agents, original, _serena_guidance(original, enabled), agents.exists()))
             if component == 'laya_router':
-                # Registration adds a callable facade, not an instruction to replace
-                # Codex's tool selection or existing direct tool guidance.
                 if enabled:
                     from bundle_router import status as router_status
                     if not router_status(self.root)['available']:
                         raise RuntimeError('Install and validate Laya before enabling its entry tool.')
+                agents = self.home / 'AGENTS.md'
+                original = _read(agents)
+                changes.append((agents, original, laya_guidance(original, enabled), agents.exists()))
             changes = [item for item in changes if item[1] != item[2]]
             stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
             for path, original, updated, existed in changes:

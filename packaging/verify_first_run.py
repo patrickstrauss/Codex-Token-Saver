@@ -4,6 +4,7 @@ from contextlib import closing
 import json
 import os
 from pathlib import Path
+import shutil
 import sqlite3
 import subprocess
 import tomllib
@@ -31,6 +32,41 @@ print(json.dumps({"path": app.RTK_DB_PATH, "history_exists": stats["history_exis
                             cwd=root, env=environment, capture_output=True, text=True,
                             encoding='utf-8', check=True, timeout=30)
     return json.loads(result.stdout)
+
+
+def qualify_rtk_operations(root, environment):
+    """Default Laya Off blocks explicit work; automatic RTK still records history."""
+    environment = dict(environment, HEADROOM_EXACT='1', CTS_ACTIVITY_KIND='diagnostic')
+    for key in ('HEADROOM_COMMAND_ACTIVE', 'CTS_LAYA_INTERNAL'):
+        environment.pop(key, None)
+    preferences = [root / 'settings' / name for name in ('components.json', 'extensions.json')]
+    before_preferences = [path.read_bytes() if path.exists() else None for path in preferences]
+    db = root / 'data/rtk/history.db'
+
+    def records():
+        if not db.exists():
+            return 0
+        with closing(sqlite3.connect(db.as_uri() + '?mode=ro', uri=True)) as connection:
+            return connection.execute('SELECT COUNT(*) FROM commands').fetchone()[0]
+
+    assert records() == 0, 'RTK qualification needs fresh history.'
+    git = shutil.which('git')
+    assert git, 'Git is required for the automatic RTK qualification.'
+    repo = root.parent / 'rtk-command-fixture'
+    repo.mkdir()
+    subprocess.run([git, 'init', '--quiet', str(repo)], env=environment, check=True,
+                   capture_output=True, timeout=30)
+    (repo / 'automatic-qualification.txt').write_text('isolated fixture\n', encoding='utf-8')
+    command = [str(root / 'bin/rtk.exe'), 'git', 'status', '--short']
+    options = dict(cwd=repo, env=environment, capture_output=True, text=True, encoding='utf-8', timeout=30)
+    explicit = subprocess.run(command, **options)
+    assert explicit.returncode == 126 and 'Laya router is Off' in explicit.stderr, explicit.stderr
+    assert explicit.stdout == '' and records() == 0, 'Blocked explicit RTK executed or recorded a command.'
+    automatic = subprocess.run([command[0], '--cts-automatic', *command[1:]], check=True, **options)
+    assert 'automatic-qualification.txt' in automatic.stdout, automatic.stdout
+    assert records() == 1, 'Automatic RTK must execute and record exactly once.'
+    assert before_preferences == [path.read_bytes() if path.exists() else None for path in preferences]
+    return {'explicit_rtk_blocked': True, 'automatic_rtk_verified': True, 'rtk_records': 1}
 
 
 def verify(root, package, config_home):
@@ -90,8 +126,9 @@ def verify(root, package, config_home):
             assert current == repaired_once, 'Repeated repair changed registration or receipt timestamps.'
         repaired_once = current
         assert dashboard_snapshot(root, environment)['history_exists'] is True
+    qualification = qualify_rtk_operations(root, environment)
     print(json.dumps({'passed': True, 'fresh_history_existed': before['history_exists'],
-                      'rtk_records': 0, 'artifact_repair_verified': True, 'repeat_repair_idempotent': True}))
+                      **qualification, 'artifact_repair_verified': True, 'repeat_repair_idempotent': True}))
 
 
 if __name__ == '__main__':

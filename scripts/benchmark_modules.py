@@ -1,5 +1,6 @@
 """Offline quality gates and paired latency samples; never calls Codex or an LLM."""
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
 from functools import partial
 import hashlib
@@ -8,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import sqlite3
 from statistics import median
 import subprocess
 import sys
@@ -92,20 +94,31 @@ def headroom_case(backend, folder, name, original, facts, repeats):
 
 
 def rtk_case(installed, folder, backend, repeats):
-    # Call the underlying binary, not the launcher that forces the live ledger.
+    # A copied launcher exercises the automatic flag while keeping its forced
+    # history path in this disposable bundle, away from installed/live ledgers.
+    launcher = installed / 'bin/rtk.exe'
     binary = installed / 'tools/rtk.exe'
     git = shutil.which('git')
-    if not binary.is_file() or not git:
-        return {'status': 'skipped', 'reason': 'Installed tools/rtk.exe and Git are required.'}
+    if not launcher.is_file() or not binary.is_file() or not git:
+        return {'status': 'skipped', 'reason': 'Installed bin/rtk.exe, tools/rtk.exe and Git are required.'}
+    bundle = folder / 'rtk-bundle'
+    for name in ('bin', 'tools', 'data/rtk'):
+        (bundle / name).mkdir(parents=True)
+    shutil.copy2(launcher, bundle / 'bin/rtk.exe')
+    shutil.copy2(binary, bundle / 'tools/rtk.exe')
+    automatic = bundle / 'bin/rtk.exe'
+    history = bundle / 'data/rtk/history.db'
     repo = folder / 'git-fixture'
     repo.mkdir()
     (folder / 'empty-gitconfig').write_text('', encoding='utf-8')
-    env = dict(os.environ, RTK_DB_PATH=str(folder / 'rtk.db'), RTK_TELEMETRY_DISABLED='1',
+    env = dict(os.environ, RTK_DB_PATH=str(history), RTK_TELEMETRY_DISABLED='1',
                HOME=str(folder), USERPROFILE=str(folder),
                APPDATA=str(folder / 'roaming'), LOCALAPPDATA=str(folder / 'local'),
                XDG_CONFIG_HOME=str(folder / 'config'), XDG_DATA_HOME=str(folder / 'data'),
                GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=str(folder / 'empty-gitconfig'),
-               GIT_CONFIG_COUNT='0', HEADROOM_EXACT='1', NO_COLOR='1')
+               GIT_CONFIG_COUNT='0', HEADROOM_EXACT='1', CTS_ACTIVITY_KIND='diagnostic', NO_COLOR='1')
+    for key in ('HEADROOM_COMMAND_ACTIVE', 'CTS_LAYA_INTERNAL'):
+        env.pop(key, None)
 
     def run(command):
         return subprocess.run(command, cwd=repo, env=env, check=True, capture_output=True,
@@ -119,18 +132,21 @@ def rtk_case(installed, folder, backend, repeats):
     samples = []
     for _ in range(repeats):
         original, original_ms = timed(lambda: run([git, 'diff', '--no-ext-diff', '--no-color']))
-        optimized, optimized_ms = timed(lambda: run([str(binary), 'git', 'diff']))
+        optimized, optimized_ms = timed(lambda: run([str(automatic), '--cts-automatic', 'git', 'diff']))
         # Native re-read is RTK's recovery path. Both removed and added values matter.
         recovered = run([git, 'diff', '--no-ext-diff', '--no-color'])
         check = compare_content(original, optimized, recovered,
                                 ['-timeout_seconds=30', '+timeout_seconds=60',
                                  '-retry_limit=3', '+retry_limit=0'])
         samples.append({**check, 'original_ms': original_ms, 'optimized_ms': optimized_ms})
-    return {'status': 'measured', **summarize_samples(samples),
+    with closing(sqlite3.connect(history.as_uri() + '?mode=ro', uri=True)) as connection:
+        history_records = connection.execute('SELECT COUNT(*) FROM commands').fetchone()[0]
+    assert history_records == repeats, 'Automatic RTK must record exactly one command per sample.'
+    return {'status': 'measured', **summarize_samples(samples), 'history_records': history_records,
             'original_tokens': backend._count(original), 'optimized_tokens': backend._count(optimized),
             'missing_overview_facts': sorted({fact for item in samples for fact in item['missing_overview_facts']}),
             'recovery': 'Native git diff repeated against the unchanged fixture; RTK does not store originals.',
-            'scope': 'Underlying RTK binary only; launcher and stacked Headroom overhead excluded.'}
+            'scope': 'Isolated native automatic RTK launcher; optional Python workers and stacked Headroom excluded.'}
 
 
 def run_benchmark(installed, repeats):

@@ -48,6 +48,9 @@ class HeadroomHookTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix="Headroom hook fixture ")
         cls.bundle = Path(cls.temp.name).resolve()
         (cls.bundle / "bin").mkdir()
+        subprocess.run([str(CSC), '/nologo', '/target:exe',
+                        '/out:' + str(cls.bundle / 'bin/headroom-run.exe'),
+                        str(ROOT / 'native/HeadroomLauncher.cs')], check=True, capture_output=True)
         (cls.bundle / "headroom/.venv/Scripts").mkdir(parents=True)
         source = cls.bundle / "Fixture.cs"
         source.write_text(FIXTURE, encoding="utf-8-sig")
@@ -67,9 +70,6 @@ class HeadroomHookTests(unittest.TestCase):
     def run_hook(self, command=None, event=None, raw=None, bundle=None):
         hook = ROOT / "Headroom-PreToolUse.ps1"
         self.assertTrue(hook.is_file(), "PreToolUse hook has not been implemented")
-        wrapper = ROOT / "bin/headroom-run.exe"
-        self.assertTrue(wrapper.is_file(), "native Headroom wrapper has not been built")
-        shutil.copy2(wrapper, self.bundle / "bin/headroom-run.exe")
         if raw is None:
             raw = json.dumps(event if event is not None else {
                 "hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": str(self.bundle),
@@ -107,7 +107,7 @@ class HeadroomHookTests(unittest.TestCase):
         self.assertEqual(specific["permissionDecision"], "allow")
         updated = specific["updatedInput"]
         self.assertEqual(updated["command"], "& " + ps_literal(self.bundle / "bin/headroom-run.exe") +
-                         " -- " + ps_literal(self.fixture) + " status --short")
+                         " --cts-automatic -- " + ps_literal(self.fixture) + " status --short")
         self.assertEqual(updated["timeout_ms"], 2500)
         self.assertEqual(updated["description"], "Keep me")
         self.assertLess(elapsed, 5)
@@ -298,7 +298,7 @@ class HeadroomHookTests(unittest.TestCase):
                                    command + "; exit $LASTEXITCODE"],
                                   input=b"test stdin", capture_output=True, cwd=self.bundle, timeout=10)
         baseline = json.loads(original.stdout)
-        self.assertEqual(actual["args"][3:], baseline["args"])
+        self.assertEqual(actual["args"][4:], baseline["args"])
         self.assertEqual(actual["input"], baseline["input"])
         self.assertEqual(actual["cwd"], baseline["cwd"])
         self.assertEqual(result.stderr, original.stderr)
@@ -326,7 +326,7 @@ class HeadroomHookTests(unittest.TestCase):
                 path.rename(backup)
                 try:
                     argv = ["space value", "", 'quote"inside', "|", "$(unsafe)", "ภาษาไทย"]
-                    result = subprocess.run([str(self.bundle / "bin/headroom-run.exe"), "--exact", "--",
+                    result = subprocess.run([str(self.bundle / "bin/headroom-run.exe"), "--cts-automatic", "--exact", "--",
                                              str(self.fixture), *argv], input=b"unchanged stdin",
                                             capture_output=True, cwd=self.bundle, timeout=10)
                     self.assertEqual(result.returncode, 37, result.stderr.decode(errors="replace"))
@@ -344,13 +344,36 @@ class HeadroomHookTests(unittest.TestCase):
         runtime.write_bytes(b"broken executable fixture")
         try:
             args = ["space value", "", 'quote"inside', "|", "$(unsafe)"]
-            result = subprocess.run([str(self.bundle / "bin/headroom-run.exe"), "--", str(self.fixture), *args],
+            result = subprocess.run([str(self.bundle / "bin/headroom-run.exe"), "--cts-automatic", "--", str(self.fixture), *args],
                                     input=b"unchanged stdin", capture_output=True, cwd=self.bundle, timeout=10)
             self.assertEqual(result.returncode, 37, result.stderr.decode(errors="replace"))
             value = json.loads(result.stdout)
             self.assertEqual(value["args"], args)
             self.assertEqual(value["input"], "unchanged stdin")
             self.assertEqual(result.stderr, b"fixture stderr\n")
+        finally:
+            runtime.write_bytes(original)
+
+    def test_automatic_fallback_to_rtk_remains_internal(self):
+        nested = self.bundle / 'nested-rtk'
+        (nested / 'bin').mkdir(parents=True)
+        (nested / 'tools').mkdir()
+        launcher = nested / 'bin/rtk.exe'
+        subprocess.run([str(CSC), '/nologo', '/reference:System.Web.Extensions.dll',
+                        '/out:' + str(launcher), str(ROOT / 'native/RtkLauncher.cs')],
+                       check=True, capture_output=True)
+        shutil.copy2(self.fixture, nested / 'tools/rtk.exe')
+        runtime = self.bundle / 'headroom/.venv/Scripts/python.exe'
+        original = runtime.read_bytes()
+        runtime.unlink()
+        try:
+            environment = {k: v for k, v in os.environ.items()
+                           if not k.startswith(('CODEX_', 'HEADROOM_', 'CTS_LAYA_'))}
+            result = subprocess.run([str(self.bundle / 'bin/headroom-run.exe'), '--cts-automatic',
+                                     '--', str(launcher), 'git', 'status'],
+                                    input=b'original stdin', capture_output=True, env=environment, timeout=10)
+            self.assertEqual(result.returncode, 37, result.stderr)
+            self.assertEqual(json.loads(result.stdout)['args'], ['git', 'status'])
         finally:
             runtime.write_bytes(original)
 
@@ -361,7 +384,36 @@ class HeadroomHookTests(unittest.TestCase):
         self.assertNotIn(str(self.bundle), diagnostics)
         records = [json.loads(line) for line in diagnostics.splitlines()]
         self.assertTrue(any(record["outcome"] == "rewritten" for record in records))
-        self.assertTrue(all(set(record) == {"timestamp", "outcome", "reason"} for record in records))
+        self.assertTrue(all(set(record) <= {"timestamp", "outcome", "reason", "task_id"} for record in records))
+        self.assertEqual(set(records[-1]), {"timestamp", "outcome", "reason"})
+
+    def test_diagnostics_include_only_canonical_uuid_session_ids(self):
+        task_id = '01a0e142-bea9-7e43-a984-77da94ac1faa'
+        for command in (explicit(self.bundle, "git status"), "Get-Content private-sentinel.txt"):
+            with self.subTest(command=command):
+                self.run_hook(event={
+                    'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
+                    'cwd': str(self.bundle), 'session_id': task_id.upper(),
+                    'tool_input': {'command': command},
+                })
+                record = json.loads((self.bundle / 'headroom/desktop-state/hook-events.jsonl')
+                                    .read_text(encoding='utf-8-sig').splitlines()[-1])
+                self.assertEqual(record.get('task_id'), task_id)
+                self.assertEqual(set(record), {'timestamp', 'outcome', 'reason', 'task_id'})
+
+    def test_diagnostics_omit_unknown_or_non_uuid_session_ids(self):
+        task_id = '01a0e142-bea9-7e43-a984-77da94ac1faa'
+        for session_id in (None, '', 123, [], {}, [task_id], task_id + '\n',
+                           '{' + task_id + '}', task_id.replace('-', ''),
+                           'private-sentinel ' + task_id, str(self.bundle)):
+            with self.subTest(session_id=session_id):
+                self.run_hook(event={
+                    'tool_name': 'Bash', 'session_id': session_id,
+                    'tool_input': {'command': 'Get-Content private-sentinel.txt'},
+                })
+                record = json.loads((self.bundle / 'headroom/desktop-state/hook-events.jsonl')
+                                    .read_text(encoding='utf-8-sig').splitlines()[-1])
+                self.assertEqual(set(record), {'timestamp', 'outcome', 'reason'})
 
 
 if __name__ == "__main__":

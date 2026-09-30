@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -43,6 +44,9 @@ class HeadroomExactEnvironmentTests(unittest.TestCase):
         source.write_text(FIXTURE, encoding='utf-8-sig')
         subprocess.run([str(CSC), '/nologo', '/reference:System.Web.Extensions.dll',
                         '/out:' + str(cls.fixture), str(source)], check=True, capture_output=True)
+        cls.launcher = Path(cls.build.name) / 'headroom-run.exe'
+        subprocess.run([str(CSC), '/nologo', '/out:' + str(cls.launcher),
+                        str(ROOT / 'native/HeadroomLauncher.cs')], check=True, capture_output=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -54,10 +58,10 @@ class HeadroomExactEnvironmentTests(unittest.TestCase):
         self.bundle = Path(self.temp.name)
         for name in ('bin', 'headroom/.venv/Scripts'):
             (self.bundle / name).mkdir(parents=True)
-        shutil.copy2(ROOT / 'bin/headroom-run.exe', self.bundle / 'bin/headroom-run.exe')
+        shutil.copy2(self.launcher, self.bundle / 'bin/headroom-run.exe')
         shutil.copy2(ROOT / 'headroom_run.py', self.bundle / 'headroom_run.py')
-        shutil.copy2(ROOT / 'headroom/.venv/Scripts/python.exe', self.bundle / 'headroom/.venv/Scripts/python.exe')
-        shutil.copy2(ROOT / 'headroom/.venv/pyvenv.cfg', self.bundle / 'headroom/.venv/pyvenv.cfg')
+        shutil.copy2(sys.executable, self.bundle / 'headroom/.venv/Scripts/python.exe')
+        shutil.copy2(Path(sys.prefix) / 'pyvenv.cfg', self.bundle / 'headroom/.venv/pyvenv.cfg')
         shutil.copy2(self.fixture, self.bundle / 'pytest.exe')
         self.original = (json.dumps([{'id': i, 'status': 'CRITICAL_73' if i == 73 else 'healthy',
                                      'detail': 'Routine status repeated. ' * 5} for i in range(100)],
@@ -77,7 +81,7 @@ class HeadroomExactEnvironmentTests(unittest.TestCase):
         self.environment = dict(os.environ, EXACT_FIXTURE_ROOT=str(self.bundle),
                                 HEADROOM_WORKSPACE_DIR=str(self.state),
                                 PYTHONPATH=os.pathsep.join([str(self.bundle), str(ROOT),
-                                                           str(ROOT / 'headroom/.venv/Lib/site-packages')]))
+                                                           str(Path(sys.prefix) / 'Lib/site-packages')]))
         self.environment.pop('HEADROOM_EXACT', None)
 
     def run_case(self, explicit_flag=False, exit_code=0):

@@ -9,6 +9,14 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# These dependency-light pytest modules use fixtures that unittest cannot run.
+# Keep them in the dashboard environment, which already includes pytest.
+PYTEST_FILES = (
+    'test_bundle_activity.py', 'test_bundle_router.py', 'test_cli_launchers.py',
+    'test_cli_observability.py', 'test_cli_tools.py', 'test_headroom_gateway.py',
+    'test_laya_guidance.py',
+)
+
 
 def cases(suite):
     for value in suite:
@@ -25,8 +33,11 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT / 'logs/verification')
     args = parser.parse_args()
     if args.suite:
-        pattern = 'test_local_summary_engine.py' if args.suite == 'summary' else 'test_*.py'
-        suite = unittest.defaultTestLoader.discover(str(ROOT / 'tests'), pattern=pattern)
+        names = (['test_local_summary_engine.py'] if args.suite == 'summary' else
+                 [path.name for path in sorted((ROOT / 'tests').glob('test_*.py'))
+                  if path.name not in (*PYTEST_FILES, 'test_local_summary_engine.py')])
+        suite = unittest.TestSuite(unittest.defaultTestLoader.discover(str(ROOT / 'tests'), pattern=name)
+                                   for name in names)
         selected = [case for case in cases(suite)
                     if args.suite == 'summary' or not case.id().startswith('test_local_summary_engine.')]
         if not selected:
@@ -42,6 +53,8 @@ def main():
     commands = {
         'core': [str(installed / 'headroom/.venv/Scripts/python.exe'), __file__, '--suite', 'core'],
         'summary': [str(installed / 'local-compaction/.venv/Scripts/python.exe'), __file__, '--suite', 'summary'],
+        'bundle': [str(installed / 'dashboard/.venv/Scripts/python.exe'), '-m', 'pytest',
+                   *[str(ROOT / 'tests' / name) for name in PYTEST_FILES], '-q'],
         'dashboard': [str(installed / 'dashboard/.venv/Scripts/python.exe'), '-m', 'pytest', 'dashboard/tests', '-q'],
     }
     records = {}

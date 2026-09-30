@@ -98,12 +98,13 @@ class Updates:
                 for key in ('rtk', 'headroom', 'serena', 'langmem', 'llama_cpp')]}
 
 
-def create_app():
+def create_app(*, activity_root=None, hook_activity=None, port=18795):
     root = Path(__file__).resolve().parents[1]
     fixture = Flask(__name__, static_folder=str(root / 'static'))
-    guard = register_update_routes(fixture, root, 18795, {}, lambda _: Updates())
+    guard = register_update_routes(fixture, root, port, {}, lambda _: Updates())
     controls, summaries = Controls(), Summaries()
-    register_component_routes(fixture, root, guard, lambda _: controls, lambda _: summaries)
+    register_component_routes(fixture, activity_root or root, guard, lambda _: controls, lambda _: summaries,
+                              hook_activity=hook_activity)
     register_summary_reminder_routes(fixture, root, guard, lambda _: Reminders())
     register_proxy_routes(fixture, root, guard, lambda _: Proxy())
 

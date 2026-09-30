@@ -120,6 +120,76 @@ def probe_runtime(root: Path = ROOT, python_path: Path | None = None) -> dict:
     return report
 
 
+class GatedSerenaBridge:
+    """Reuse the existing navigation/toggle bridge behind per-call routing."""
+    def __init__(self, root, session, *, already_routed=False):
+        from serena_proxy import SerenaBridge
+        self.root = Path(root).resolve()
+        self.bridge = SerenaBridge(self.root, session)
+        self.already_routed = already_routed
+
+    async def call_tool(self, name, arguments):
+        from contextlib import nullcontext
+        from laya_dispatch import AuthorizationError, authorize_explicit, record_activity, routed_call
+        from mcp.types import CallToolResult, TextContent
+        arguments = {} if arguments is None else arguments
+        if not isinstance(arguments, dict):
+            if not self.already_routed:
+                record_activity(self.root, 'serena', 'blocked', kind='operation', error_code='invalid_input')
+            return CallToolResult(isError=True, content=[TextContent(type='text', text='Tool arguments must be an object.')])
+        try:
+            scope = routed_call(self.root, 'serena') if self.already_routed else nullcontext()
+            with scope:
+                authorization = await asyncio.to_thread(authorize_explicit, self.root, 'serena', name)
+        except AuthorizationError as exc:
+            if not self.already_routed:
+                record_activity(self.root, 'serena', 'blocked', kind='operation', error_code=exc.code)
+            return CallToolResult(isError=True, content=[TextContent(type='text', text=str(exc))])
+        owns_event = authorization['status'] != 'already_routed'
+        try:
+            result = await self.bridge.call_tool(name, arguments)
+        except Exception:
+            if owns_event:
+                record_activity(self.root, 'serena', 'failed', kind='operation', error_code='execution_failed')
+            raise
+        if owns_event:
+            record_activity(self.root, 'serena', 'failed' if result.isError else 'completed',
+                            kind='operation', error_code='execution_failed' if result.isError else None)
+        return result
+
+
+async def run_gateway(root, *, already_routed=False):
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    from mcp.server.lowlevel import Server
+    from mcp.server.stdio import stdio_server
+    from serena_proxy import SERENA_INSTRUCTIONS
+
+    root = Path(root).resolve()
+    command, environment = launch_spec(root)
+    environment.pop('CTS_LAYA_INTERNAL', None)
+    params = StdioServerParameters(command=command[0], args=command[1:], env=environment, cwd=str(root))
+    async with stdio_client(params, errlog=sys.stderr) as (upstream_read, upstream_write):
+        async with ClientSession(upstream_read, upstream_write) as session:
+            await session.initialize()
+            tools = (await session.list_tools()).tools
+            if {tool.name for tool in tools} != set(NAVIGATION_TOOLS):
+                raise RuntimeError('Serena navigation tool configuration changed; revalidate the managed runtime.')
+            bridge = GatedSerenaBridge(root, session, already_routed=already_routed)
+            server = Server('bundle-serena', instructions=SERENA_INSTRUCTIONS)
+
+            @server.list_tools()
+            async def list_tools():
+                return tools
+
+            @server.call_tool()
+            async def call_tool(name, arguments):
+                return await bridge.call_tool(name, arguments)
+
+            async with stdio_server() as (read, write):
+                await server.run(read, write, server.create_initialization_options())
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--describe", action="store_true")
@@ -137,8 +207,10 @@ def main(argv=None) -> int:
     if args.describe:
         print(json.dumps(describe_runtime(args.bundle_root), ensure_ascii=False))
         return 0
-    from serena_proxy import run_bridge
-    asyncio.run(run_bridge(args.bundle_root))
+    # Only the router sets this marker on its private, already-routed child.
+    # It is consumed at this entry point and never interpreted by the public API.
+    already_routed = os.environ.pop('CTS_LAYA_INTERNAL', None) == '1'
+    asyncio.run(run_gateway(args.bundle_root, already_routed=already_routed))
     return 0
 
 

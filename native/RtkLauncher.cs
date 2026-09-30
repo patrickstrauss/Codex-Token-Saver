@@ -313,6 +313,68 @@ internal static class RtkLauncher
         return result.ToString();
     }
 
+    private static bool InformationOnly(string[] args)
+    {
+        return args.Length == 0 || Array.IndexOf(new[] {
+            "gain", "help", "--help", "-h", "--version", "-V", "recall", "verify"
+        }, args[0]) >= 0;
+    }
+
+    private static int LayaWorker(string root, string value, bool authorize)
+    {
+        string python = Path.Combine(root, "headroom", ".venv", "Scripts", "python.exe");
+        string script = Path.Combine(root, "laya_dispatch.py");
+        if (!File.Exists(python) || !File.Exists(script))
+        {
+            if (authorize) Console.Error.WriteLine("Codex Token Saver: Laya authorization is unavailable.");
+            return 78;
+        }
+        string mode = authorize ? " --authorize rtk " : " --record-rtk ";
+        var start = new ProcessStartInfo(python, QuoteArgument(script) + mode + QuoteArgument(value));
+        start.UseShellExecute = false;
+        start.CreateNoWindow = true;
+        start.WorkingDirectory = root;
+        start.RedirectStandardInput = true;
+        start.RedirectStandardOutput = true;
+        start.RedirectStandardError = !authorize;
+        // Authorization is an external request; marking it internal would make
+        // the Python gateway bypass its own toggle and routing checks.
+        if (!authorize) start.EnvironmentVariables["CTS_LAYA_INTERNAL"] = "1";
+        using (Process process = Process.Start(start))
+        {
+            if (process == null) return 78;
+            // Authorization must neither consume native stdin nor pollute stdout.
+            process.StandardInput.BaseStream.Close();
+            var discarded = new OutputCapture(Stream.Null, 0, true);
+            Thread reader = Background(delegate { discarded.Read(process.StandardOutput.BaseStream); });
+            Thread errors = authorize ? null : Background(delegate { discarded.Read(process.StandardError.BaseStream); });
+            if (!process.WaitForExit(authorize ? 10000 : 2000))
+            {
+                try { process.Kill(); process.WaitForExit(1000); } catch { }
+                reader.Join(250);
+                if (errors != null) errors.Join(250);
+                if (authorize) Console.Error.WriteLine("Codex Token Saver: Laya authorization timed out.");
+                return 124;
+            }
+            reader.Join(500);
+            if (errors != null) errors.Join(250);
+            if (authorize && process.ExitCode != 0) Console.Error.WriteLine("Codex Token Saver: Laya authorization denied RTK.");
+            return process.ExitCode;
+        }
+    }
+
+    private static int Completed(string root, string[] args, int exitCode)
+    {
+        // Only an executed command earns a completion record. Bookkeeping is
+        // best effort, never a retry, and receives no command arguments/content.
+        if (!InformationOnly(args) && Environment.GetEnvironmentVariable("CTS_LAYA_INTERNAL") != "1")
+        {
+            try { LayaWorker(root, exitCode.ToString(System.Globalization.CultureInfo.InvariantCulture), false); }
+            catch { }
+        }
+        return exitCode;
+    }
+
     private static int Main(string[] args)
     {
         try
@@ -324,10 +386,24 @@ internal static class RtkLauncher
                 Console.Error.WriteLine("Codex Token Saver: RTK executable is missing: " + executable);
                 return 127;
             }
+            bool automatic = args.Length > 0 && args[0] == "--cts-automatic";
+            if (automatic)
+            {
+                var originalArgs = new string[args.Length - 1];
+                Array.Copy(args, 1, originalArgs, 0, originalArgs.Length);
+                args = originalArgs;
+            }
             var preferences = Preferences(root);
             string[] selectedArgs;
             try { selectedArgs = preferences["rtk"] ? args : WithoutRtkCompression(args); }
             catch (ArgumentException error) { Console.Error.WriteLine(error.Message); return 64; }
+            if (preferences["rtk"] && !automatic && !InformationOnly(args) &&
+                Environment.GetEnvironmentVariable("HEADROOM_COMMAND_ACTIVE") != "1" &&
+                Environment.GetEnvironmentVariable("CTS_LAYA_INTERNAL") != "1")
+            {
+                int authorization = LayaWorker(root, args[0], true);
+                if (authorization != 0) return authorization;
+            }
             var arguments = new StringBuilder();
             foreach (string argument in selectedArgs)
             {
@@ -350,7 +426,7 @@ internal static class RtkLauncher
                 if (!captureOutput)
                 {
                     process.WaitForExit();
-                    return process.ExitCode;
+                    return Completed(root, args, process.ExitCode);
                 }
                 Stream stdout = Console.OpenStandardOutput();
                 var capture = new OutputCapture(stdout, MaxOutputBytes, true);
@@ -385,7 +461,7 @@ internal static class RtkLauncher
                     stdout.Flush();
                     Record(root, Status(capture.Overflow ? "size_limit" : "streaming_timeout"), process.ExitCode, capture.Count);
                 }
-                return process.ExitCode;
+                return Completed(root, args, process.ExitCode);
             }
         }
         catch (Exception exception)

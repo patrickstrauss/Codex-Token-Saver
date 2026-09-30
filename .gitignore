@@ -39,6 +39,7 @@ local-compaction/llama-*/
 *.lock
 !local-compaction/requirements.lock
 .scratch/
+.playwright-cli/
 .serena/
 .superpowers/
 *.receipt.json

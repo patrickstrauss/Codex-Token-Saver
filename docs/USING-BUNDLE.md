@@ -2,7 +2,7 @@
 
 **Browser automation (Playwright CLI)** and **Structural code search (ast-grep)** are included in full installations. Enable each under **Your toolkit**; reload Codex guidance when convenient. Their activity counters measure tool calls, not saved tokens. See [examples, Electron limits, and RTK command scope](CLI-TOOLS.md).
 
-**Bundle tool router (Laya)** adds the explicit `bundle_query` MCP tool. Calls to this tool go through local Laya before the bundle executes a validated sequence. Other Codex tools continue normally. Enable the card and reload MCP tools to discover it. See [routing examples and limits](LAYA-ROUTER.md).
+**Bundle tool router (Laya)** is the main entry point for explicit bundle work. Natural-language `bundle_query` calls use the local classifier to choose a validated sequence; existing typed bundle MCP/CLI calls use the gateway's validated type routes. Automatic compression and hooks remain fast. Other Codex tools continue normally. Enable Laya and restart Codex after this upgrade to load the gateway in existing MCP processes. See [routing examples and limits](LAYA-ROUTER.md).
 
 Open **Codex Token Saver** from the Windows Start menu, click the **TS** tray icon, or visit [the local dashboard](http://127.0.0.1:8095/). The installed app lives in `%USERPROFILE%\CodexTokenSaver`; a Git checkout is separate source code.
 
@@ -24,6 +24,8 @@ Missing runtimes have unavailable controls and an explanation. Enabling one libr
 For unavailable request compression, run **Setup-Request-Compression.cmd** from the latest extracted deployment package. It downloads and validates the local compressor while preserving Codex's current connection. After success, turn the dashboard control On and restart Codex once. For an earlier team installation showing RTK history errors or missing local-tool status, use **Repair-Team-Setup.cmd** from that package and restart the dashboard. See the [team setup and repair guide](TEAM-INSTALL.md).
 
 ## Read the activity
+
+**Recent bundle activity** contains new, bounded records grouped by task when a caller UUID is available. Diagnostic checks and informational commands are separate from operations. Unknown callers stay unknown; historical counters and request-savings totals are not assigned to a task retroactively. The RTK hook coverage panel reports observed rewrites and skips, not completed commands or quota savings.
 
 RTK defaults to **Today**. Select **7 days** or **Lifetime** to compare periods. The dashboard retains the lifetime figure, latest command time, collector time, and large single-record contributions. A high lifetime reduction can come from an old large output while current tasks rarely invoke RTK.
 

@@ -20,6 +20,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, TextContent, Tool, ToolAnnotations
 from jsonschema import ValidationError, validate
+from laya_dispatch import explicit_call
 
 RETRIEVAL_HELP = (
     'Use {"content_hash":"abcdef123456","start_line":1,"max_lines":1200}. '
@@ -44,7 +45,7 @@ def get_backend():
     global backend
     if backend is None:
         from desktop_headroom import DesktopHeadroom
-        backend = DesktopHeadroom(STATE)
+        backend = DesktopHeadroom(STATE, bundle_root=ROOT)
     return backend
 
 RANGE_FIELDS = {
@@ -80,6 +81,19 @@ async def list_tools():
     ]
 
 def invoke(name, arguments):
+    with explicit_call(ROOT, 'headroom_local', name) as authorization:
+        if name == 'headroom_read_file' and authorization['exact']:
+            arguments = {**arguments, 'compress': False}
+        result = _invoke(name, arguments)
+        if authorization['notice']:
+            # Sign the status and original together so recovery cannot expose the
+            # exact payload to the automatic request compression stage.
+            from exact_retrieval import sign_exact_response
+            result = sign_exact_response(authorization['notice'] + '\n' + result, root=ROOT)
+        return result
+
+
+def _invoke(name, arguments):
     service = get_backend()
     if name == 'headroom_read_file':
         return service.read_file(**arguments)
@@ -94,18 +108,19 @@ def invoke(name, arguments):
 @server.call_tool(validate_input=False)
 async def call_tool(name, arguments):
     try:
+        arguments = {} if arguments is None else arguments
         # Keep schema validation for every tool, with corrective retrieval guidance
         # instead of treating caller mistakes as a service outage.
         tool = next((tool for tool in await list_tools() if tool.name == name), None)
         if tool is None:
             raise ValueError('Unknown Headroom tool')
         try:
-            validate(arguments or {}, tool.inputSchema)
+            validate(arguments, tool.inputSchema)
         except ValidationError as exc:
             message = ('Invalid headroom_retrieve arguments. ' + RETRIEVAL_HELP
                        if name == 'headroom_retrieve' else f'Invalid {name} arguments: {exc.message}')
             return CallToolResult(isError=True, content=[TextContent(type='text', text=message)])
-        result = await asyncio.to_thread(invoke, name, arguments or {})
+        result = await asyncio.to_thread(invoke, name, arguments)
         return [TextContent(type='text', text=result)]
     except Exception as exc:
         return CallToolResult(isError=True, content=[TextContent(type='text',

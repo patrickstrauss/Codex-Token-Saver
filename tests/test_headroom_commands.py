@@ -119,6 +119,7 @@ class CommandRunnerTests(unittest.TestCase):
                    TEST_SENTINEL='original child environment')
         env.pop('HEADROOM_EXACT', None)
         return subprocess.run([sys.executable, str(ROOT / 'headroom_run.py'),
+                               '--cts-automatic',
                                *(['--exact'] if exact else []), '--', sys.executable,
                                str(fixture), *args], cwd=self.cwd, env=env,
                               input=input, capture_output=True, timeout=20)

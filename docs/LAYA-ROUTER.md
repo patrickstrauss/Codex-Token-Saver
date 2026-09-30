@@ -1,8 +1,14 @@
 # Laya-first bundle entry tool
 
-The optional **Bundle tool router** card registers `bundle_laya_router.bundle_query` in Codex. **Only calls to this entry tool** pass through Laya. It does not change Codex's model, reasoning effort, provider, tool selection, or existing direct MCP tools. RTK and Headroom hooks/request compression continue independently.
+The **Bundle tool router** is the central gateway for explicit Token Saver work. Prefer `bundle_laya_router.bundle_query`: the local Laya classifier chooses a validated tool recipe and delivery sequence from a natural-language intent. Existing bundle MCP and CLI entry points use the same gateway, with deterministic routing for an already specified tool operation. Typed routing does not claim a model prediction or probability. Codex model/provider settings and non-bundle tools are unchanged. Automatic RTK hooks and Headroom request compression retain their fast paths.
+
+Turn Laya On before requesting explicit bundle operations. An unknown operation, disabled component, or uncertain natural-language decision stops before execution. Exact original-content retrieval remains available through a clearly reported recovery route. Help/version and service-control operations do not count as task work. Do not invoke internal runtime paths to bypass the gateway.
+
+After this gateway upgrade, restart Codex once when active work is finished so existing MCP processes load the new adapters. Refresh the dashboard to see **Recent activity**, its task/diagnostic/informational filters, and automatic hook coverage. New records contain only component, outcome, category, timestamp and a validated task UUID when supplied; existing mixed counters are not backfilled. A routing decision and the resulting component operation are separate records, not two model requests. No laptop restart is required.
 
 Enable the card after the full installer validates its runtime and model. Reload MCP tools or restart Codex to discover `bundle_query`. No laptop reboot is needed. Fresh installations leave the new optional components Off. Turning the router Off prevents further work even through an already-loaded MCP connection; the local classifier exits when disabled or after five idle minutes.
+
+After upgrading, restart Codex when the current task can pause: existing MCP processes must load the gateway code. The installer does not stop or edit running conversations. Supply `caller_task_id` only when the calling chat UUID is known; it is separate from `task_id`, which selects a summary target. Missing attribution stays unknown.
 
 ## Call contract
 
@@ -36,7 +42,7 @@ Laya classifies the bounded intent using a stable seven-category menu and a sepa
 
 The category probability is not a guarantee of correctness or a calibrated safety score. Tool results remain authoritative and require review. The dashboard records completed/failed/blocked calls, the last sequence and routing time; it does not store intents, source, URLs or command arguments in routing metrics and does not claim quota/token savings.
 
-One authenticated loopback worker at `127.0.0.1:8791` serves all bundle entry processes. It uses two CPU threads and a single loaded model, loads on the first request, processes requests serially and releases memory when idle. A busy/unavailable worker returns an error; direct tools remain usable. No conversation history or provider credentials are sent to Laya. The MCP wrapper remains lightweight; it does not import Torch.
+One authenticated loopback worker at `127.0.0.1:8791` serves all bundle entry processes. It uses two CPU threads and a single loaded model, loads on the first request, processes requests serially and releases memory when idle. A busy/unavailable classifier returns an error for natural-language requests; validated typed routes remain available through the central gateway while Laya is On. No conversation history or provider credentials are sent to Laya. The MCP wrapper remains lightweight; it does not import Torch.
 
 ## Pinned runtime and evidence
 

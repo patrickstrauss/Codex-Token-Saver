@@ -106,7 +106,7 @@ function Get-HeadroomCommandReplacement {
     # native argv rules on Windows PowerShell (embedded quotes and empty args).
     $argumentText = $CommandText.Substring($elements[1].Extent.StartOffset,
         $elements[-1].Extent.EndOffset - $elements[1].Extent.StartOffset)
-    $replacement = "& '" + $Wrapper.Replace("'", "''") + "' -- '" + $executable.Replace("'", "''") + "' " + $argumentText
+    $replacement = "& '" + $Wrapper.Replace("'", "''") + "' --cts-automatic -- '" + $executable.Replace("'", "''") + "' " + $argumentText
     return @{
         start = $command.Extent.StartOffset
         length = $command.Extent.EndOffset - $command.Extent.StartOffset
@@ -115,13 +115,11 @@ function Get-HeadroomCommandReplacement {
 }
 
 function Get-AutomaticRtkReplacement {
-    param($Ast, $Event, [string]$CommandText)
+    param($Statement, $Event)
     # Codex normalizes every shell tool to Bash + {command}; it does not expose
     # the chosen shell. A bare rtk.exe prefix is valid in both Windows PowerShell
     # and Git Bash. Never invent PowerShell syntax for a bare native command.
-    if ($Event.cwd -isnot [string] -or $Event.cwd -notmatch '^[A-Za-z]:[\\/]' -or
-        $Ast.EndBlock.Statements.Count -ne 1) { return $null }
-    $statement = $Ast.EndBlock.Statements[0]
+    if ($Event.cwd -isnot [string] -or $Event.cwd -notmatch '^[A-Za-z]:[\\/]') { return $null }
     if ($statement -isnot [System.Management.Automation.Language.PipelineAst] -or
         $statement.PipelineElements.Count -ne 1 -or $statement.Background) { return $null }
     $command = $statement.PipelineElements[0]
@@ -172,8 +170,38 @@ function Get-AutomaticRtkReplacement {
     return @{
         start = $first.Extent.StartOffset
         length = $first.Extent.EndOffset - $first.Extent.StartOffset
-        text = 'rtk.exe ' + $name
+        text = 'rtk.exe --cts-automatic ' + $name
     }
+}
+
+function Test-AutomaticRtkBatch {
+    param($Ast)
+    # The hook's PATH checks cannot predict changes made inside the pending
+    # shell. Scan only for barriers here; replacements still use direct children
+    # of EndBlock. Unknown setup, control flow and dynamic execution fail closed.
+    $barriers = $Ast.FindAll({
+        param($node)
+        if ($node -is [System.Management.Automation.Language.StatementAst] -and
+            $node.GetType().Name -notin @('PipelineAst', 'CommandAst', 'CommandExpressionAst',
+                'AssignmentStatementAst', 'ExitStatementAst')) { return $true }
+        if ($node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            ($node.Left -isnot [System.Management.Automation.Language.VariableExpressionAst] -or
+             -not $node.Left.VariablePath.IsUnqualified)) { return $true }
+        if ($node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -or
+            $node -is [System.Management.Automation.Language.ScriptBlockExpressionAst] -or
+            $node -is [System.Management.Automation.Language.UnaryExpressionAst]) { return $true }
+        if ($node -is [System.Management.Automation.Language.CommandAst]) {
+            $name = $node.GetCommandName()
+            if ($node.InvocationOperator -ne 'Unknown' -or -not $name) { return $true }
+            if ($name -match '^(git|rg)(?:\.exe)?$') { return $false }
+            # Bounded display-only PowerShell siblings used by command batches.
+            if ($name -notin @('Get-Content', 'Write-Output', 'Out-String')) { return $true }
+            $resolved = Get-Command $name -ErrorAction SilentlyContinue
+            return $null -eq $resolved -or $resolved.CommandType -ne 'Cmdlet'
+        }
+        return $false
+    }, $true)
+    return $barriers.Count -eq 0
 }
 
 function Get-HeadroomRewrite {
@@ -239,9 +267,11 @@ function Get-HeadroomRewrite {
     }
     $replacements = @()
     $rewriteReason = 'supported_external'
-    if ($rtkEnabled) {
-        $replacement = Get-AutomaticRtkReplacement -Ast $ast -Event $Event -CommandText $commandText
-        if ($null -ne $replacement) { $replacements += $replacement; $rewriteReason = 'rtk_rewrite' }
+    if ($rtkEnabled -and (Test-AutomaticRtkBatch -Ast $ast)) {
+        foreach ($statement in $ast.EndBlock.Statements) {
+            $replacement = Get-AutomaticRtkReplacement -Statement $statement -Event $Event
+            if ($null -ne $replacement) { $replacements += $replacement; $rewriteReason = 'rtk_rewrite' }
+        }
     }
     if ($replacements.Count -eq 0 -and $headroomEnabled -and
         [IO.File]::Exists($wrapper) -and [IO.File]::Exists($runtime) -and [IO.File]::Exists($runner)) {
@@ -267,9 +297,13 @@ function Get-HeadroomRewrite {
 }
 
 $response = $null
+$event = $null
 try {
     $raw = [Console]::In.ReadToEnd()
-    if ($raw.Length -le 131072) { $response = Get-HeadroomRewrite ($raw | ConvertFrom-Json) }
+    if ($raw.Length -le 131072) {
+        $event = $raw | ConvertFrom-Json
+        $response = Get-HeadroomRewrite $event
+    }
     else { $script:reason = 'oversized_input' }
 }
 catch { $script:reason = 'invalid_input'; $response = $null }
@@ -279,7 +313,12 @@ try {
     $state = Join-Path $BundleRoot 'headroom\desktop-state'
     [void][IO.Directory]::CreateDirectory($state)
     $outcome = if ($null -ne $response) { 'rewritten' } else { 'skipped' }
-    $entry = @{ timestamp = [DateTime]::UtcNow.ToString('o'); outcome = $outcome; reason = $script:reason } | ConvertTo-Json -Compress
+    $record = @{ timestamp = [DateTime]::UtcNow.ToString('o'); outcome = $outcome; reason = $script:reason }
+    if ($event -is [pscustomobject] -and $event.session_id -is [string] -and
+        $event.session_id -match '\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z') {
+        $record['task_id'] = $event.session_id.ToLowerInvariant()
+    }
+    $entry = $record | ConvertTo-Json -Compress
     [IO.File]::AppendAllText((Join-Path $state 'hook-events.jsonl'), $entry + "`n", (New-Object System.Text.UTF8Encoding($false)))
 }
 catch { }

@@ -12,8 +12,6 @@ import urllib.request
 
 
 def verify(root, electron):
-    sys.path.insert(0, str(root))
-    from cli_tools import command
     with tempfile.TemporaryDirectory(prefix='CTS Electron fixture ') as folder:
         directory = Path(folder)
         with socket.socket() as reservation:
@@ -35,11 +33,12 @@ setInterval(() => { if(fs.existsSync(__dirname + '/stop')) app.quit(); }, 200);
 setTimeout(() => app.quit(), 120000);
 ''')
         environment = dict(os.environ)
+        environment['CTS_ACTIVITY_KIND'] = 'diagnostic'
         environment.pop('ELECTRON_RUN_AS_NODE', None)
         environment['PLAYWRIGHT_BROWSERS_PATH'] = str(root / 'tools/playwright-browsers')
         session = 'cts-electron-' + str(port)
         def cli(*args):
-            result = subprocess.run([*command(root, 'playwright_cli'), '-s=' + session, *args],
+            result = subprocess.run([str(root / 'bin/playwright-cli.exe'), '-s=' + session, *args],
                                     cwd=directory, env=environment, capture_output=True, text=True,
                                     encoding='utf-8', timeout=40)
             if result.returncode:

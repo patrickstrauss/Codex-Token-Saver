@@ -55,8 +55,10 @@ def _task_reference(value):
     return _task_id(match.group(1).lower())
 
 
-def register_component_routes(app, root, security, control_factory=None, summary_factory=None, observations=None):
-    root = Path(root)
+def register_component_routes(app, root, security, control_factory=None, summary_factory=None, observations=None, hook_activity=None):
+    root = Path(root).resolve()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
     factories = {'controls': control_factory or _controls, 'summaries': summary_factory or _summaries}
     managers, lock = {}, threading.Lock()
     disable_process = None
@@ -180,6 +182,35 @@ def register_component_routes(app, root, security, control_factory=None, summary
         except Exception:
             return security.error('Local summaries are unavailable. Original conversations are unchanged.', 503)
 
+    def activity():
+        denied = security.guard(mutation=False)
+        if denied is not None:
+            return denied
+        try:
+            from bundle_activity import snapshot as activity_snapshot, task_titles
+            if set(request.args) - {'group', 'task_id', 'limit'} or any(len(request.args.getlist(key)) != 1 for key in request.args):
+                raise ValueError()
+            group = request.args.get('group', 'all')
+            task_id = request.args.get('task_id')
+            data = activity_snapshot(root, group=group, task_id=task_id, limit=int(request.args.get('limit', '50')))
+            if hook_activity:
+                data['hook_coverage'] = hook_activity(task_id=data['task_id'], unknown_task=group == 'unknown')
+                data['hook_coverage']['scope'] = 'unknown' if group == 'unknown' else 'task' if task_id else 'all'
+                known = {task['task_id'] for task in data['tasks']}
+                for hook_task in data['hook_coverage'].get('task_ids', []):
+                    if hook_task not in known:
+                        data['tasks'].append({'task_id': hook_task, 'count': 0, 'last_activity_at': None})
+                        known.add(hook_task)
+            titles = task_titles(task['task_id'] for task in data['tasks'])
+            for task in data['tasks']:
+                task['title'] = titles.get(task['task_id'])
+            return respond(data)
+        except (ValueError, BadRequest):
+            return security.error('Choose a valid activity group, task ID and limit (1–200).', 400)
+        except Exception:
+            return security.error('Activity is unavailable. Try refreshing.', 503)
+
+    app.add_url_rule('/api/activity', 'bundle_activity', activity, methods=['GET'])
     app.add_url_rule('/api/components', 'bundle_components', components, methods=['GET', 'POST'])
     app.add_url_rule('/api/bundle/disable', 'open_bundle_disable', open_disable, methods=['POST'])
     app.add_url_rule('/api/local-summaries', 'local_summaries', summaries, methods=['GET', 'POST'])

@@ -136,6 +136,9 @@ def record_in_worker(result: CompressionResult, state_dir: Path, executable: str
 
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    automatic = bool(args and args[0] == '--cts-automatic')
+    if automatic:
+        args.pop(0)
     state_dir = Path(os.environ.get('HEADROOM_WORKSPACE_DIR', ROOT / 'headroom/desktop-state'))
     if args in (['--filter-worker'], ['--filter-packet']):
         if args == ['--filter-packet']:
@@ -167,6 +170,22 @@ def main(argv=None) -> int:
         sys.stdout.write('{"recorded":true}')
         return 0
     explicit_exact = bool(args and args[0] == '--exact')
+    explicit_activity = not automatic and os.environ.get('CTS_LAYA_INTERNAL') != '1'
+
+    def observed(outcome, error_code=None):
+        if explicit_activity:
+            try:
+                from bundle_activity import record
+                record(ROOT, 'headroom_local', outcome, task_id=os.environ.get('CODEX_THREAD_ID'),
+                       kind='diagnostic' if os.environ.get('CTS_ACTIVITY_KIND') == 'diagnostic' else 'operation',
+                       error_code=error_code)
+            except Exception:
+                pass  # Reporting must never change command output or exit status.
+
+    def finished(code):
+        observed('completed' if code == 0 else 'failed', None if code == 0 else 'command_failed')
+        return code
+
     if explicit_exact:
         args.pop(0)
     # The preference may be set by an earlier statement in the same shell
@@ -175,11 +194,21 @@ def main(argv=None) -> int:
     disabled = not load_preferences(ROOT)['headroom_local']
     if not args or args.pop(0) != '--' or not args:
         sys.stderr.write('Usage: headroom-run [--exact] -- <absolute executable> [arguments...]\n')
+        observed('blocked', 'invalid_input')
         return 64
     executable = Path(args[0])
     if not executable.is_absolute() or (os.name == 'nt' and executable.suffix.lower() != '.exe'):
         sys.stderr.write('headroom-run requires an absolute executable path; shell scripts are not supported.\n')
+        observed('blocked', 'invalid_input')
         return 64
+    if not automatic and not disabled and not exact and os.environ.get('CTS_LAYA_INTERNAL') != '1':
+        from laya_dispatch import authorize_explicit
+        try:
+            authorize_explicit(ROOT, 'headroom_local', 'command_output', task_id=os.environ.get('CODEX_THREAD_ID'))
+        except (ValueError, RuntimeError, OSError) as exc:
+            sys.stderr.write('headroom-run: Laya must authorize explicit bundle work. ' + str(exc) + '\n')
+            observed('blocked', getattr(exc, 'code', 'router_unavailable'))
+            return 126
     # In terminal/interactive mode preserve inherited console streams. General
     # Codex command hooks also exclude known interactive/watch/stdin commands.
     # Windows Codex gives ordinary piped commands a console stdin handle too;
@@ -190,15 +219,17 @@ def main(argv=None) -> int:
                                        env=dict(os.environ, HEADROOM_COMMAND_ACTIVE='1'))
         except OSError as exc:
             sys.stderr.write(f'headroom-run: executable could not start: {exc}\n')
+            observed('failed', 'runtime_missing')
             return 127
         result = CompressionResult(b'', 'disabled' if disabled else
                                    'exact_requested' if exact else 'interactive_passthrough')
         record_in_worker(result, state_dir, str(executable), completed.returncode, 0, 0)
-        return completed.returncode
+        return finished(completed.returncode)
     try:
         return_code, captured, counters, reason = capture_command(args, sys.stdout.buffer, sys.stderr.buffer)
     except OSError as exc:
         sys.stderr.write(f'headroom-run: executable could not start: {exc}\n')
+        observed('failed', 'runtime_missing')
         return 127
     if reason:
         result = CompressionResult(b'', reason)
@@ -211,7 +242,7 @@ def main(argv=None) -> int:
     write_bytes(sys.stdout.buffer, result.output)
     record_in_worker(result, state_dir, str(executable), return_code,
                      counters['stdout'], counters['stderr'])
-    return return_code
+    return finished(return_code)
 
 
 if __name__ == '__main__':

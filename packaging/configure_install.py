@@ -51,8 +51,10 @@ def configure(root, config_home):
     if before[config].startswith(b'\xef\xbb\xbf'):
         desired_config = b'\xef\xbb\xbf' + desired_config
     guidance = before[agents]
+    from bundle_integrations import laya_guidance
     from cli_tools import guidance as cli_guidance, runtime_status
     from bundle_preferences import load_preferences
+    guidance = laya_guidance(guidance, load_preferences(root)['laya_router'])
     if runtime_status(root)['available']:
         preferences = load_preferences(root)
         for component in ('playwright_cli', 'ast_grep'):
@@ -85,7 +87,7 @@ def configure(root, config_home):
         'configured': not hook_disabled, 'hook': 'headroom_commands', 'path': str(hooks),
         'sha256': hashlib.sha256(desired_hooks).hexdigest(), 'activation': activation,
         'trust_granted_by_installer': False, 'global_proxy_route_added': False,
-        'scope': 'Single literal native Windows git status/diff/log and rg calls use RTK when enabled and on PATH; explicit supported executable calls can use Headroom; complex and exact commands remain unchanged',
+        'scope': 'Literal native Windows git status/diff/log and rg calls, including independent top-level batch commands, use RTK when enabled and on PATH; explicit supported executable calls can use Headroom; dynamic, nested, piped and exact commands remain unchanged',
     }
     changes = [(config, desired_config), (agents, guidance), (hooks, desired_hooks),
                (desktop_receipt, receipt_bytes(before[desktop_receipt], desktop_fields, now.isoformat(), backup)),

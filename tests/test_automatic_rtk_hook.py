@@ -25,7 +25,9 @@ class AutomaticRtkHookTests(unittest.TestCase):
                        check=True, capture_output=True)
         shutil.copy2(cls.bundle / 'native/git.exe', cls.bundle / 'native/rg.exe')
         shutil.copy2(cls.bundle / 'native/git.exe', cls.bundle / 'tools/rtk.exe')
-        shutil.copy2(ROOT / 'bin/rtk.exe', cls.bundle / 'bin/rtk.exe')
+        subprocess.run([str(CSC), '/nologo', '/reference:System.Web.Extensions.dll',
+                        '/out:' + str(cls.bundle / 'bin/rtk.exe'), str(ROOT / 'native/RtkLauncher.cs')],
+                       check=True, capture_output=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -61,7 +63,7 @@ class AutomaticRtkHookTests(unittest.TestCase):
                 name, arguments = command.split(' ', 1)
                 result = self.hook(command)['hookSpecificOutput']
                 self.assertEqual(result['updatedInput']['command'],
-                                 'rtk.exe ' + name.removesuffix('.exe') + ' ' + arguments)
+                                 'rtk.exe --cts-automatic ' + name.removesuffix('.exe') + ' ' + arguments)
 
     def test_component_toggles_are_independent_and_bad_preferences_skip(self):
         for headroom in (False, True):
@@ -73,7 +75,7 @@ class AutomaticRtkHookTests(unittest.TestCase):
         self.assertEqual(self.hook('git status'), {})
 
     def test_scripts_chains_dynamic_exact_and_machine_commands_stay_native(self):
-        for command in ("git status; git log", 'git status\ngit log', 'git status | Out-String',
+        for command in ('git status | Out-String',
                         'git status && git log', '$x = git status', 'git status > out.txt',
                         'git status 2>&1', "function git { 'shadow' }; git status", 'git status $x',
                         'git status --porcelain=v2', 'git log --format=%H', 'git diff --numstat',
@@ -89,6 +91,68 @@ class AutomaticRtkHookTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.hook(command), {})
         self.assertEqual(self.hook('git status', HEADROOM_EXACT='1'), {})
+
+    def test_batch_rewrites_only_independent_top_level_commands_verbatim(self):
+        prefix = "Get-Content 'Thai ภาษาไทย 😀; notes.txt'\r\n# keep git status\r\n  "
+        excluded = ("$capture = git status; git status | Out-String; "
+                    "rg --json needle .; git diff --exit-code; "
+                    "git status > out.txt; rg $pattern .; "
+                    "Write-Output $(git status)\r\n")
+        source = prefix + "git.exe status --short  ; " + excluded + "\trg -n 'a|b; git status' file # end\r\n"
+        expected = prefix + "rtk.exe --cts-automatic git status --short  ; " + excluded + "\trtk.exe --cts-automatic rg -n 'a|b; git status' file # end\r\n"
+        result = self.hook(source)
+        self.assertIn('hookSpecificOutput', result)
+        self.assertEqual(result['hookSpecificOutput']['updatedInput']['command'], expected)
+        for separator in ('; ', '\n'):
+            result = self.hook('git status' + separator + 'git log')
+            self.assertIn('hookSpecificOutput', result)
+            self.assertEqual(result['hookSpecificOutput']['updatedInput']['command'],
+                             'rtk.exe --cts-automatic git status' + separator + 'rtk.exe --cts-automatic git log')
+
+    def test_batch_shell_mutations_control_flow_and_exact_markers_stay_native(self):
+        for setup in ("function git { 'shadow' }", 'Set-Alias git Write-Output',
+                      'New-Alias rg Write-Output', "$env:PATH = 'elsewhere'",
+                      "$env:HEADROOM_EXACT = '1'", "Set-Item Env:HEADROOM_EXACT 1",
+                      "& $setup", ". './setup.ps1'", 'Import-Module custom',
+                      "[Environment]::SetEnvironmentVariable('PATH', 'elsewhere')",
+                      'if ($true) { git status }', 'foreach ($x in 1) { rg needle . }',
+                      'trap { continue }', '# headroom: exact\n', '<# rtk: exact #>'):
+            with self.subTest(setup=setup):
+                self.assertEqual(self.hook(setup + '; git status; rg needle .'), {})
+        self.assertEqual(self.hook('git status; rg needle .', HEADROOM_EXACT='1'), {})
+
+    def test_batch_keeps_path_and_component_guards(self):
+        source = "Get-Content notes.txt; git status; rg needle ."
+        self.preferences(rtk=False, headroom_local=True)
+        self.assertEqual(self.hook(source), {})
+        self.preferences(rtk=True, headroom_local=False)
+        self.assertEqual(self.hook(source, cwd='/home/test'), {})
+        self.env['PATH'] = str(self.bundle / 'native') + os.pathsep + os.environ['PATH']
+        self.assertEqual(self.hook(source), {})
+
+    def test_batch_preserves_dispatch_arguments_streams_and_exit_status(self):
+        source = ("git status 'space value'; Write-Output ('STATUS:' + $? + ':' + $LASTEXITCODE); "
+                  "rg 'a|b' 'x;exit 99' .; Write-Output ('STATUS:' + $? + ':' + $LASTEXITCODE); "
+                  "exit $LASTEXITCODE")
+        response = self.hook(source)
+        self.assertIn('hookSpecificOutput', response)
+        rewritten = response['hookSpecificOutput']['updatedInput']['command']
+        results = []
+        for label, command in (('original', source), ('rewritten', rewritten)):
+            count = self.bundle / (label + '-batch-dispatch.txt')
+            count.write_bytes(b'')
+            result = subprocess.run([str(PS), '-NoProfile', '-NonInteractive', '-Command', command],
+                                    input=b'input bytes', capture_output=True, cwd=self.bundle,
+                                    env=dict(self.env, HEADROOM_FIXTURE_COUNT=str(count)), timeout=10)
+            self.assertEqual(result.returncode, 37, result.stderr)
+            self.assertEqual(count.read_text().splitlines(), ['dispatch', 'dispatch'])
+            chunks = result.stdout.decode('utf-8-sig').split('STATUS:False:37')
+            self.assertEqual(len(chunks), 3)
+            values = [json.loads(chunk.strip()) for chunk in chunks[:2]]
+            if label == 'rewritten':
+                self.assertEqual([value['args'].pop(0) for value in values], ['git', 'rg'])
+            results.append((values, result.stderr))
+        self.assertEqual(results[0], results[1])
 
     def test_non_windows_cwd_and_missing_or_shadowed_launcher_skip(self):
         for cwd in ('/home/test', '', r'\\wsl.localhost\Ubuntu\home\test'):

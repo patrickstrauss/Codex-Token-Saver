@@ -9,6 +9,7 @@ import unittest
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from bundle_preferences import set_preference
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -25,8 +26,13 @@ class DesktopMCPTests(unittest.IsolatedAsyncioTestCase):
             source.write_text(json.dumps(records, indent=2), encoding='utf-8')
             env = os.environ.copy()
             env['HEADROOM_WORKSPACE_DIR'] = str(base / 'state')
-            params = StdioServerParameters(command=str(ROOT / 'headroom/.venv/Scripts/python.exe'),
-                args=['-u', str(ROOT / 'desktop_mcp.py')], env=env)
+            set_preference(base, 'laya_router', True)
+            # Exercise real stdio + dispatch/compression/cache without a model.
+            # The disposable root prevents writes to an installed bundle.
+            launch = ('import asyncio,sys; from pathlib import Path; '
+                      'import desktop_mcp; desktop_mcp.ROOT=Path(sys.argv[1]); asyncio.run(desktop_mcp.main())')
+            params = StdioServerParameters(command=sys.executable,
+                args=['-u', '-c', launch, str(base)], env=env, cwd=str(ROOT))
             async with asyncio.timeout(40):
                 async with stdio_client(params) as (read, write):
                     async with ClientSession(read, write) as session:
@@ -86,6 +92,14 @@ class DesktopMCPTests(unittest.IsolatedAsyncioTestCase):
                         self.assertGreater(stats['gross_saved'], 0)
                         self.assertGreater(stats['retrieval_tokens'], 0)
                         self.assertLess(stats['total_saved'], stats['gross_saved'])
+                        set_preference(base, 'laya_router', False)
+                        recovered = await session.call_tool('headroom_retrieve', {'content_hash': key.group(), 'max_lines': 10000})
+                        self.assertFalse(recovered.isError)
+                        self.assertIn('router is Off', recovered.content[0].text)
+                        self.assertIn('retrieval recovery', recovered.content[0].text)
+                        self.assertTrue(recovered.content[0].text.endswith(source.read_bytes().decode('utf-8')))
+                        blocked = await session.call_tool('headroom_stats', {})
+                        self.assertTrue(blocked.isError)
 
 if __name__ == '__main__':
     unittest.main()

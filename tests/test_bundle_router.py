@@ -92,6 +92,14 @@ def test_missing_parameters_are_not_invented(fixture):
     assert router.eligible_recipes(root, request, project) == ['clarify']
 
 
+def test_caller_task_uuid_is_separate_from_summary_target(fixture):
+    root, project, request = fixture
+    caller = '11111111-1111-4111-8111-111111111111'
+    assert router.validated_request(request | {'caller_task_id': caller})[0] == project
+    with pytest.raises(ValueError, match='UUID'):
+        router.validated_request(request | {'caller_task_id': 'private text'})
+
+
 def test_exact_requirement_overrides_classification(fixture):
     root, _, request = fixture
     with patch.object(router, 'execute', return_value=('exact', ['laya', 'ast_grep'])) as execute:

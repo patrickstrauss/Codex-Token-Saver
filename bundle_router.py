@@ -46,7 +46,10 @@ def status(root):
             'last_sequence': data.get('sequence', []), 'last_route_ms': data.get('elapsed_ms')}
 
 
-def record(root, outcome, sequence=(), elapsed_ms=None):
+def record(root, outcome, sequence=(), elapsed_ms=None, *, task_id=None):
+    from bundle_activity import record as record_event
+    record_event(root, 'laya_router', outcome, task_id=task_id,
+                 kind='diagnostic' if os.environ.get('CTS_ACTIVITY_KIND') == 'diagnostic' else 'operation')
     path = Path(root) / 'data/router/activity.json'
     try:
         with routing_lock(path.with_suffix('.lock')):
@@ -111,7 +114,7 @@ def classify(root, intent, eligible):
 
 def validated_request(request):
     allowed = {'intent', 'project', 'path', 'symbol', 'pattern', 'language', 'git_operation',
-               'browser_session', 'task_id', 'summary_action', 'exact'}
+               'browser_session', 'task_id', 'caller_task_id', 'summary_action', 'exact'}
     if not isinstance(request, dict) or not set(request) <= allowed:
         raise ValueError('Unknown bundle query field.')
     if not isinstance(request.get('intent'), str) or not 1 <= len(request['intent']) <= 1200:
@@ -138,6 +141,8 @@ def validated_request(request):
         raise ValueError('Invalid browser session name.')
     if 'task_id' in request and not re.fullmatch('[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', request['task_id']):
         raise ValueError('Use an exact local task UUID.')
+    if 'caller_task_id' in request and not re.fullmatch('[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', request['caller_task_id']):
+        raise ValueError('Use an exact caller task UUID.')
     return project, path
 
 
@@ -177,17 +182,14 @@ def validate_decision(decision, eligible, exact):
     return decision['route'], exact or decision['delivery'] == 'exact'
 
 
-def run_command(argv, project, root, component=None):
+def run_command(argv, project, root, component=None, *, task_id=None):
     # Bound memory as well as response size. Never execute model-generated shell text.
     with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
-        env = dict(os.environ, HEADROOM_EXACT='1')
+        env = dict(os.environ, HEADROOM_EXACT='1', CTS_LAYA_INTERNAL='1')
         result = subprocess.run(argv, cwd=project, env=env, stdout=output, stderr=errors,
                                 timeout=45, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         output.seek(0); data = output.read(2 * 1024 * 1024 + 1)
         errors.seek(0); error = errors.read(4096)
-    if component:
-        from cli_tools import record as cli_record
-        cli_record(root, component, 'completed' if result.returncode == 0 else 'failed')
     if len(data) > 2 * 1024 * 1024:
         raise RuntimeError('Result exceeded 2 MB. Narrow the query; no result is silently truncated.')
     if result.returncode not in (0, 1) or (result.returncode == 1 and component != 'ast_grep'):
@@ -199,7 +201,7 @@ async def serena_query(root, project, path, symbol):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
     params = StdioServerParameters(command=str(root / 'headroom/.venv/Scripts/python.exe'),
-        args=[str(root / 'serena_mcp.py')], cwd=str(project), env=dict(os.environ, PYTHONUTF8='1'))
+        args=[str(root / 'serena_mcp.py')], cwd=str(project), env=dict(os.environ, PYTHONUTF8='1', CTS_LAYA_INTERNAL='1'))
     async with stdio_client(params, errlog=sys.stderr) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -236,11 +238,11 @@ def execute(root, route, request, project, path, exact):
         component = COMPONENT[route]
         args = (['run', '--lang', request['language'], '--pattern', request['pattern'], '--json=compact', str(path)]
                 if route == 'ast_search' else ['-s=' + request['browser_session'], 'snapshot', '--depth=3'])
-        text = run_command([*command(root, component), *args], project, root, component)
+        text = run_command([*command(root, component), *args], project, root, component, task_id=request.get('caller_task_id'))
     elif route == 'git_report':
         operation = request['git_operation']
         args = {'status': ['status', '--short'], 'diff': ['diff', '--stat'], 'log': ['log', '-10']}[operation]
-        text = run_command([str(root / 'bin/rtk.exe'), 'git', *args], project, root)
+        text = run_command([str(root / 'bin/rtk.exe'), 'git', *args], project, root, 'rtk', task_id=request.get('caller_task_id'))
     else:
         from local_summaries import LocalSummaries
         summaries = LocalSummaries(root)
@@ -263,12 +265,25 @@ def execute(root, route, request, project, path, exact):
     return text, sequence
 
 
+def record_component(root, component, outcome, *, task_id=None, error_code=None):
+    """The parent owns one selected-component result; internal workers do not."""
+    try:
+        if component in ('ast_grep', 'playwright_cli'):
+            from cli_tools import record as record_event
+        else:
+            from bundle_activity import record as record_event
+        record_event(root, component, outcome, task_id=task_id, error_code=error_code,
+                     kind='diagnostic' if os.environ.get('CTS_ACTIVITY_KIND') == 'diagnostic' else 'operation')
+    except Exception:
+        pass  # Telemetry must not turn completed work into a retry.
+
+
 def query(root, request, predictor=None):
     root = Path(root).resolve()
     sequence, elapsed = [], None
     try:
         if not load_preferences(root)['laya_router']:
-            raise ValueError('Laya router is Off. Direct bundle tools remain available.')
+            raise ValueError('Laya router is Off. Enable it before requesting explicit bundle work.')
         project, path = validated_request(request)
         eligible = eligible_recipes(root, request, path)
         decision = (predictor or classify)(root, request['intent'], eligible)
@@ -277,10 +292,17 @@ def query(root, request, predictor=None):
         if not load_preferences(root)['laya_router']:
             raise ValueError('Router was disabled before execution.')
         sequence = ['laya']
-        text, sequence = execute(root, route, request, project, path, exact)
-        record(root, 'completed', sequence, elapsed)
+        try:
+            text, sequence = execute(root, route, request, project, path, exact)
+        except Exception as exc:
+            record_component(root, COMPONENT[route], 'failed', task_id=request.get('caller_task_id'),
+                             error_code='timeout' if isinstance(exc, subprocess.TimeoutExpired) else 'execution_failed')
+            raise
+        record_component(root, COMPONENT[route], 'completed', task_id=request.get('caller_task_id'))
+        record(root, 'completed', sequence, elapsed, task_id=request.get('caller_task_id'))
         return {'sequence': sequence, 'routing_ms': elapsed, 'routing_probability': decision['confidence'],
                 'experimental': True, 'result': text}
     except Exception:
-        record(root, 'blocked' if not sequence else 'failed', sequence, elapsed)
+        record(root, 'blocked' if not sequence else 'failed', sequence, elapsed,
+               task_id=request.get('caller_task_id') if isinstance(request, dict) else None)
         raise

@@ -131,7 +131,7 @@ def disable_guidance(before):
         return None
     result = before
     for label in ('CODEX TOKEN SAVER', 'HEADROOM DESKTOP', 'HEADROOM COMMAND OUTPUT', 'CODEX TOKEN SAVER SERENA',
-                  'CODEX TOKEN SAVER PLAYWRIGHT_CLI', 'CODEX TOKEN SAVER AST_GREP'):
+                  'CODEX TOKEN SAVER PLAYWRIGHT_CLI', 'CODEX TOKEN SAVER AST_GREP', 'CODEX TOKEN SAVER LAYA'):
         start, end = (f'<!-- {kind} {label} -->'.encode() for kind in ('BEGIN', 'END'))
         pattern = re.compile(re.escape(start) + rb'\r?\n.*?' + re.escape(end) + rb'(?:\r?\n|$)', re.S)
         matches = list(pattern.finditer(result))

@@ -261,7 +261,7 @@ def collect_rtk():
 
 
 _HEADROOM_SKIP_LABELS = {
-    "disabled": "local output filtering is Off",
+    "disabled": "automatic output tools are Off",
     "invalid_preferences": "component preferences could not be read",
     "complex_syntax": "scripts, pipelines or unsupported syntax",
     "ambiguous_shell": "command path or shell is ambiguous",
@@ -271,6 +271,8 @@ _HEADROOM_SKIP_LABELS = {
     "already_wrapped": "already using Headroom",
     "missing_runtime": "Headroom runtime is missing",
     "missing_executable": "command executable is missing",
+    "missing_rtk": "RTK runtime is missing",
+    "rtk_path_unavailable": "RTK command path is unavailable",
     "oversized_input": "command text exceeds the limit",
     "parse_error": "command syntax could not be parsed",
     "invalid_input": "invalid hook input",
@@ -282,14 +284,21 @@ _update_routes = register_update_routes(app, Path(__file__).resolve().parent.par
 register_proxy_routes(app, Path(__file__).resolve().parent.parent, _update_routes)
 register_summary_reminder_routes(app, Path(__file__).resolve().parent.parent, _update_routes)
 collect_components = register_component_routes(app, Path(__file__).resolve().parent.parent, _update_routes,
-                                               observations=lambda: _collector.snapshot() or {})
+                                               observations=lambda: _collector.snapshot() or {},
+                                               hook_activity=lambda **filters: collect_headroom_automation(**filters))
 
 
-def collect_headroom_automation():
+def collect_headroom_automation(*, task_id=None, unknown_task=False):
     """Bounded local observations; registration never claims trust or liveness."""
+    from bundle_activity import valid_task_id
+    if task_id is not None:
+        task_id = valid_task_id(task_id)
+        if task_id is None:
+            raise ValueError('Invalid task ID')
     data = {"configured": False, "status": "not_configured", "data_status": "empty", "observed": 0,
             "rewritten": 0, "skipped": 0, "skip_reasons": {}, "top_skip_reasons": [],
-            "last_observed_at": None, "recent_window_only": True}
+            "last_observed_at": None, "recent_window_only": True, "task_ids": []}
+    task_ids = set()
     try:
         receipt = json.loads(AUTOMATIC_HEADROOM_PATH.read_text(encoding="utf-8-sig"))
         data["configured"] = receipt.get("configured") is True and receipt.get("hook") == "headroom_commands"
@@ -310,6 +319,11 @@ def collect_headroom_automation():
                 event = json.loads(line)
                 if event.get("outcome") not in ("rewritten", "skipped"):
                     continue
+                event_task = valid_task_id(event.get('task_id'))
+                if event_task:
+                    task_ids.add(event_task)
+                if (task_id is not None and event_task != task_id) or (unknown_task and event_task is not None):
+                    continue
                 data["observed"] += 1
                 data["rewritten"] += event["outcome"] == "rewritten"
                 if event["outcome"] == "skipped":
@@ -318,7 +332,14 @@ def collect_headroom_automation():
                     if not isinstance(reason, str) or reason not in _HEADROOM_SKIP_LABELS:
                         reason = "other"
                     data["skip_reasons"][reason] = data["skip_reasons"].get(reason, 0) + 1
-                data["last_observed_at"] = event.get("timestamp") or event.get("ts")
+                stamp = event.get('timestamp') or event.get('ts')
+                if isinstance(stamp, str) and len(stamp) <= 64:
+                    try:
+                        parsed = datetime.fromisoformat(stamp.replace('Z', '+00:00'))
+                        if parsed.tzinfo is not None:
+                            data['last_observed_at'] = parsed.isoformat()
+                    except ValueError:
+                        pass
             except (ValueError, AttributeError):
                 continue
         if data["observed"]:
@@ -328,6 +349,7 @@ def collect_headroom_automation():
             {"reason": reason, "label": _HEADROOM_SKIP_LABELS[reason], "count": count}
             for reason, count in sorted(data["skip_reasons"].items(), key=lambda item: (-item[1], item[0]))[:3]
         ]
+        data['task_ids'] = sorted(task_ids)
     except FileNotFoundError:
         pass
     except OSError:
@@ -2271,6 +2293,7 @@ setInterval(function() {
 <script src="/static/updates.js"></script>
 <script src="/static/proxy.js"></script>
 <script src="/static/components.js"></script>
+<script src="/static/activity.js"></script>
 </body>
 </html>"""
 

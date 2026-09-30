@@ -9,6 +9,7 @@ from mcp.types import CallToolResult, TextContent, Tool, ToolAnnotations
 
 from exact_retrieval import sign_exact_response
 from local_summaries import LocalSummaries
+from laya_dispatch import explicit_call
 
 ROOT = Path(__file__).resolve().parent
 controller = LocalSummaries(ROOT)
@@ -33,6 +34,12 @@ async def list_tools():
 
 
 def invoke(name, arguments):
+    # task_id selects the summary subject; it is not the caller's identity.
+    with explicit_call(ROOT, 'local_summaries', name):
+        return _invoke(name, arguments)
+
+
+def _invoke(name, arguments):
     if not isinstance(arguments, dict):
         raise ValueError('Tool arguments must be an object.')
     if name == 'list_local_summary_tasks' and not arguments:
@@ -49,7 +56,10 @@ def invoke(name, arguments):
 @server.call_tool()
 async def call_tool(name, arguments):
     try:
-        value = await asyncio.to_thread(invoke, name, arguments or {})
+        arguments = {} if arguments is None else arguments
+        if not isinstance(arguments, dict):
+            raise ValueError('Tool arguments must be an object.')
+        value = await asyncio.to_thread(invoke, name, arguments)
         text = sign_exact_response(json.dumps(value, ensure_ascii=False), root=ROOT)
         return CallToolResult(content=[TextContent(type='text', text=text)], isError=False)
     except (ValueError, LookupError, RuntimeError) as exc:

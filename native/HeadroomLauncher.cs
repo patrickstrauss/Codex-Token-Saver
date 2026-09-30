@@ -34,7 +34,12 @@ internal static class HeadroomLauncher
     private static ProcessStartInfo OriginalStart(string[] args)
     {
         int offset = 0;
-        if (args.Length > offset && args[offset] == "--exact") offset++;
+        bool automatic = false;
+        while (args.Length > offset && (args[offset] == "--exact" || args[offset] == "--cts-automatic"))
+        {
+            automatic |= args[offset] == "--cts-automatic";
+            offset++;
+        }
         if (args.Length <= offset || args[offset] != "--")
             throw new ArgumentException("Expected -- followed by the original absolute executable.");
         offset++;
@@ -50,6 +55,7 @@ internal static class HeadroomLauncher
         }
         var start = new ProcessStartInfo(executable, arguments.ToString());
         start.UseShellExecute = false;
+        if (automatic) start.EnvironmentVariables["HEADROOM_COMMAND_ACTIVE"] = "1";
         return start;
     }
 

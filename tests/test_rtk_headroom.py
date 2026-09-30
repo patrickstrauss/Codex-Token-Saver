@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -64,6 +65,10 @@ class RtkHeadroomTests(unittest.TestCase):
         source.write_text(SOURCE, encoding='utf-8-sig')
         subprocess.run([str(CSC), '/nologo', '/target:exe', '/reference:System.Web.Extensions.dll',
                         '/out:' + str(cls.fixture), str(source)], check=True, capture_output=True)
+        cls.launcher = Path(cls.compiled.name) / 'rtk.exe'
+        subprocess.run([str(CSC), '/nologo', '/reference:System.Web.Extensions.dll',
+                        '/out:' + str(cls.launcher), str(ROOT / 'native/RtkLauncher.cs')],
+                       check=True, capture_output=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -75,7 +80,7 @@ class RtkHeadroomTests(unittest.TestCase):
         self.bundle = Path(self.temp.name)
         for name in ('bin', 'tools', 'headroom/.venv/Scripts', 'data/rtk'):
             (self.bundle / name).mkdir(parents=True)
-        shutil.copy2(ROOT / 'bin/rtk.exe', self.bundle / 'bin/rtk.exe')
+        shutil.copy2(self.launcher, self.bundle / 'bin/rtk.exe')
         shutil.copy2(self.fixture, self.bundle / 'tools/rtk.exe')
         shutil.copy2(self.fixture, self.bundle / 'headroom/.venv/Scripts/python.exe')
         (self.bundle / 'headroom_run.py').write_text('# fixture API', encoding='utf-8')
@@ -85,7 +90,7 @@ class RtkHeadroomTests(unittest.TestCase):
         self.env.update(FIXTURE_ROOT=str(self.bundle), CODEX_THREAD_ID='isolated-fixture')
 
     def run_launcher(self, args=('rg', 'fixture'), **env):
-        result = subprocess.run([str(self.bundle / 'bin/rtk.exe'), *args], input=b'',
+        result = subprocess.run([str(self.bundle / 'bin/rtk.exe'), '--cts-automatic', *args], input=b'',
                                 capture_output=True, cwd=self.bundle, env=dict(self.env, **env), timeout=18)
         self.assertEqual((self.bundle / 'executions.txt').read_text().splitlines(), ['run'])
         self.assertEqual(result.stderr, b'stderr unchanged\n')
@@ -142,9 +147,9 @@ class RtkHeadroomTests(unittest.TestCase):
         kernel.WaitForSingleObject.restype = wintypes.DWORD
         kernel.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
         kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-        shutil.copy2(ROOT / 'headroom/.venv/Scripts/python.exe',
+        shutil.copy2(sys.executable,
                      self.bundle / 'headroom/.venv/Scripts/python.exe')
-        shutil.copy2(ROOT / 'headroom/.venv/pyvenv.cfg', self.bundle / 'headroom/.venv/pyvenv.cfg')
+        shutil.copy2(Path(sys.executable).parents[1] / 'pyvenv.cfg', self.bundle / 'headroom/.venv/pyvenv.cfg')
         (self.bundle / 'headroom_run.py').write_text('''
 import json, os, pathlib, sys, time
 root = pathlib.Path(__file__).parent
@@ -162,7 +167,7 @@ elif '--record-result' in sys.argv:
             with self.subTest(attempt=attempt + 1):
                 (self.bundle / 'worker.json').unlink(missing_ok=True)
                 process = subprocess.Popen(
-                    [str(self.bundle / 'bin/rtk.exe'), 'rg', 'fixture'],
+                    [str(self.bundle / 'bin/rtk.exe'), '--cts-automatic', 'rg', 'fixture'],
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     cwd=self.bundle, env=self.env,
                 )
@@ -301,12 +306,16 @@ elif '--record-result' in sys.argv:
                 self.assertFalse((self.bundle / 'filter.txt').exists())
 
     def test_actual_native_launcher_real_python_sdk_and_isolated_savings_ledger(self):
-        shutil.copy2(ROOT / 'headroom/.venv/Scripts/python.exe', self.bundle / 'headroom/.venv/Scripts/python.exe')
-        shutil.copy2(ROOT / 'headroom/.venv/pyvenv.cfg', self.bundle / 'headroom/.venv/pyvenv.cfg')
+        shutil.copy2(sys.executable, self.bundle / 'headroom/.venv/Scripts/python.exe')
+        shutil.copy2(Path(sys.executable).parents[1] / 'pyvenv.cfg', self.bundle / 'headroom/.venv/pyvenv.cfg')
         shutil.copy2(ROOT / 'headroom_run.py', self.bundle / 'headroom_run.py')
+        # Keep preference lookup inside the disposable bundle, not the checkout's
+        # current settings. Use the caller's installed SDK and offline cache.
+        shutil.copy2(ROOT / 'command_compression.py', self.bundle / 'command_compression.py')
+        shutil.copytree(Path(sys.prefix).parent / 'tokenizer-cache', self.bundle / 'headroom/tokenizer-cache')
         state = self.bundle / 'isolated-real-headroom-state'
         self.env['HEADROOM_WORKSPACE_DIR'] = str(state)
-        self.env['PYTHONPATH'] = os.pathsep.join([str(ROOT), str(ROOT / 'headroom/.venv/Lib/site-packages')])
+        self.env['PYTHONPATH'] = os.pathsep.join([str(ROOT), str(Path(sys.prefix) / 'Lib/site-packages')])
         records = [{'id': i, 'status': 'CRITICAL_FAILURE_73' if i == 73 else 'healthy',
                     'detail': 'Routine service health measurement completed successfully. ' * 4}
                    for i in range(150)]

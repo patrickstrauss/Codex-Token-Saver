@@ -1,4 +1,18 @@
 /* Shared dashboard foundation: native controls, readable type, quiet status colours. */
+.activity-filters { display:flex; flex-wrap:wrap; gap:16px; margin:18px 0; }
+.activity-filters label { display:flex; flex-direction:column; gap:6px; min-width:180px; max-width:100%; }
+.activity-filters label:last-child { flex:1; }
+.activity-filters select { max-width:100%; width:100%; }
+.activity-coverage { border-left:3px solid var(--accent); padding:8px 16px; margin:16px 0; background:var(--surface-raised); }
+.activity-coverage h3 { margin:0; }
+.activity-table-wrap { overflow:auto; max-height:420px; }
+.activity-table { border-collapse:collapse; width:100%; min-width:780px; table-layout:fixed; font-size:12px; }
+.activity-table th:nth-child(1) { width:15%; }
+.activity-table th:nth-child(2) { width:16%; }
+.activity-table th:nth-child(3) { width:18%; }
+.activity-table th:nth-child(4) { width:12%; }
+.activity-table th, .activity-table td { text-align:left; vertical-align:top; padding:9px 12px; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+.activity-table th { position:sticky; top:0; background:var(--surface-raised); color:var(--muted); }
 :root { color-scheme:dark; --surface:#151b23; --surface-raised:#1a222c; --line:#2e3947; --text:#ecf1f7; --muted:#a9b7c7; --accent:#9bc5ff; }
 html { scroll-behavior:smooth; }
 body { background:#0e131a; color:var(--text); font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif; font-size:14px; padding:28px 32px 40px; height:auto; min-height:100%; }

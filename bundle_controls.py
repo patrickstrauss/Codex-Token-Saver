@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from bundle_preferences import EXTENSIONS, preference_status, set_preference
+from bundle_activity import snapshot as activity_snapshot
 from desktop_proxy_control import _latest_timestamp, _json
 
 LABELS = {
@@ -86,6 +87,7 @@ class BundleControls:
 
     def status(self, observations=None):
         observations = observations or {}
+        new_activity = activity_snapshot(self.root)
         preferences = preference_status(self.root)
         values, settings_error = preferences['values'], preferences.get('error')
         try:
@@ -119,7 +121,9 @@ class BundleControls:
                          if name == 'headroom_requests' else values[name])
             row = {'id': name, 'label': label, 'requested_enabled': requested,
                    'effective_enabled': False, 'available': False, 'state': 'off',
-                   'reason': '', 'last_use': None, 'last_error': None, 'restart_required': False}
+                   'reason': '', 'last_use': None, 'last_error': None, 'restart_required': False,
+                   'activity_source': 'legacy_mixed',
+                   'last_verified_call': new_activity['last_verified_calls'].get(name)}
             if name == 'rtk':
                 data = observations.get('rtk', {})
                 row['available'] = all((self.root / file).is_file() for file in ('bin/rtk.exe', 'tools/rtk.exe'))
@@ -190,7 +194,7 @@ class BundleControls:
             elif name == 'laya_router':
                 from bundle_router import status as router_status
                 row.update(router_status(self.root))
-                row['reason'] = 'Experimental Laya 0.3.22 entry tool: chooses and runs enabled bundle sequences when called. Codex tool selection is unchanged. One local CPU model exits after 5 idle minutes. No token savings are inferred.'
+                row['reason'] = 'Laya is the main entry point for all explicit bundle requests when On. Typed MCP and CLI operations use validated routes without classification; free-form bundle_query uses the classifier and its confidence gate. Automatic compression and command hooks continue independently. Configured status does not verify a live task connection. No token savings are inferred.'
                 if row.get('last_sequence'):
                     row['reason'] += ' Last sequence: ' + ' → '.join(row['last_sequence']) + '.'
                 integration = integrations.get(name, {})
@@ -256,7 +260,7 @@ class BundleControls:
         return {'components': rows, 'overall_health': 'error' if severe else 'stale' if degraded else 'ok',
                 'selected_count': len(selected), 'preferences_error': settings_error,
                 'unverified_count': sum(row['effective_enabled'] is None for row in selected),
-                'opencodex': opencodex,
+                'opencodex': opencodex, 'new_activity': new_activity,
                 'native_compaction_retained': True}
 
     def set_enabled(self, component, enabled):

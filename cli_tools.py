@@ -5,13 +5,30 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
 import subprocess
 import sys
+import tempfile
+from urllib.parse import urlsplit
 
 from bundle_preferences import load_preferences, set_preference
 from desktop_proxy_control import atomic_write, routing_lock
 
 TOOLS = {'playwright_cli': '@playwright/cli', 'ast_grep': '@ast-grep/cli'}
+FAILURES = {
+    'connection_refused': 'Browser connection unavailable. Refresh the app CDP endpoint before attaching.',
+    'invalid_endpoint': 'Use an explicit HTTP or WebSocket CDP endpoint with a host and port.',
+    'ambiguous_selector': 'Selector matched multiple elements. Narrow the locator and inspect the result before retrying.',
+    'timeout': 'Browser operation timed out. Inspect the current page before retrying.',
+    'command_failed': 'The tool reported a failure. Inspect its command output.',
+    'router_unavailable': 'Laya did not authorize this request. Narrow the intent or check the router.',
+    'runtime_missing': 'The bundled runtime is unavailable.',
+}
+
+
+def authorize_explicit(*args, **kwargs):
+    from laya_dispatch import authorize_explicit as authorize
+    return authorize(*args, **kwargs)
 
 
 def runtime_paths(root):
@@ -59,20 +76,34 @@ def status(root, component):
             data = {}
     except (OSError, ValueError):
         pass
+    failure = data.get('last_failure', {})
+    diagnostics = {}
+    if isinstance(failure, dict) and failure.get('code') in FAILURES:
+        diagnostics = {'last_failure': FAILURES[failure['code']], 'last_failure_code': failure['code'],
+                       'last_failure_at': failure.get('at')}
     return {'available': runtime['available'], 'version': runtime['versions'].get(TOOLS[component]),
             'last_use': data.get('last_use'),
+            'diagnostics': diagnostics,
             'activity': {key: value if type(value := data.get(key)) is int and value >= 0 else 0
-                         for key in ('completed', 'failed', 'blocked')}}
+                         for key in ('completed', 'failed', 'blocked', 'informational', 'diagnostic')}}
 
 
-def record(root, component, outcome):
+def record(root, component, outcome, *, kind='operation', task_id=None, error_code=None):
+    from bundle_activity import record as record_event
+    record_event(root, component, outcome, task_id=task_id, kind=kind, error_code=error_code)
     path = Path(root) / 'data/cli-tools' / (component + '.json')
     try:
         with routing_lock(path.with_suffix('.lock')):
             data = status(root, component)
             counters = data['activity']
-            counters[outcome] += 1
-            counters['last_use'] = datetime.now(timezone.utc).isoformat() if outcome != 'blocked' else data['last_use']
+            counters[outcome if kind == 'operation' else kind] += 1
+            now = datetime.now(timezone.utc).isoformat()
+            counters['last_use'] = now if outcome != 'blocked' and kind == 'operation' else data['last_use']
+            old = data.get('diagnostics', {})
+            if old.get('last_failure_code'):
+                counters['last_failure'] = {'code': old['last_failure_code'], 'at': old.get('last_failure_at')}
+            if error_code in FAILURES:
+                counters['last_failure'] = {'code': error_code, 'at': now}
             atomic_write(path, (json.dumps(counters) + '\n').encode())
     except (OSError, ValueError, RuntimeError):
         pass  # Metrics cannot change command behavior or cause a second execution.
@@ -98,6 +129,7 @@ def guidance(before, root, component, enabled):
                 'Quote metavariables such as `$A` literally in PowerShell. Use rg for literal text and Serena for symbol navigation. '
                 'Read exact matches before edits; use rewrite/update flags only within authorized edit scope. ')
     text += 'Respect the bundle toggle; do not enable it automatically. These tools do not report token savings.'
+    text += ' Explicit operations pass through Laya. Prefer bundle_query for a read-only bundle task; the CLI remains available for typed operations such as browser interaction and authorized AST rewrites.'
     block = b'\n' + start + b'\n' + text.encode() + b'\n' + end + b'\n' if enabled else b''
     return pattern.sub(lambda _: block, before) if matches else before + block
 
@@ -135,25 +167,107 @@ def set_enabled(root, component, enabled, config_home=None):
     return {'component': component, 'enabled': enabled, 'restart_required': before != after}
 
 
+def cdp_preflight(args):
+    if 'attach' not in args:
+        return None
+    endpoint = None
+    for index, value in enumerate(args):
+        if value.startswith('--cdp='):
+            endpoint = value.split('=', 1)[1]
+        elif value == '--cdp' and index + 1 < len(args):
+            endpoint = args[index + 1]
+    if endpoint is None:
+        return None
+    try:
+        url = urlsplit(endpoint)
+        if url.scheme not in ('http', 'https', 'ws', 'wss') or not url.hostname:
+            return 'invalid_endpoint'
+        port = url.port or (443 if url.scheme in ('https', 'wss') else 80)
+        with socket.create_connection((url.hostname, port), timeout=2):
+            pass
+    except ValueError:
+        return 'invalid_endpoint'
+    except OSError:
+        return 'connection_refused'
+    return None
+
+
+def browser_failure(text):
+    text = text.lower()
+    if 'econnrefused' in text or 'connection refused' in text:
+        return 'connection_refused'
+    if 'strict mode violation' in text or 'resolved to 2 elements' in text:
+        return 'ambiguous_selector'
+    if 'timeout' in text or 'timed out' in text:
+        return 'timeout'
+    return 'command_failed'
+
+
+def browser_run(argv, environment):
+    # Spool instead of holding potentially large snapshots in memory. Replay the
+    # exact streams once, and retain only fixed failure categories in metrics.
+    with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
+        result = subprocess.run(argv, env=environment, stdout=output, stderr=errors)
+        sample = b''
+        for stream, target in ((output, sys.stdout), (errors, sys.stderr)):
+            stream.seek(0)
+            first = stream.read(8192)
+            sample += first
+            stream.seek(0)
+            while chunk := stream.read(65536):
+                if hasattr(target, 'buffer'):
+                    target.buffer.write(chunk)
+                else:
+                    target.write(chunk.decode('utf-8', 'replace'))
+            target.flush()
+        return result.returncode, browser_failure(sample.decode('utf-8', 'replace')) if result.returncode else None
+
+
 def run(root, component, args):
     if component not in TOOLS:
         raise ValueError('Unknown CLI component.')
+    informational = not args or args[0] == 'help' or any(arg in ('--help', '-h', '--version', '-V') for arg in args)
+    kind = 'diagnostic' if os.environ.get('CTS_ACTIVITY_KIND') == 'diagnostic' else 'informational' if informational else 'operation'
+    task_id = os.environ.get('CODEX_THREAD_ID')
+    def observed(outcome, error_code=None):
+        record(root, component, outcome, kind=kind, task_id=task_id, error_code=error_code)
     if not load_preferences(root)[component]:
         print('Codex Token Saver: this CLI is Off. Enable it in Your toolkit.', file=sys.stderr)
-        record(root, component, 'blocked')
+        observed('blocked')
         return 126
     if not runtime_status(root)['available']:
         print('Codex Token Saver: CLI runtime is missing or unvalidated. Run the bundle CLI installer.', file=sys.stderr)
+        observed('failed', 'runtime_missing')
         return 127
+    if not informational:
+        try:
+            authorize_explicit(root, component, ' '.join(arg for arg in args[:2] if not arg.startswith('-')), task_id=task_id)
+        except (ValueError, RuntimeError, OSError):
+            print('Codex Token Saver: ' + FAILURES['router_unavailable'], file=sys.stderr)
+            observed('blocked', 'router_unavailable')
+            return 126
+    if component == 'playwright_cli' and not informational:
+        error = cdp_preflight(args)
+        if error:
+            print('Codex Token Saver: ' + FAILURES[error], file=sys.stderr)
+            observed('failed', error)
+            return 1
     environment = dict(os.environ)
     environment['PLAYWRIGHT_BROWSERS_PATH'] = str(Path(root) / 'tools/playwright-browsers')
     try:
-        result = subprocess.run([*command(root, component), *args], env=environment)
-        code = result.returncode
+        argv = [*command(root, component), *args]
+        error = None
+        if component == 'playwright_cli' and not informational:
+            code, error = browser_run(argv, environment)
+        else:
+            code = subprocess.run(argv, env=environment).returncode
     except OSError as error:
         print('Codex Token Saver: CLI could not start: ' + str(error), file=sys.stderr)
         code = 127
-    record(root, component, 'completed' if code == 0 else 'failed')
+        error = 'runtime_missing'
+    no_matches = component == 'ast_grep' and code == 1 and bool(args) and args[0] == 'run'
+    success = code == 0 or no_matches
+    observed('completed' if success else 'failed', None if success else error or 'command_failed')
     return code
 
 
