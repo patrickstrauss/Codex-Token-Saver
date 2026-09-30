@@ -19,7 +19,8 @@ internal static class RtkLauncher
     {
         var values = new Dictionary<string, bool> {
             {"rtk", true}, {"headroom_local", true}, {"serena", false},
-            {"local_summaries", false}, {"llama_cpp", false}
+            {"local_summaries", false}, {"llama_cpp", false},
+            {"playwright_cli", false}, {"ast_grep", false}, {"laya_router", false}
         };
         string path = Path.Combine(root, "settings", "components.json");
         try

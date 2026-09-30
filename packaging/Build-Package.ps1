@@ -20,11 +20,11 @@ foreach ($taskLauncher in @('Select-Local-Model.cmd','Repair-Team-Setup.cmd','Se
 foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena')) {
     $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo $taskDirectory) -File |
         Where-Object { $_.Extension -in @('.py','.ps1','.cs','.html','.yml') -or
-            ($taskDirectory -eq 'packaging' -and ($_.Name -eq 'dependencies.json' -or $_.Name -like 'requirements-*.txt')) }
+            ($taskDirectory -eq 'packaging' -and ($_.Name -in @('dependencies.json','package.json','package-lock.json','laya-model.json') -or $_.Name -like 'requirements-*.txt')) }
 }
 $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'dashboard\static') -File -Recurse |
     Where-Object Extension -in @('.css','.js','.svg','.png','.ico','.woff2')
-foreach ($taskDoc in @('TEAM-INSTALL.md','USING-BUNDLE.md','SERENA-INTEGRATION.md','SERENA-TESTING.md','CONTROL-UI-VALIDATION.md','PERFORMANCE-CHECK.md','PROCESS-RECOVERY.md','OPENCODEX-INTEGRATION.md','OPENCODEX-COMPATIBILITY.md')) {
+foreach ($taskDoc in @('TEAM-INSTALL.md','USING-BUNDLE.md','CLI-TOOLS.md','LAYA-ROUTER.md','SERENA-INTEGRATION.md','SERENA-TESTING.md','CONTROL-UI-VALIDATION.md','PERFORMANCE-CHECK.md','PROCESS-RECOVERY.md','OPENCODEX-INTEGRATION.md','OPENCODEX-COMPATIBILITY.md')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo ('docs\' + $taskDoc))
 }
 foreach ($taskDoc in @('README.md','VALIDATION.md','token-saver-v2.64.0.patch','offline-witness.json')) {
@@ -38,7 +38,7 @@ foreach ($taskFile in ($taskFiles | Sort-Object FullName -Unique)) {
     Copy-Item -LiteralPath $taskFile.FullName -Destination $taskDestination
 }
 [void](New-Item -ItemType Directory -Path (Join-Path $taskPayload 'bin') -Force)
-foreach ($taskBuild in @('Build-RtkLauncher.ps1','Build-HeadroomLauncher.ps1','Build-CodexLaunchers.ps1','Build-TrayLauncher.ps1')) {
+foreach ($taskBuild in @('Build-RtkLauncher.ps1','Build-HeadroomLauncher.ps1','Build-CodexLaunchers.ps1','Build-TrayLauncher.ps1','Build-CliLaunchers.ps1')) {
     & (Join-Path $taskPayload ('native\' + $taskBuild)) | Out-Null
 }
 # Kept only because the existing startup installer checks for its legacy fallback.

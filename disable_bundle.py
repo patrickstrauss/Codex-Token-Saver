@@ -12,7 +12,7 @@ import tomllib
 
 import tomlkit
 
-from bundle_preferences import DEFAULTS
+from bundle_preferences import DEFAULTS, LEGACY_DEFAULTS, EXTENSIONS
 from desktop_proxy_control import DesktopProxyControl, LOCAL_URL, _encode, _with_route, _without_route, routing_lock
 from install_command_hook import hook_group
 from install_desktop_mcp import replace_checked, server_config
@@ -65,7 +65,8 @@ def disable_config(before, root):
     original = tomllib.loads(source)
     document = tomlkit.parse(source)
     expected = {'headroom_desktop': server_config(root)}
-    for name, script in (('bundle_serena', 'serena_mcp.py'), ('bundle_local_summaries', 'local_summary_mcp.py')):
+    for name, script in (('bundle_serena', 'serena_mcp.py'), ('bundle_local_summaries', 'local_summary_mcp.py'),
+                         ('bundle_laya_router', 'bundle_router_mcp.py')):
         expected[name] = {'command': str(root / 'headroom/.venv/Scripts/python.exe'), 'args': [str(root / script)]}
     for name, entry in original.get('mcp_servers', {}).items():
         if name in expected or not isinstance(entry, dict) or entry.get('enabled') is False:
@@ -129,7 +130,8 @@ def disable_guidance(before):
     if before is None:
         return None
     result = before
-    for label in ('CODEX TOKEN SAVER', 'HEADROOM DESKTOP', 'HEADROOM COMMAND OUTPUT', 'CODEX TOKEN SAVER SERENA'):
+    for label in ('CODEX TOKEN SAVER', 'HEADROOM DESKTOP', 'HEADROOM COMMAND OUTPUT', 'CODEX TOKEN SAVER SERENA',
+                  'CODEX TOKEN SAVER PLAYWRIGHT_CLI', 'CODEX TOKEN SAVER AST_GREP'):
         start, end = (f'<!-- {kind} {label} -->'.encode() for kind in ('BEGIN', 'END'))
         pattern = re.compile(re.escape(start) + rb'\r?\n.*?' + re.escape(end) + rb'(?:\r?\n|$)', re.S)
         matches = list(pattern.finditer(result))
@@ -156,11 +158,12 @@ def planned_changes(root, config_home):
     after = json_bytes(dict(value, installed=False, enabled=False))
     if value != json.loads(after):
         changes.append((settings, before, after))
-    preferences = root / 'settings/components.json'
-    before = read(preferences)
-    after = json_bytes({'schema_version': 1, 'components': dict.fromkeys(DEFAULTS, False)})
-    if before != after:
-        changes.append((preferences, before, after))
+    for filename, keys in (('components.json', LEGACY_DEFAULTS), ('extensions.json', EXTENSIONS)):
+        preferences = root / 'settings' / filename
+        before = read(preferences)
+        after = json_bytes({'schema_version': 1, 'components': dict.fromkeys(keys, False)})
+        if before != after:
+            changes.append((preferences, before, after))
     for name, fields in (('desktop-integration.json', {'configured': False, 'enabled': False}),
                          ('automatic-headroom.json', {'configured': False})):
         path = root / name

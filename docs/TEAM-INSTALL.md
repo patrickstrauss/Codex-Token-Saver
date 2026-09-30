@@ -1,5 +1,9 @@
 # Install Codex Token Saver for your team
 
+Full installation also includes pinned Playwright CLI and ast-grep runtimes. It needs access to **nodejs.org** and **registry.npmjs.org**; no global Node installation is needed. Enable their cards under **Your toolkit** when wanted. Their update pins ship with bundle releases, separately from Library updates. See [CLI tools and Electron support](CLI-TOOLS.md). Core-only installation omits these runtimes.
+
+Full installation also downloads the revision-pinned **Laya multilingual classifier** from **huggingface.co** (about 647 MiB of artifacts), plus its isolated Python runtime. Allow roughly 2 GB additional disk space for the model, working copy and runtime. **Bundle tool router** defaults Off; enable it to register the optional `bundle_query` entry tool, then reload Codex MCP tools. No provider/model selection is changed. See [Laya routing behavior and qualification limits](LAYA-ROUTER.md).
+
 Use **Windows 10/11 x64**, an ordinary user account, and an installed Codex desktop app. Sign into Codex normally before installing. No administrator account, Git, Python, or developer tools are required. Windows .NET Framework 4.x must be available. Internet access to GitHub, PyPI and OpenAI's tokenizer host is required for the first installation. Leave several GB free for Python libraries and download caches; GGUF models need additional space.
 
 ## Download the workflow artifact

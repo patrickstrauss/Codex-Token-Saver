@@ -13,6 +13,7 @@ from bundle_preferences import load_preferences, set_preference
 TOOLS = {
     'serena': ['activate_project', 'get_symbols_overview', 'find_symbol', 'find_referencing_symbols'],
     'local_summaries': ['list_local_summary_tasks', 'refresh_local_summary', 'get_local_summary'],
+    'laya_router': ['bundle_query'],
 }
 
 SERENA_GUIDANCE = (
@@ -58,8 +59,9 @@ class BundleIntegrations:
     def _paths(self, component):
         if component not in TOOLS:
             raise ValueError('Unknown bundle integration.')
-        directory = 'serena' if component == 'serena' else 'local-compaction'
-        script = 'serena_mcp.py' if component == 'serena' else 'local_summary_mcp.py'
+        directory, script = {'serena': ('serena', 'serena_mcp.py'),
+                             'local_summaries': ('local-compaction', 'local_summary_mcp.py'),
+                             'laya_router': ('laya', 'bundle_router_mcp.py')}[component]
         return (self.root / 'headroom/.venv/Scripts/python.exe', self.root / script,
                 self.root / directory / '.venv/Scripts/python.exe')
 
@@ -134,6 +136,13 @@ class BundleIntegrations:
                 agents = self.home / 'AGENTS.md'
                 original = _read(agents)
                 changes.append((agents, original, _serena_guidance(original, enabled), agents.exists()))
+            if component == 'laya_router':
+                # Registration adds a callable facade, not an instruction to replace
+                # Codex's tool selection or existing direct tool guidance.
+                if enabled:
+                    from bundle_router import status as router_status
+                    if not router_status(self.root)['available']:
+                        raise RuntimeError('Install and validate Laya before enabling its entry tool.')
             changes = [item for item in changes if item[1] != item[2]]
             stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
             for path, original, updated, existed in changes:

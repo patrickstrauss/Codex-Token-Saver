@@ -1,0 +1,10 @@
+{
+  "name": "codex-token-saver-agent-clis",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned, bundle-owned browser and structural code tools",
+  "dependencies": {
+    "@playwright/cli": "0.1.22",
+    "@ast-grep/cli": "0.45.3"
+  }
+}

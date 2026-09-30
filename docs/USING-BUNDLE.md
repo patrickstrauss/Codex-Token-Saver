@@ -1,5 +1,9 @@
 # Using the bundle
 
+**Browser automation (Playwright CLI)** and **Structural code search (ast-grep)** are included in full installations. Enable each under **Your toolkit**; reload Codex guidance when convenient. Their activity counters measure tool calls, not saved tokens. See [examples, Electron limits, and RTK command scope](CLI-TOOLS.md).
+
+**Bundle tool router (Laya)** adds the explicit `bundle_query` MCP tool. Calls to this tool go through local Laya before the bundle executes a validated sequence. Other Codex tools continue normally. Enable the card and reload MCP tools to discover it. See [routing examples and limits](LAYA-ROUTER.md).
+
 Open **Codex Token Saver** from the Windows Start menu, click the **TS** tray icon, or visit [the local dashboard](http://127.0.0.1:8095/). The installed app lives in `%USERPROFILE%\CodexTokenSaver`; a Git checkout is separate source code.
 
 ## Choose the components

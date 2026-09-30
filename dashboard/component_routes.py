@@ -10,7 +10,7 @@ from uuid import UUID
 from flask import jsonify, request
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
 
-COMPONENTS = ('rtk', 'headroom_local', 'headroom_requests', 'serena', 'local_summaries', 'llama_cpp')
+COMPONENTS = ('rtk', 'headroom_local', 'headroom_requests', 'serena', 'local_summaries', 'llama_cpp', 'playwright_cli', 'ast_grep', 'laya_router')
 
 
 def _launch_disable(root):

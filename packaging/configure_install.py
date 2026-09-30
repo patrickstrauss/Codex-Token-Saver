@@ -51,6 +51,12 @@ def configure(root, config_home):
     if before[config].startswith(b'\xef\xbb\xbf'):
         desired_config = b'\xef\xbb\xbf' + desired_config
     guidance = before[agents]
+    from cli_tools import guidance as cli_guidance, runtime_status
+    from bundle_preferences import load_preferences
+    if runtime_status(root)['available']:
+        preferences = load_preferences(root)
+        for component in ('playwright_cli', 'ast_grep'):
+            guidance = cli_guidance(guidance, root, component, preferences[component])
     additions = {
         'HEADROOM DESKTOP': 'Prefer headroom_read_file for large local JSON, CSV and logs. Retrieve exact content with headroom_retrieve or compress=false before edits or precise claims. Use native reads if unavailable. Preserve the managed connection, selected model, reasoning and authentication; use the bundle controls for routing changes.',
         'CODEX TOKEN SAVER': 'For supported external commands, prefer `rtk git status/diff/log`, `rtk rg`, and supported test/build commands. Keep PowerShell cmdlets, scripts and pipelines native. Use original output for exact evidence. If rtk is not on PATH, use `& "$env:USERPROFILE\\CodexTokenSaver\\bin\\rtk.exe"`. Preserve the selected Codex model, reasoning and authentication.',

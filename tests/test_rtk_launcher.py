@@ -130,6 +130,11 @@ class NativeRtkLauncherTests(unittest.TestCase):
         result = self.run_launcher(['git', 'status'])
         self.assertEqual(json.loads(result.stdout.decode('utf-8-sig'))['args'], ['proxy', 'git', 'status'])
 
+    def test_new_cli_preferences_do_not_disable_rtk(self):
+        self.write_preferences('{"schema_version":1,"components":{"rtk":true,"playwright_cli":true,"ast_grep":false,"laya_router":true}}')
+        result = self.run_launcher(['git', 'status'])
+        self.assertEqual(json.loads(result.stdout.decode('utf-8-sig'))['args'], ['git', 'status'])
+
     def test_invalid_preferences_path_does_not_restore_default_compression(self):
         (self.bundle / 'settings/components.json').mkdir(parents=True)
         result = self.run_launcher(['git', 'status'])

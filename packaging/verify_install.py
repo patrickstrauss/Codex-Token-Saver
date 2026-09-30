@@ -42,6 +42,18 @@ def verify(root):
         assert original in exact
         version = subprocess.check_output([str(root / 'bin/rtk.exe'), '--version'], text=True, timeout=30)
         assert 'rtk ' in version
+        from cli_tools import runtime_paths, runtime_status, command
+        _, cli_runtime, _ = runtime_paths(root)
+        if cli_runtime.exists():
+            assert runtime_status(root)['available'], 'CLI runtime is incomplete'
+            for component in ('playwright_cli', 'ast_grep'):
+                subprocess.run([*command(root, component), '--version'], check=True, timeout=30)
+        if (root / 'laya/.venv/Scripts/python.exe').exists():
+            from bundle_router import status as router_status
+            assert router_status(root)['available'], 'Laya model inference has not been validated'
+            from bundle_router_mcp import list_tools as router_tools
+            import asyncio
+            assert [tool.name for tool in asyncio.run(router_tools())] == ['bundle_query']
         dashboard = root / 'dashboard/.venv/Scripts/python.exe'
         subprocess.run([str(dashboard), '-c', 'import flask, dotenv, tomlkit; print("dashboard dependencies OK")'], check=True, timeout=30)
         for directory, imports in [('serena', 'import serena; import solidlsp'), ('local-compaction', 'import langmem; import langchain_openai')]:

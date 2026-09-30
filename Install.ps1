@@ -30,7 +30,7 @@ foreach ($taskFile in $taskManifest.files) {
 }
 $taskPins = Get-Content -LiteralPath (Join-Path $taskPayload 'packaging\dependencies.json') -Raw | ConvertFrom-Json
 if ($Plan) {
-    [ordered]@{version=$taskManifest.version;destination=$taskRoot;components=$(if ($CoreOnly) {'Headroom, RTK, dashboard'} else {'Headroom, RTK, dashboard, Serena, LangMem, llama.cpp CPU'});integration=(-not $SkipIntegration);routing='existing connection preserved';models='no model downloaded';verified_files=@($taskManifest.files).Count} | ConvertTo-Json
+    [ordered]@{version=$taskManifest.version;destination=$taskRoot;components=$(if ($CoreOnly) {'Headroom, RTK, dashboard'} else {'Headroom, RTK, dashboard, Serena, LangMem, llama.cpp CPU, Playwright CLI, ast-grep, Laya'});integration=(-not $SkipIntegration);routing='existing connection preserved';models=$(if ($CoreOnly) {'no model downloaded'} else {'pinned local Laya classifier; no GGUF model downloaded'});verified_files=@($taskManifest.files).Count} | ConvertTo-Json
     exit 0
 }
 $taskMarker = Join-Path $taskRoot 'team-install-source.json'
@@ -103,7 +103,7 @@ Invoke-BundleUv @('python','install',$taskPins.python,'--no-registry','--no-bin'
 $taskPython = [string](& $taskUv --no-config python find $taskPins.python)
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $taskPython)) { throw 'Managed Python was not installed.' }
 $taskComponents = @('headroom','dashboard')
-if (-not $CoreOnly) { $taskComponents += @('serena','langmem') }
+if (-not $CoreOnly) { $taskComponents += @('serena','langmem','laya') }
 foreach ($taskComponent in $taskComponents) {
     $taskDirectory = if ($taskComponent -eq 'langmem') {'local-compaction'} else {$taskComponent}
     $taskVenv = Join-Path $taskRoot ($taskDirectory + '\.venv')
@@ -123,6 +123,12 @@ $taskTokenizerCache = Join-Path $taskRoot 'headroom\tokenizer-cache'
 [void](New-Item -ItemType Directory -Path $taskTokenizerCache -Force)
 Copy-Item -LiteralPath $taskTokenizer -Destination (Join-Path $taskTokenizerCache $taskPins.tokenizer.filename) -Force
 $taskHeadroomPython = Join-Path $taskRoot 'headroom\.venv\Scripts\python.exe'
+if (-not $CoreOnly) {
+    & $taskHeadroomPython (Join-Path $taskRoot 'packaging\install_cli_tools.py') $taskRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Bundled CLI validation failed. Codex settings were not changed.' }
+    & $taskHeadroomPython (Join-Path $taskRoot 'packaging\install_laya_model.py') $taskRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Laya model validation failed. Codex settings were not changed.' }
+}
 & $taskHeadroomPython (Join-Path $taskRoot 'packaging\verify_install.py') $taskRoot
 if ($LASTEXITCODE -ne 0) { throw 'Installed runtime smoke check failed. Codex settings were not changed.' }
 if (-not $SkipIntegration) {

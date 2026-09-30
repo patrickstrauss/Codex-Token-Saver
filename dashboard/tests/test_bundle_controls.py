@@ -49,6 +49,23 @@ def by_id(control, observations=None):
     return {row['id']: row for row in control.status(observations)['components']}
 
 
+def test_cli_cards_use_independent_preferences_and_real_activity(control, tmp_path, monkeypatch):
+    import cli_tools
+    from bundle_preferences import load_preferences
+    control.integrations.home = tmp_path / 'codex'
+    monkeypatch.setattr(cli_tools, 'runtime_status', lambda root: {'available': True, 'versions': {'@ast-grep/cli': '0.45.3'}})
+    control.set_enabled('ast_grep', True)
+    cli_tools.record(control.root, 'ast_grep', 'completed')
+    row = by_id(control)['ast_grep']
+    assert row['state'] == 'ready' and row['version'] == '0.45.3'
+    assert row['activity']['completed'] == 1 and row['last_use']
+    assert load_preferences(control.root)['rtk']
+    assert not load_preferences(control.root)['playwright_cli']
+    control.set_enabled('ast_grep', False)
+    assert by_id(control)['ast_grep']['state'] == 'off'
+    assert control.proxy.calls == []
+
+
 def test_opencodex_cannot_enable_native_request_route(control):
     control.opencodex = lambda: {'routing_matches': True, 'transform_protocol': 1}
     with pytest.raises(RuntimeError, match='OpenCodex'):

@@ -4,7 +4,7 @@ import math
 from datetime import datetime
 from pathlib import Path
 
-from bundle_preferences import preference_status, set_preference
+from bundle_preferences import EXTENSIONS, preference_status, set_preference
 from desktop_proxy_control import _latest_timestamp, _json
 
 LABELS = {
@@ -14,6 +14,9 @@ LABELS = {
     'serena': 'Serena symbol navigation',
     'local_summaries': 'LangMem local summaries',
     'llama_cpp': 'llama.cpp local inference',
+    'playwright_cli': 'Playwright CLI browser automation',
+    'ast_grep': 'ast-grep structural code search',
+    'laya_router': 'Laya bundle tool routing',
 }
 
 
@@ -175,6 +178,26 @@ class BundleControls:
                     except Exception:
                         row.update(available=False, effective_enabled=False, state='error',
                                    reason='OpenCodex integration status could not be verified.')
+            elif name in ('playwright_cli', 'ast_grep'):
+                from cli_tools import status as cli_status
+                data = cli_status(self.root, name)
+                row.update(data)
+                row['reason'] = (('Browser automation; Electron renderers require an available CDP connection. '
+                                  'Off blocks new commands; detach external apps before switching Off.')
+                                 if name == 'playwright_cli' else
+                                 'Structural search, lint and explicit rewrites. Off blocks new commands.')
+                row['reason'] += ' Version ' + (data.get('version') or 'not installed') + '. Updated with bundle releases. Activity counts are not token savings.'
+            elif name == 'laya_router':
+                from bundle_router import status as router_status
+                row.update(router_status(self.root))
+                row['reason'] = 'Experimental Laya 0.3.22 entry tool: chooses and runs enabled bundle sequences when called. Codex tool selection is unchanged. One local CPU model exits after 5 idle minutes. No token savings are inferred.'
+                if row.get('last_sequence'):
+                    row['reason'] += ' Last sequence: ' + ' → '.join(row['last_sequence']) + '.'
+                integration = integrations.get(name, {})
+                if requested and not (integration.get('configured') and integration.get('managed')):
+                    row.update(state='needs_restart', reason='The bundle entry tool needs registration or reload.')
+                elif requested:
+                    row.update(state='configured', effective_enabled=None)
             elif name in ('serena', 'local_summaries'):
                 integration = integrations.get(name, {})
                 row['available'] = integration.get('installed') is True
@@ -210,8 +233,9 @@ class BundleControls:
                 if requested and summaries.get('running'):
                     row['state'] = 'in_use'
             if name != 'headroom_requests':
-                if settings_error:
-                    row.update(state='error', last_error=settings_error, reason='Component preferences are unreadable; filtering is bypassed.')
+                row_error = preferences.get('extension_error') if name in EXTENSIONS else settings_error
+                if row_error:
+                    row.update(state='error', last_error=row_error, reason='Component preferences are unreadable; filtering is bypassed.')
                 elif requested:
                     if not row['available']:
                         row.update(state='unavailable', reason='Required runtime or configuration is missing. Install and validate it before enabling.')
@@ -226,7 +250,7 @@ class BundleControls:
                 row['state'] = 'error'
             rows.append(row)
         selected = [row for row in rows if row['requested_enabled']]
-        severe = (any(row['state'] in ('error', 'unavailable') for row in selected) or bool(settings_error)
+        severe = (any(row['state'] in ('error', 'unavailable') for row in selected) or bool(settings_error or preferences.get('extension_error'))
                   or any(row['requested_enabled'] is None for row in rows))
         degraded = any(row['state'] in ('bypassed', 'needs_restart') for row in selected)
         return {'components': rows, 'overall_health': 'error' if severe else 'stale' if degraded else 'ok',
@@ -258,7 +282,10 @@ class BundleControls:
             row = next(row for row in self.status()['components'] if row['id'] == component)
             if not row['available']:
                 raise RuntimeError('This component has not been installed and validated.')
-        if component in ('serena', 'local_summaries'):
+        if component in ('serena', 'local_summaries', 'laya_router'):
             return self.integrations.set_enabled(component, enabled)
+        if component in ('playwright_cli', 'ast_grep'):
+            from cli_tools import set_enabled
+            return set_enabled(self.root, component, enabled, getattr(self.integrations, 'home', None))
         set_preference(self.root, component, enabled)
         return {'component': component, 'enabled': enabled}

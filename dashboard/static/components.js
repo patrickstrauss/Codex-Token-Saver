@@ -4,9 +4,9 @@
     if (!document.getElementById('bundle-components')) return;
     var token = document.querySelector('meta[name="bundle-update-token"]').content;
     var state = {}, rows = {}, changing = false, reading = false, generation = 0;
-    var names = ['rtk', 'headroom_local', 'headroom_requests', 'serena', 'local_summaries', 'llama_cpp'];
-    var labels = ['Command output', 'Local file & output reading', 'Request compression', 'Code navigation', 'Task summaries', 'Local model'];
-    var engines = ['RTK', 'Headroom · local output', 'Headroom · model requests', 'Serena · symbol tools', 'LangMem', 'llama.cpp'];
+    var names = ['rtk', 'headroom_local', 'headroom_requests', 'serena', 'local_summaries', 'llama_cpp', 'playwright_cli', 'ast_grep', 'laya_router'];
+    var labels = ['Command output', 'Local file & output reading', 'Request compression', 'Code navigation', 'Task summaries', 'Local model', 'Browser automation', 'Structural code search', 'Bundle tool router'];
+    var engines = ['RTK', 'Headroom · local output', 'Headroom · model requests', 'Serena · symbol tools', 'LangMem', 'llama.cpp', 'Playwright CLI', 'ast-grep', 'Laya · local classifier'];
     var states = {off:'Off', ready:'Ready', configured:'Configured · task loading unverified', in_use:'In use', bypassed:'Bypassed', needs_restart:'Needs setup / reload', error:'Error', unavailable:'Unavailable'};
     function el(id) { return document.getElementById(id); }
     function textNode(tag, className, text) {

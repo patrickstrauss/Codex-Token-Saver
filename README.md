@@ -1,6 +1,6 @@
 # Codex Token Saver
 
-**A Windows tray app for controlling and measuring local token-saving tools used with Codex.** The dashboard provides independent controls for RTK, Headroom local output, Headroom request compression, Serena, LangMem summaries and llama.cpp. Requested settings, readiness and recent activity are shown separately. Start with [Using the bundle](docs/USING-BUNDLE.md).
+**A Windows tray app for controlling and measuring local token-saving tools used with Codex.** The dashboard provides independent controls for RTK, Headroom local output, Headroom request compression, Serena, LangMem summaries, llama.cpp, Playwright CLI, ast-grep and Laya. Requested settings, readiness and recent activity are shown separately. Start with [Using the bundle](docs/USING-BUNDLE.md). See [browser/Electron and structural search](docs/CLI-TOOLS.md) and the [experimental Laya entry tool](docs/LAYA-ROUTER.md).
 
 The bundle lives in `%USERPROFILE%\CodexTokenSaver`, a regular user folder. The earlier `%LOCALAPPDATA%` installation was affected by Codex MSIX filesystem virtualization: files visible inside Codex differed from those seen by Explorer and login startup.
 
