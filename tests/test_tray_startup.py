@@ -32,16 +32,48 @@ class TrayStartupTests(unittest.TestCase):
         (self.bundle / 'Tray.ps1').write_text('''param([switch]$OpenDashboard)
 Add-Type 'using System; using System.Runtime.InteropServices; public class ConsoleProbe { [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow(); }'
 @{console=[ConsoleProbe]::GetConsoleWindow().ToInt64();open=[bool]$OpenDashboard;cwd=$PWD.Path;root=$PSScriptRoot} | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $PSScriptRoot 'result.json')
-exit 37
+exit 0
 ''', encoding='utf-8-sig')
         result = subprocess.run([str(self.launcher), '-OpenDashboard'], cwd=self.profile,
                                 capture_output=True, timeout=20)
-        self.assertEqual(result.returncode, 37, result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads((self.bundle / 'result.json').read_text(encoding='utf-8-sig'))
         self.assertEqual(data['console'], 0)
         self.assertTrue(data['open'])
         self.assertEqual(Path(data['cwd']), self.bundle)
         self.assertEqual(Path(data['root']), self.bundle)
+
+    def test_unexpected_tray_exit_recovers_without_reopening_browser(self):
+        subprocess.run([str(CSC), '/nologo', '/target:winexe', '/out:' + str(self.launcher),
+                        str(ROOT / 'native/TrayLauncher.cs')], check=True, capture_output=True)
+        (self.bundle / 'Tray.ps1').write_text('''param([switch]$OpenDashboard)
+$counter = Join-Path $PSScriptRoot 'attempts.txt'
+$attempts = if (Test-Path $counter) { [int](Get-Content $counter) } else { 0 }
+($attempts + 1) | Set-Content $counter
+[string][bool]$OpenDashboard | Add-Content (Join-Path $PSScriptRoot 'opened.txt')
+if ($attempts -eq 0) { exit 37 }
+exit 0
+''', encoding='utf-8-sig')
+        result = subprocess.run([str(self.launcher), '-OpenDashboard'], cwd=self.profile,
+                                capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.bundle / 'attempts.txt').read_text().strip(), '2')
+        self.assertEqual((self.bundle / 'opened.txt').read_text().splitlines(), ['True', 'False'])
+        log = (self.bundle / 'logs/tray-launcher.log').read_text()
+        self.assertIn('exit code 37', log)
+        self.assertIn('Restarting tray', log)
+        self.assertIn('exit code 0', log)
+
+    def test_repeated_failures_are_bounded_and_report_original_exit_code(self):
+        subprocess.run([str(CSC), '/nologo', '/target:winexe', '/out:' + str(self.launcher),
+                        str(ROOT / 'native/TrayLauncher.cs')], check=True, capture_output=True)
+        (self.bundle / 'Tray.ps1').write_text('''Add-Content (Join-Path $PSScriptRoot 'attempts.txt') 'attempt'
+exit 37
+''', encoding='utf-8-sig')
+        result = subprocess.run([str(self.launcher)], cwd=self.profile, capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 37, result.stderr)
+        self.assertEqual(len((self.bundle / 'attempts.txt').read_text().splitlines()), 3)
+        self.assertIn('Recovery limit reached', (self.bundle / 'logs/tray-launcher.log').read_text())
 
     def test_plan_is_readonly_single_hidden_least_privilege_logon_action(self):
         shutil.copy2(ROOT / 'Install-Startup.ps1', self.bundle)
