@@ -2,7 +2,7 @@
 
 **Browser automation (Playwright CLI)** and **Structural code search (ast-grep)** are included in full installations. Enable each under **Your toolkit**; reload Codex guidance when convenient. Their activity counters measure tool calls, not saved tokens. See [examples, Electron limits, and RTK command scope](CLI-TOOLS.md).
 
-**Bundle tool router (Laya)** is the main entry point for explicit bundle work. Natural-language `bundle_query` calls use the local classifier to choose a validated sequence; existing typed bundle MCP/CLI calls use the gateway's validated type routes. Automatic compression and hooks remain fast. Other Codex tools continue normally. Enable Laya and restart Codex after this upgrade to load the gateway in existing MCP processes. See [routing examples and limits](LAYA-ROUTER.md).
+**Bundle tool router (Laya)** is the main entry point for explicit bundle work. Natural-language `bundle_query` calls use the local classifier; structural requests with `pattern` + `language` and existing typed bundle MCP/CLI calls use validated routes without model startup. Structural matches preserve exact text/locations and default to 50 per page. Prefer them for call shapes and code syntax; use literal search for text and Serena for named definitions/references. Automatic compression and hooks remain fast. Reload MCP tools or restart Codex when convenient to load this upgrade in existing processes. See [routing examples and limits](LAYA-ROUTER.md).
 
 Open **Codex Token Saver** from the Windows Start menu, click the **TS** tray icon, or visit [the local dashboard](http://127.0.0.1:8095/). The installed app lives in `%USERPROFILE%\CodexTokenSaver`; a Git checkout is separate source code.
 

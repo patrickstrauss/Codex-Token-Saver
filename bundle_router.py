@@ -114,7 +114,7 @@ def classify(root, intent, eligible):
 
 def validated_request(request):
     allowed = {'intent', 'project', 'path', 'symbol', 'pattern', 'language', 'git_operation',
-               'browser_session', 'task_id', 'caller_task_id', 'summary_action', 'exact'}
+               'browser_session', 'task_id', 'caller_task_id', 'summary_action', 'exact', 'max_matches', 'offset'}
     if not isinstance(request, dict) or not set(request) <= allowed:
         raise ValueError('Unknown bundle query field.')
     if not isinstance(request.get('intent'), str) or not 1 <= len(request['intent']) <= 1200:
@@ -124,11 +124,23 @@ def validated_request(request):
     project = Path(request['project']).resolve()
     if not project.is_dir() or project == Path(project.anchor) or Path.home().resolve().is_relative_to(project):
         raise ValueError('Select a project, not a drive or home directory.')
-    for key in allowed - {'intent', 'project', 'exact'}:
+    for key in allowed - {'intent', 'project', 'exact', 'max_matches', 'offset'}:
         if key in request and (not isinstance(request[key], str) or not 1 <= len(request[key]) <= 500):
             raise ValueError('Invalid ' + key)
     if 'exact' in request and type(request['exact']) is not bool:
         raise ValueError('exact must be a boolean.')
+    structural = 'pattern' in request or 'language' in request
+    if structural:
+        if not request.get('pattern', '').strip() or not request.get('language', '').strip():
+            raise ValueError('Structural search requires both pattern and language; use literal search for plain text.')
+        if {'symbol', 'git_operation', 'browser_session', 'task_id', 'summary_action'} & request.keys():
+            raise ValueError('Send structural search and other operations as separate requests.')
+    for key, minimum, maximum, default in (('max_matches', 1, 200, 50), ('offset', 0, 1000000, 0)):
+        value = request.get(key, default)
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise ValueError(f'{key} must be an integer from {minimum} to {maximum}.')
+        if key in request and not structural:
+            raise ValueError('Search pagination requires pattern and language.')
     relative = request.get('path', '.')
     path = (project / relative).resolve()
     if not path.is_relative_to(project) or not path.exists():
@@ -220,6 +232,32 @@ async def serena_query(root, project, path, symbol):
             return '\n'.join(item.text for item in result.content if item.type == 'text')
 
 
+def ast_search_page(text, project, request):
+    """Page exact matches without repeated context/captures. Coordinates are 1-based."""
+    try:
+        matches = json.loads(text or '[]')
+        if not isinstance(matches, list):
+            raise ValueError()
+        compact = []
+        for match in matches:
+            file = (project / match['file']).resolve()
+            start, end = match['range']['start'], match['range']['end']
+            if not isinstance(match['text'], str) or any(type(point[key]) is not int or point[key] < 0
+                    for point in (start, end) for key in ('line', 'column')):
+                raise ValueError()
+            compact.append({'file': file.relative_to(project).as_posix(),
+                'line': start['line'] + 1, 'column': start['column'] + 1,
+                'end_line': end['line'] + 1, 'end_column': end['column'] + 1, 'text': match['text']})
+        compact.sort(key=lambda item: (item['file'], item['line'], item['column'], item['end_line'], item['end_column']))
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        raise RuntimeError('Invalid ast-grep result; no partial matches returned.') from error
+    offset, limit = request.get('offset', 0), request.get('max_matches', 50)
+    page = compact[offset:offset + limit]
+    more = offset + len(page) < len(compact)
+    return json.dumps({'total_matches': len(compact), 'returned_matches': len(page), 'offset': offset,
+        'next_offset': offset + len(page) if more else None, 'truncated': more, 'matches': page}, ensure_ascii=False)
+
+
 def execute(root, route, request, project, path, exact):
     if route not in eligible_recipes(root, request, path):
         raise RuntimeError('The chosen component was disabled before execution.')
@@ -239,6 +277,9 @@ def execute(root, route, request, project, path, exact):
         args = (['run', '--lang', request['language'], '--pattern', request['pattern'], '--json=compact', str(path)]
                 if route == 'ast_search' else ['-s=' + request['browser_session'], 'snapshot', '--depth=3'])
         text = run_command([*command(root, component), *args], project, root, component, task_id=request.get('caller_task_id'))
+        if route == 'ast_search':
+            # Match text is already bounded and exact; do not lossy-compress the page or its continuation marker.
+            return ast_search_page(text, project, request), sequence
     elif route == 'git_report':
         operation = request['git_operation']
         args = {'status': ['status', '--short'], 'diff': ['diff', '--stat'], 'log': ['log', '-10']}[operation]
@@ -286,9 +327,18 @@ def query(root, request, predictor=None):
             raise ValueError('Laya router is Off. Enable it before requesting explicit bundle work.')
         project, path = validated_request(request)
         eligible = eligible_recipes(root, request, path)
-        decision = (predictor or classify)(root, request['intent'], eligible)
-        elapsed = decision.get('elapsed_ms')
-        route, exact = validate_decision(decision, eligible, request.get('exact', False))
+        if 'pattern' in request:
+            # The caller supplied a typed structural operation, just like a direct CLI call.
+            # Keep it inside Laya's toggle/validation/telemetry boundary without loading a model.
+            if 'ast_search' not in eligible:
+                raise ValueError('ast-grep is Off; no alternate tool executed.')
+            route, exact, elapsed = 'ast_search', request.get('exact', False), 0
+            probability, basis = None, 'explicit_structural_search'
+        else:
+            decision = (predictor or classify)(root, request['intent'], eligible)
+            elapsed = decision.get('elapsed_ms')
+            route, exact = validate_decision(decision, eligible, request.get('exact', False))
+            probability, basis = decision['confidence'], 'classifier'
         if not load_preferences(root)['laya_router']:
             raise ValueError('Router was disabled before execution.')
         sequence = ['laya']
@@ -300,7 +350,7 @@ def query(root, request, predictor=None):
             raise
         record_component(root, COMPONENT[route], 'completed', task_id=request.get('caller_task_id'))
         record(root, 'completed', sequence, elapsed, task_id=request.get('caller_task_id'))
-        return {'sequence': sequence, 'routing_ms': elapsed, 'routing_probability': decision['confidence'],
+        return {'sequence': sequence, 'routing_ms': elapsed, 'routing_probability': probability, 'routing_basis': basis,
                 'experimental': True, 'result': text}
     except Exception:
         record(root, 'blocked' if not sequence else 'failed', sequence, elapsed,

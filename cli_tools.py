@@ -125,7 +125,9 @@ def guidance(before, root, component, enabled):
                 'use `detach` for an externally owned app. Do not restart apps or enable debugging without authorization. '
                 'The CLI does not provide Electron main-process or native desktop automation. ')
     else:
-        text = (f'For structural code patterns, prefer the enabled bundle ast-grep: `{invocation} run --lang LANGUAGE --pattern \'PATTERN\' PATH`. '
+        text = ('For call shapes, nested expressions and repeated code structure, prefer Laya bundle_query with pattern + language before broad text scans. '
+                'Examples: JavaScript ipcMain.handle($$$ARGS), Python subprocess.run($$$ARGS). Match pages preserve exact text/locations; follow next_offset with offset. '
+                f'Typed CLI alternative: `{invocation} run --lang LANGUAGE --pattern \'PATTERN\' PATH`. '
                 'Quote metavariables such as `$A` literally in PowerShell. Use rg for literal text and Serena for symbol navigation. '
                 'Read exact matches before edits; use rewrite/update flags only within authorized edit scope. ')
     text += 'Respect the bundle toggle; do not enable it automatically. These tools do not report token savings.'

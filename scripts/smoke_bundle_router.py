@@ -1,4 +1,4 @@
-"""Real MCP -> shared Laya worker -> ast-grep -> Headroom, in a test checkout."""
+"""Real MCP -> Laya typed structural route -> ast-grep, in a test checkout."""
 import asyncio
 import json
 import os

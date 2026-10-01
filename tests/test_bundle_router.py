@@ -27,20 +27,26 @@ def decision(route='ast_search', **kwargs):
     return dict(route=route, confidence=.9, delivery='compact', truncated=False, elapsed_ms=12, **kwargs)
 
 
+def natural_request(root, request):
+    set_preference(root, 'serena', True)
+    return {key: value for key, value in request.items() if key not in ('pattern', 'language')}
+
+
 def test_laya_runs_before_execution_and_records_no_prompt(fixture):
     root, project, request = fixture
     events = []
     def predict(*args):
         events.append('laya')
-        assert 'ast_search' in args[2]
-        return decision()
+        assert 'symbols' in args[2]
+        return decision('symbols')
     def execute(*args):
         events.append('execute')
-        return 'result', ['laya', 'ast_grep', 'headroom_local']
+        return 'result', ['laya', 'serena']
     with patch.object(router, 'execute', side_effect=execute):
-        value = router.query(root, request, predict)
+        value = router.query(root, natural_request(root, request), predict)
     assert events == ['laya', 'execute']
-    assert value['sequence'] == ['laya', 'ast_grep', 'headroom_local']
+    assert value['sequence'] == ['laya', 'serena']
+    assert value['routing_basis'] == 'classifier'
     stored = (root / 'data/router/activity.json').read_text()
     assert request['intent'] not in stored and request['pattern'] not in stored
 
@@ -50,10 +56,10 @@ def test_laya_runs_before_execution_and_records_no_prompt(fixture):
     {'truncated': True}, {'delivery': 'run-shell'}, {'route': 'clarify'}])
 def test_bad_or_uncertain_decisions_never_execute(fixture, bad):
     root, _, request = fixture
-    value = decision() | bad
+    value = decision('symbols') | bad
     with patch.object(router, 'execute') as execute:
         with pytest.raises(ValueError):
-            router.query(root, request, lambda *args: value)
+            router.query(root, natural_request(root, request), lambda *args: value)
         execute.assert_not_called()
 
 
@@ -68,9 +74,10 @@ def test_off_blocks_even_a_loaded_tool(fixture):
 
 def test_toggle_change_after_classification_blocks_backend(fixture):
     root, _, request = fixture
+    request = natural_request(root, request)
     def predict(*args):
-        set_preference(root, 'ast_grep', False)
-        return decision()
+        set_preference(root, 'serena', False)
+        return decision('symbols')
     with patch.object(router, 'run_command') as run:
         with pytest.raises(RuntimeError, match='disabled'):
             router.query(root, request, predict)
@@ -103,7 +110,7 @@ def test_caller_task_uuid_is_separate_from_summary_target(fixture):
 def test_exact_requirement_overrides_classification(fixture):
     root, _, request = fixture
     with patch.object(router, 'execute', return_value=('exact', ['laya', 'ast_grep'])) as execute:
-        router.query(root, request | {'exact': True}, lambda *args: decision())
+        router.query(root, natural_request(root, request) | {'exact': True}, lambda *args: decision('symbols'))
     assert execute.call_args.args[-1] is True
 
 
@@ -121,7 +128,7 @@ def test_literal_pattern_is_forwarded_without_shell(fixture):
     path = project / 'code.js'
     with patch('cli_tools.runtime_status', return_value={'available': True}), \
          patch('cli_tools.command', return_value=['ast-grep.exe']), \
-         patch.object(router, 'run_command', return_value='original') as run:
+         patch.object(router, 'run_command', return_value='[]') as run:
         text, sequence = router.execute(root, 'ast_search', request, project, path, True)
     assert run.call_args.args[0] == ['ast-grep.exe', 'run', '--lang', 'javascript', '--pattern', 'console.log($A)', '--json=compact', str(path)]
-    assert text == 'original' and sequence == ['laya', 'ast_grep']
+    assert json.loads(text)['total_matches'] == 0 and sequence == ['laya', 'ast_grep']

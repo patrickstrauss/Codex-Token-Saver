@@ -18,11 +18,11 @@ from exact_retrieval import sign_exact_response
 from serena_mcp import NAVIGATION_TOOLS, launch_spec
 
 SERENA_INSTRUCTIONS = (
-    'Use Serena implicitly for relevant coding navigation when enabled. Activate the current '
-    'checkout with activate_project (absolute path), then prefer get_symbols_overview, find_symbol '
-    'and find_referencing_symbols before whole-file reads. Fetch exact bodies with '
-    'find_symbol(include_body=true) or native reads before edits. If off, unavailable or '
-    'unsupported, use native tools. Skip irrelevant calls; no per-task setup prompt is needed.'
+    'Use enabled Serena implicitly for named definitions/references. Activate the current checkout '
+    'with activate_project (absolute path); prefer get_symbols_overview, find_symbol and '
+    'find_referencing_symbols. For call shapes/code syntax, prefer Laya bundle_query with ast-grep '
+    'pattern + language. Fetch exact bodies with find_symbol(include_body=true) or native reads '
+    'before edits. If off/unavailable, use native tools. Skip irrelevant calls; no setup prompt.'
 )
 
 FAILURE_GUIDANCE = {

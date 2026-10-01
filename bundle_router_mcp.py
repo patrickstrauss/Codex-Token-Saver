@@ -1,4 +1,4 @@
-"""One optional bundle entry tool; direct MCP tools and Codex settings stay intact."""
+"""Laya entry tool for bounded explicit bundle operations."""
 import asyncio
 import json
 from pathlib import Path
@@ -10,14 +10,14 @@ from bundle_router import query
 from exact_retrieval import sign_exact_response
 
 ROOT = Path(__file__).resolve().parent
-server = Server('codex-token-saver', instructions='Main entry point for explicit Codex Token Saver work. Call bundle_query with a bounded intent and explicit project/arguments; Laya selects enabled tools and delivery sequence. Direct bundle adapters also route through Laya. Ambiguous decisions stop without execution. Automatic compression and command hooks remain fast. Codex models and other tools are unchanged. Use exact=true before precise edits or quotations. Supply caller_task_id only when the current chat UUID is known. Summary start requires an explicit user request; browsers must already have a named session.')
+server = Server('codex-token-saver', instructions='Route explicit bundle work through bundle_query. For call shapes and code syntax, prefer ast-grep: supply pattern and language; Laya validates this typed route without model loading. Results contain exact matches and pagination. Use literal search for text, Serena for named symbols/references. Other intents use the classifier. Use exact=true before edits. Respect toggles. Automatic compression/hooks stay fast. Codex model routing is unchanged. Supply caller_task_id only when known.')
 
 
 @server.list_tools()
 async def list_tools():
     strings = {'path': 'Existing path inside project (file for reads; directory allowed for structural search).',
                'symbol': 'Optional exact symbol/name path for Serena.',
-               'pattern': 'Literal ast-grep syntax pattern; never shell code.',
+               'pattern': 'Structural syntax, not a regex. Example: console.log($$$ARGS) finds calls with any arguments, ignoring comments/strings. Pair with language; no symbol/git/browser/summary fields.',
                'language': 'ast-grep language, for example javascript or python.',
                'browser_session': 'Existing named Playwright CLI session; read-only snapshot only.',
                'task_id': 'Explicit local task UUID for summaries.',
@@ -26,8 +26,10 @@ async def list_tools():
                   **{key: {'type': 'string', 'description': description, 'maxLength': 500} for key, description in strings.items()},
                   'git_operation': {'enum': ['status', 'diff', 'log']},
                   'summary_action': {'enum': ['read', 'start'], 'description': 'start only when the user explicitly requests summary generation.'},
+                  'max_matches': {'type': 'integer', 'minimum': 1, 'maximum': 200, 'default': 50, 'description': 'Structural search page size; exact match text and 1-based locations are preserved.'},
+                  'offset': {'type': 'integer', 'minimum': 0, 'maximum': 1000000, 'default': 0, 'description': 'Repeat the same structural query using next_offset to get more matches. Paging reruns search; results can change when files change.'},
                   'exact': {'type': 'boolean', 'default': False}}
-    return [Tool(name='bundle_query', description='Ask local Laya to select and execute an enabled bundle tool sequence: Headroom file read, Serena, ast-grep, RTK Git report, existing browser snapshot, or explicitly selected task summary. No arbitrary commands or source rewrites.',
+    return [Tool(name='bundle_query', description='Main bundle entry. Prefer structural search for call shapes, nested expressions or repeated code: provide pattern + language (JavaScript ipcMain.handle($$$ARGS), Python subprocess.run($$$ARGS)). Exact, paged matches through Laya without classifier startup. For named symbols use symbol/path; file reads use path; Git reports use git_operation. Also supports existing browser snapshots and selected task summaries. No arbitrary commands or source rewrites.',
                  inputSchema={'type': 'object', 'properties': properties, 'required': ['intent', 'project'], 'additionalProperties': False},
                  annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False))]
 
