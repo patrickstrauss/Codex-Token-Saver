@@ -20,6 +20,7 @@ foreach ($taskLauncher in @('Select-Local-Model.cmd','Repair-Team-Setup.cmd','Se
 foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena')) {
     $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo $taskDirectory) -File |
         Where-Object { $_.Extension -in @('.py','.ps1','.cs','.html','.yml') -or
+            ($taskDirectory -eq 'serena' -and $_.Name -eq 'tool-schemas.json') -or
             ($taskDirectory -eq 'packaging' -and ($_.Name -in @('dependencies.json','package.json','package-lock.json','laya-model.json') -or $_.Name -like 'requirements-*.txt')) }
 }
 $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'dashboard\static') -File -Recurse |

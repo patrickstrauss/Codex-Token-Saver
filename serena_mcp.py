@@ -10,11 +10,30 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from serena_lifecycle import LazySerenaSession
 
 ROOT = Path(__file__).resolve().parent
 NAVIGATION_TOOLS = (
     "activate_project", "get_symbols_overview", "find_symbol", "find_referencing_symbols",
 )
+
+
+def navigation_tools(root: Path):
+    """Advertise verified schemas without importing or starting Serena."""
+    from mcp.types import Tool
+    record = json.loads((Path(root) / 'serena/tool-schemas.json').read_text(encoding='utf-8'))
+    tools = [Tool.model_validate(tool) for tool in record['tools']]
+    if (record.get('schema_version') != 1 or len(tools) != len(NAVIGATION_TOOLS)
+            or {tool.name for tool in tools} != set(NAVIGATION_TOOLS)):
+        raise ValueError('Invalid managed Serena navigation schemas; repair the bundle.')
+    return tools
+
+
+def validate_navigation_tools(root, tools):
+    expected = {tool.name: tool.inputSchema for tool in navigation_tools(root)}
+    actual = {tool.name: tool.inputSchema for tool in tools}
+    if len(tools) != len(expected) or actual != expected:
+        raise RuntimeError('Serena navigation schemas changed; revalidate the managed runtime.')
 
 
 def runtime_python(root: Path = ROOT) -> Path:
@@ -96,6 +115,7 @@ async def _probe_session(root: Path) -> dict:
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.list_tools()
+                    validate_navigation_tools(root, result.tools)
                     names = sorted(tool.name for tool in result.tools)
                     if set(names) != set(NAVIGATION_TOOLS):
                         raise RuntimeError(f"Unexpected Serena tools: {names}")
@@ -158,36 +178,31 @@ class GatedSerenaBridge:
         return result
 
 
-async def run_gateway(root, *, already_routed=False):
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
+async def run_gateway(root, *, already_routed=False, idle_seconds=120):
     from mcp.server.lowlevel import Server
     from mcp.server.stdio import stdio_server
     from serena_proxy import SERENA_INSTRUCTIONS
 
     root = Path(root).resolve()
-    command, environment = launch_spec(root)
-    environment.pop('CTS_LAYA_INTERNAL', None)
-    params = StdioServerParameters(command=command[0], args=command[1:], env=environment, cwd=str(root))
-    async with stdio_client(params, errlog=sys.stderr) as (upstream_read, upstream_write):
-        async with ClientSession(upstream_read, upstream_write) as session:
-            await session.initialize()
-            tools = (await session.list_tools()).tools
-            if {tool.name for tool in tools} != set(NAVIGATION_TOOLS):
-                raise RuntimeError('Serena navigation tool configuration changed; revalidate the managed runtime.')
-            bridge = GatedSerenaBridge(root, session, already_routed=already_routed)
-            server = Server('bundle-serena', instructions=SERENA_INSTRUCTIONS)
+    launch_spec(root)  # Check availability without launching the runtime.
+    tools = navigation_tools(root)
+    session = LazySerenaSession(root, idle_seconds=idle_seconds)
+    bridge = GatedSerenaBridge(root, session, already_routed=already_routed)
+    server = Server('bundle-serena', instructions=SERENA_INSTRUCTIONS)
 
-            @server.list_tools()
-            async def list_tools():
-                return tools
+    @server.list_tools()
+    async def list_tools():
+        return tools
 
-            @server.call_tool()
-            async def call_tool(name, arguments):
-                return await bridge.call_tool(name, arguments)
+    @server.call_tool()
+    async def call_tool(name, arguments):
+        return await bridge.call_tool(name, arguments)
 
-            async with stdio_server() as (read, write):
-                await server.run(read, write, server.create_initialization_options())
+    try:
+        async with stdio_server() as (read, write):
+            await server.run(read, write, server.create_initialization_options())
+    finally:
+        await session.close()
 
 
 def main(argv=None) -> int:
@@ -197,6 +212,7 @@ def main(argv=None) -> int:
     parser.add_argument("--probe-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--bundle-root", type=Path, default=ROOT, help=argparse.SUPPRESS)
     parser.add_argument("--python", type=Path, help="Probe a candidate interpreter inside serena/")
+    parser.add_argument("--idle-seconds", type=float, default=120, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.probe_child:
         print(json.dumps(asyncio.run(_probe_session(args.bundle_root)), ensure_ascii=False))
@@ -210,7 +226,7 @@ def main(argv=None) -> int:
     # Only the router sets this marker on its private, already-routed child.
     # It is consumed at this entry point and never interpreted by the public API.
     already_routed = os.environ.pop('CTS_LAYA_INTERNAL', None) == '1'
-    asyncio.run(run_gateway(args.bundle_root, already_routed=already_routed))
+    asyncio.run(run_gateway(args.bundle_root, already_routed=already_routed, idle_seconds=args.idle_seconds))
     return 0
 
 

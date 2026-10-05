@@ -4,6 +4,7 @@ import argparse
 import importlib.metadata
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,17 +22,17 @@ from exact_retrieval import exact_response_is_verified
 
 
 async def verify(bridge_python=None):
+    import psutil
     with tempfile.TemporaryDirectory(prefix="serena-navigation-") as directory:
         temporary = Path(directory).resolve()
         bundle = temporary / 'bundle'
         bundle.mkdir()
-        for name in ('serena_mcp.py', 'serena_proxy.py', 'bundle_preferences.py',
-                     'desktop_proxy_control.py', 'exact_retrieval.py'):
-            shutil.copy2(ROOT / name, bundle / name)
+        for source in ROOT.glob('*.py'):
+            shutil.copy2(source, bundle / source.name)
         runtime = bundle / 'serena/.venv'
         (runtime / 'Scripts').mkdir(parents=True)
         (runtime / 'Lib/site-packages').mkdir(parents=True)
-        for name in ('navigation.yml', 'navigation-mode.yml'):
+        for name in ('navigation.yml', 'navigation-mode.yml', 'tool-schemas.json'):
             shutil.copy2(ROOT / 'serena' / name, bundle / 'serena' / name)
         shutil.copy2(Path(sys.prefix) / 'pyvenv.cfg', runtime / 'pyvenv.cfg')
         shutil.copy2(sys.executable, runtime / 'Scripts/python.exe')
@@ -39,7 +40,36 @@ async def verify(bridge_python=None):
         (runtime / 'Lib/site-packages/installed-test-runtime.pth').write_text(
             f'import site; site.addsitedir({str(Path(sys.prefix) / "Lib/site-packages")!r})\n', encoding='utf-8')
         set_preference(bundle, 'serena', True)
-        command = [str(bridge_python or runtime / 'Scripts/python.exe'), str(bundle / 'serena_mcp.py'), '--bundle-root', str(bundle)]
+        command = [str(bridge_python or runtime / 'Scripts/python.exe'), str(bundle / 'serena_mcp.py'),
+                   '--bundle-root', str(bundle), '--idle-seconds', '2']
+
+        def processes():
+            owned = {}
+            for process in psutil.process_iter(['pid', 'cmdline']):
+                try:
+                    if str(bundle / 'serena_mcp.py') in (process.info['cmdline'] or []):
+                        for child in [process, *process.children(recursive=True)]:
+                            owned[child.pid] = child
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            rows = []
+            for process in owned.values():
+                try:
+                    args = process.cmdline()
+                    rows.append({'pid': process.pid, 'name': process.name(), 'backend': 'start-mcp-server' in args,
+                                 'bridge': str(bundle / 'serena_mcp.py') in args,
+                                 'working_set_bytes': process.memory_info().rss})
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            return rows
+
+        async def wait_unloaded():
+            for _ in range(60):
+                rows = processes()
+                if rows and all(row['bridge'] or row['name'].lower() in ('conhost.exe', 'openconsole.exe') for row in rows):
+                    return rows
+                await asyncio.sleep(0.25)
+            raise AssertionError('Idle Serena backend or language-server descendants remained running')
         fixture = temporary / 'project'
         fixture.mkdir()
         (fixture / ".serena").mkdir()
@@ -63,12 +93,15 @@ async def verify(bridge_python=None):
         errors_path = ROOT / "logs/serena-navigation-stderr.log"
         errors_path.parent.mkdir(parents=True, exist_ok=True)
         with errors_path.open("w", encoding="utf-8") as errors:
-            params = StdioServerParameters(command=command[0], args=command[1:], cwd=str(fixture))
+            params = StdioServerParameters(command=command[0], args=command[1:], cwd=str(fixture),
+                                           env=dict(os.environ, CTS_LAYA_INTERNAL='1'))
             async with stdio_client(params, errlog=errors) as (read, write):
                 async with ClientSession(read, write) as session:
                     initialized = await session.initialize()
                     tools = await session.list_tools()
                     assert {tool.name for tool in tools.tools} == set(NAVIGATION_TOOLS)
+                    initial_processes = processes()
+                    assert initial_processes and all(row['bridge'] or row['name'].lower() in ('conhost.exe', 'openconsole.exe') for row in initial_processes), initial_processes
 
                     async def call(name, args):
                         result = await session.call_tool(name, args)
@@ -119,6 +152,12 @@ async def verify(bridge_python=None):
                     switched_back = await call('find_symbol', {'name_path_pattern': 'combine', 'relative_path': 'sample.py', 'include_body': True})
                     assert 'value + 29' in switched_back and 'value + 83' not in switched_back, switched_back
                     exact_body(switched_back, fixture / 'sample.py')
+                    active_processes = processes()
+                    assert any(row['backend'] for row in active_processes)
+                    idle_processes = await wait_unloaded()
+                    restored = await call('find_symbol', {'name_path_pattern': 'combine', 'relative_path': 'sample.py', 'include_body': True})
+                    assert 'value + 29' in restored and 'value + 83' not in restored, restored
+                    exact_body(restored, fixture / 'sample.py')
                     fallbacks = []
                     for file_name in ('notes.txt', 'missing.py'):
                         result = await session.call_tool('get_symbols_overview', {'relative_path': file_name})
@@ -143,8 +182,13 @@ async def verify(bridge_python=None):
                     assert set(activity['per_tool']) == set(NAVIGATION_TOOLS), activity
                     assert 'missing.py' not in json.dumps(activity), activity
                     report = {"ok": True, "version": importlib.metadata.version("serena-agent"), "tools": sorted(NAVIGATION_TOOLS), "checks": checks,
+                              'lifecycle': {'lazy_start': True, 'idle_unload': True, 'project_restored': True,
+                                            'initial': initial_processes, 'active': active_processes, 'idle': idle_processes,
+                                            'released_working_set_mb': round((sum(row['working_set_bytes'] for row in active_processes) - sum(row['working_set_bytes'] for row in idle_processes)) / 1024 ** 2, 1)},
                               "live_toggle": True, "exact_bodies_protected": True, 'checkout_switch': True,
                               'native_fallback': fallbacks, 'activity': activity, 'stderr_log': str(errors_path)}
+        assert not processes(), 'Serena descendants survived client shutdown'
+        report['lifecycle']['client_close_unloads'] = True
         # The unavailable-runtime failure is real; do not kill a live Codex process.
         (runtime / 'Scripts/python.exe').unlink()
         unavailable = subprocess.run([str(sys.executable), str(bundle / 'serena_mcp.py'), '--bundle-root', str(bundle)],

@@ -1,5 +1,7 @@
 # High process count or memory use
 
+Serena starts its backend only when navigation is used and unloads it with its language servers after two idle minutes. Its lightweight MCP bridge remains available and remembers each chat's active checkout. Laya's shared model unloads after five idle minutes. After installing this update, fully quit and reopen Codex to replace previously loaded workers; restarting Windows is unnecessary for this lifecycle update. Active lookups can finish normally.
+
 ## Stop the bundle without deleting your data
 
 In the dashboard, open **Your toolkit → Turn off Token Saver → Disable Token Saver…**, or right-click the **TS** tray icon and choose **Disable Token Saver…**. A separate Windows confirmation explains the changes. Fully quit Codex before continuing; if it is still open, the dialog lets you retry or cancel. Opening or cancelling the dialog does not disable anything. Wait for the success message, then **restart Windows yourself**.

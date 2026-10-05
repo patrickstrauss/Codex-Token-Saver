@@ -6,16 +6,12 @@ from pathlib import Path
 import sys
 from time import monotonic
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from mcp.server.lowlevel import Server
-from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, TextContent
 
 from bundle_preferences import load_preferences
 from desktop_proxy_control import atomic_write, routing_lock
 from exact_retrieval import sign_exact_response
-from serena_mcp import NAVIGATION_TOOLS, launch_spec
+from serena_mcp import NAVIGATION_TOOLS
 
 SERENA_INSTRUCTIONS = (
     'Use enabled Serena implicitly for named definitions/references. Activate the current checkout '
@@ -148,26 +144,5 @@ class SerenaBridge:
 
 
 async def run_bridge(root):
-    root = Path(root).resolve()
-    command, environment = launch_spec(root)
-    params = StdioServerParameters(command=command[0], args=command[1:], env=environment, cwd=str(root))
-    async with stdio_client(params, errlog=sys.stderr) as (upstream_read, upstream_write):
-        async with ClientSession(upstream_read, upstream_write) as session:
-            await session.initialize()
-            tools = (await session.list_tools()).tools
-            if {tool.name for tool in tools} != set(NAVIGATION_TOOLS):
-                raise RuntimeError('Serena navigation tool configuration changed; revalidate the managed runtime.')
-            bridge = SerenaBridge(root, session)
-            server = Server('bundle-serena', instructions=SERENA_INSTRUCTIONS)
-
-            @server.list_tools()
-            async def list_tools():
-                # Freeze the verified schemas. Project activation cannot add editing tools.
-                return tools
-
-            @server.call_tool()
-            async def call_tool(name, arguments):
-                return await bridge.call_tool(name, arguments)
-
-            async with stdio_server() as (read, write):
-                await server.run(read, write, server.create_initialization_options())
+    from serena_mcp import run_gateway
+    await run_gateway(root)

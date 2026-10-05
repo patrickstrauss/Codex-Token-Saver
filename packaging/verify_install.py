@@ -60,6 +60,9 @@ def verify(root):
             python = root / directory / '.venv/Scripts/python.exe'
             if python.is_file():
                 subprocess.run([str(python), '-c', imports], check=True, timeout=120)
+                if directory == 'serena':
+                    from serena_mcp import probe_runtime
+                    assert probe_runtime(root)['ok'], 'Serena navigation schemas are incompatible'
         llama = root / 'local-compaction/llama-b10809/llama-server.exe'
         if llama.is_file():
             subprocess.run([str(llama), '--version'], check=True, timeout=30, stdout=subprocess.DEVNULL)

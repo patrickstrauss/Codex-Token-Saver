@@ -20,9 +20,11 @@ Expect exit code `0` and JSON containing `"ok": true`. Results and diagnostic st
 This uses the real official Serena server and its Python and TypeScript language servers through the bundle MCP wrapper. It checks:
 
 - Exactly four navigation tools before and after project activation.
+- Initialization and tool listing without starting a Serena backend.
 - Python and TypeScript symbol overviews, definitions and callers.
 - Complete returned bodies against native source lines, authenticated exact-response receipts, and fresh results after file edits.
 - Switching between two absolute checkout paths with different definitions, then switching back.
+- Idle backend/LSP cleanup, restoration of the last checkout on the next lookup, and complete cleanup after client shutdown. The isolated check accelerates the two-minute idle timeout to two seconds.
 - Unsupported text files and missing files returning errors; native file reads remain usable.
 - Off/on in the same connection, using isolated preferences, and a real missing-runtime startup failure.
 - Completed, failed and blocked activity counts with no source text or project paths in the aggregate ledger.
@@ -48,3 +50,5 @@ For a project switch, open or resume a task in a different checkout and ask abou
 The dashboard's **Serena symbol navigation** row shows recent activity plus completed, failed and blocked calls. Its aggregate ledger is `CodexTokenSaver\serena\activity.json`; detailed tool names and results are visible in the Codex task. Official Serena also keeps local logs/state under `CodexTokenSaver\serena\state`.
 
 The isolated acceptance check has its own counters, so it does not inflate your dashboard's live totals. A manual Codex query should update the live row. These counters show calls, not token savings. Use the isolated check above to test Off without disrupting other running tasks.
+
+On 2026-10-05, the real Python/TypeScript fixture released 588.5 MiB of summed working sets after idle shutdown and resumed exact navigation in the correct checkout. Shared pages can be counted more than once; this is a fixture measurement, not a promised reduction for every chat. The report's `lifecycle` section records process ownership and working sets.
