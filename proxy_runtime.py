@@ -143,6 +143,15 @@ def build_proxy_command(runtime, host='127.0.0.1', port=8789, *, mode='native'):
             '--host', host, '--port', str(port)]
 
 
+def _protected_coding_profile(profile):
+    from dataclasses import fields, replace
+    overrides = dict(compress_user_messages=False, compress_system_messages=False)
+    # 0.40 removed effort routing; older runtimes still need it explicitly off.
+    if any(field.name == 'effort_router' for field in fields(profile)):
+        overrides['effort_router'] = False
+    return replace(profile, **overrides)
+
+
 def _configure_sdk(host='127.0.0.1', port=8789):
     """Child-only bootstrap; no on-disk patch to Headroom or Codex."""
     _endpoint(host, port)
@@ -150,15 +159,11 @@ def _configure_sdk(host='127.0.0.1', port=8789):
     # No SDK payload/diagnostic logging. Supervisor records bounded lifecycle
     # status, and aggregate savings are persisted independently by the SDK.
     logging.disable(logging.CRITICAL)
-    from dataclasses import replace
     from headroom import agent_savings
     coding = agent_savings.get_agent_savings_profile('coding')
     # 0.37's profile kwargs force-enable user compression even when the env is
     # false. The desktop applies this same in-process dataclass replacement.
-    agent_savings._PROFILES['coding'] = replace(
-        coding, compress_user_messages=False, compress_system_messages=False,
-        effort_router=False,
-    )
+    agent_savings._PROFILES['coding'] = _protected_coding_profile(coding)
     agent_savings.seed_proxy_env_defaults()
     from headroom.proxy import server
     from headroom.proxy import prometheus_metrics
@@ -553,7 +558,7 @@ def _configuration_report():
             'compress_user_messages': pipeline['compress_user_messages'],
             'compress_system_messages': pipeline['compress_system_messages'],
             'read_maturation': config.read_maturation,
-            'output_shaper': shaper.enabled, 'effort_router': shaper.effort_router_enabled,
+            'output_shaper': shaper.enabled, 'effort_router': getattr(shaper, 'effort_router_enabled', False),
             'model_router': config.model_router is not None,
             'code_aware': config.code_aware_enabled,
             'log_requests': config.log_requests,
