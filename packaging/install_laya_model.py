@@ -37,7 +37,10 @@ def install(root):
     decision = json.loads(result.stdout)
     if decision.get('route') != 'symbols' or decision.get('truncated') or decision.get('confidence', 0) < .55:
         raise RuntimeError('Laya real-inference qualification failed.')
-    (root / 'laya/ready.json').write_text(json.dumps({'version': '0.3.22', 'revision': manifest['revision'],
+    version = subprocess.run([str(root / 'laya/.venv/Scripts/python.exe'), '-c',
+                              'import importlib.metadata; print(importlib.metadata.version("laya"))'],
+                             capture_output=True, text=True, timeout=30, check=True).stdout.strip()
+    (root / 'laya/ready.json').write_text(json.dumps({'version': version, 'revision': manifest['revision'],
                                                     'inference_verified': True}) + '\n')
     print('Laya local inference verified: ' + result.stdout.strip(), flush=True)
 

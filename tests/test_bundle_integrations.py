@@ -17,8 +17,8 @@ class IntegrationTests(unittest.TestCase):
         self.config = self.home / 'config.toml'
         self.original = b'model = "selected-model"\nmodel_reasoning_effort = "ultra"\nopenai_base_url = "http://127.0.0.1:8788/v1"\n\n[mcp_servers.existing]\ncommand = "existing.exe"\n'
         self.config.write_bytes(self.original)
-        for name in ('headroom/.venv/Scripts/python.exe', 'serena_mcp.py', 'local_summary_mcp.py',
-                     'serena/.venv/Scripts/python.exe', 'local-compaction/.venv/Scripts/python.exe'):
+        for name in ('headroom/.venv/Scripts/python.exe', 'serena_mcp.py', 'bundle_router_mcp.py',
+                     'serena/.venv/Scripts/python.exe', 'laya/.venv/Scripts/python.exe'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('fixture')
@@ -40,7 +40,8 @@ class IntegrationTests(unittest.TestCase):
     def test_toggle_changes_live_preference_and_reenabling_keeps_table_order(self):
         from bundle_preferences import load_preferences
         self.control.set_enabled('serena', True)
-        self.control.set_enabled('local_summaries', True)
+        with patch('bundle_router.status', return_value={'available': True}):
+            self.control.set_enabled('laya_router', True)
         before = self.config.read_bytes()
         self.control.set_enabled('serena', True)
         self.assertEqual(before, self.config.read_bytes())
@@ -80,12 +81,13 @@ class IntegrationTests(unittest.TestCase):
 
     def test_disable_restores_original_and_preserves_other_bundle_component(self):
         self.control.set_enabled('serena', True)
-        self.control.set_enabled('local_summaries', True)
+        with patch('bundle_router.status', return_value={'available': True}):
+            self.control.set_enabled('laya_router', True)
         self.control.set_enabled('serena', False)
         config = tomllib.loads(self.config.read_text())
         self.assertNotIn('bundle_serena', config['mcp_servers'])
-        self.assertIn('bundle_local_summaries', config['mcp_servers'])
-        self.control.set_enabled('local_summaries', False)
+        self.assertIn('bundle_laya_router', config['mcp_servers'])
+        self.control.set_enabled('laya_router', False)
         self.assertEqual(self.original, self.config.read_bytes())
 
     def test_unmanaged_table_and_malformed_config_are_never_overwritten(self):
@@ -107,7 +109,7 @@ class IntegrationTests(unittest.TestCase):
         before = set(self.root.rglob('*'))
         result = self.control.status()
         self.assertFalse(result['serena']['configured'])
-        self.assertFalse(result['local_summaries']['configured'])
+        self.assertFalse(result['laya_router']['configured'])
         self.assertEqual(before, set(self.root.rglob('*')))
         self.assertEqual(self.original, self.config.read_bytes())
 

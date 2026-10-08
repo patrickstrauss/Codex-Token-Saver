@@ -20,7 +20,6 @@ from bundle_preferences import load_preferences
 OPERATIONS = {
     'headroom_local': frozenset(('headroom_read_file', 'headroom_retrieve', 'headroom_stats', 'command_output')),
     'serena': frozenset(('activate_project', 'get_symbols_overview', 'find_symbol', 'find_referencing_symbols')),
-    'local_summaries': frozenset(('list_local_summary_tasks', 'get_local_summary', 'refresh_local_summary')),
     'ast_grep': frozenset(('run', 'scan', 'rewrite', 'test', 'new', 'lsp', 'completions')),
     'playwright_cli': frozenset(('attach', 'detach', 'open', 'close', 'close-all', 'kill-all', 'list',
         'goto', 'go-back', 'go-forward', 'reload', 'snapshot', 'click', 'dblclick', 'hover', 'drag',
@@ -42,8 +41,7 @@ OPERATIONS = {
     'rtk': frozenset(('command', 'git', 'rg')),
 }
 CLI_COMPONENTS = frozenset(('ast_grep', 'playwright_cli', 'rtk'))
-INFORMATIONAL_OPERATIONS = frozenset((('headroom_local', 'headroom_stats'),
-                                    ('local_summaries', 'list_local_summary_tasks')))
+INFORMATIONAL_OPERATIONS = frozenset((('headroom_local', 'headroom_stats'),))
 _routed = ContextVar('cts_laya_routed', default=None)
 _UUID = re.compile(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}')
 

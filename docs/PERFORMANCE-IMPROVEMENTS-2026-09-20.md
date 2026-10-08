@@ -18,13 +18,12 @@ Serena already defers language-server loading until project activation and clean
 
 The benchmark uses synthetic fixtures and no model calls. It is a regression gate, not proof of unchanged LLM answers, end-to-end proxy latency or Codex quota savings. Full exact retrieval after an overview can have negative net savings; this is reported rather than hidden. See [the comparison protocol](PERFORMANCE-CHECK.md).
 
-Local summaries remain opt-in. Model, reasoning, authentication, routing and component preferences are unchanged by this release. New MCP code loads after a normal Codex restart; ongoing tasks need not be interrupted to build the installer.
+Model, reasoning, authentication, routing and component preferences are unchanged by this release. New MCP code loads after a normal Codex restart; ongoing tasks need not be interrupted to build the installer.
 
 ## Validation
 
 - Dashboard: 271 tests passed.
 - Core: 431 checks, zero failures/errors, one source-runtime probe skipped. The real Serena integration was checked separately.
-- Summary engine: 21 tests passed in its separate LangMem runtime; no model was started.
 - Real Serena integration: Python/TypeScript definitions, references, changed source, checkout switching, exact receipts, fallback and live component toggling passed against temporary fixtures.
 - Offline Headroom/RTK benchmark: important facts preserved, exact originals identical, signed retrieval costs reported. Warm local Headroom overhead was approximately 9 ms for these small synthetic fixtures; this is not an end-to-end Codex latency claim.
 - Windows updater: the reproduced sharing failure passed 60 consecutive repetitions after the fix.

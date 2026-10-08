@@ -1,4 +1,4 @@
-"""Own just the bundle's two optional Codex MCP entries."""
+"""Own the retained optional Codex MCP entries."""
 import json
 import os
 from pathlib import Path
@@ -12,7 +12,6 @@ from bundle_preferences import load_preferences, set_preference
 
 TOOLS = {
     'serena': ['activate_project', 'get_symbols_overview', 'find_symbol', 'find_referencing_symbols'],
-    'local_summaries': ['list_local_summary_tasks', 'refresh_local_summary', 'get_local_summary'],
     'laya_router': ['bundle_query'],
 }
 
@@ -48,7 +47,7 @@ def laya_guidance(before, enabled):
     if len(matches) > 1 or before.count(start) != len(matches) or before.count(end) != len(matches):
         raise ValueError('Managed Laya guidance markers are damaged; nothing changed.')
     text = (b'All explicit Codex Token Saver work goes through Laya. Prefer bundle_laya_router.bundle_query with a short intent, '
-            b'absolute project, and the arguments needed for a file read, symbol lookup, structural search, Git report, browser snapshot, or summary. '
+            b'absolute project, and the arguments needed for a file read, symbol lookup, structural search, Git report, or browser snapshot. '
             b'For call shapes, nested expressions or repeated code structure, prefer a structural search before broad text scans: '
             b'provide pattern and language (for example JavaScript ipcMain.handle($$$ARGS), Python subprocess.run($$$ARGS)). '
             b'Laya routes explicit patterns without model startup and returns exact match text with locations; use max_matches and next_offset/offset for pages. '
@@ -72,20 +71,58 @@ def _read(path):
     return data
 
 
+def remove_retired_config(before, root):
+    """Remove only the obsolete MCP table belonging to this bundle installation."""
+    source = (before or b'').decode('utf-8-sig')
+    parsed = tomllib.loads(source)
+    entry = parsed.get('mcp_servers', {}).get('bundle_local_summaries')
+    owned = {'command': str(Path(root) / 'headroom/.venv/Scripts/python.exe'),
+             'args': [str(Path(root) / 'local_summary_mcp.py')]}
+    if not isinstance(entry, dict) or any(entry.get(key) != value for key, value in owned.items()):
+        return before
+    document = tomlkit.parse(source)
+    del document['mcp_servers']['bundle_local_summaries']
+    output = tomlkit.dumps(document)
+    output = re.sub(r'(?m)^# (?:BEGIN|END) CODEX TOKEN SAVER LOCAL_SUMMARIES\r?\n', '', output)
+    tomllib.loads(output)
+    if '\r\n' in source and '\n' not in source.replace('\r\n', ''):
+        output = output.replace('\r\n', '\n').replace('\n', '\r\n')
+    return (b'\xef\xbb\xbf' if (before or b'').startswith(b'\xef\xbb\xbf') else b'') + output.encode('utf-8')
+
+
 class BundleIntegrations:
     def __init__(self, root, config_home=None):
         self.root = Path(root).resolve()
         self.home = Path(config_home or os.environ.get('CODEX_HOME') or Path.home() / '.codex').resolve()
         self.config = self.home / 'config.toml'
 
+    def remove_retired_tools(self):
+        """Explicit upgrade cleanup; status reads stay read-only."""
+        with routing_lock(self.root / 'proxy/routing.lock'):
+            before = _read(self.config)
+            after = remove_retired_config(before, self.root)
+            if after == before:
+                return {'removed': False, 'restart_required': False}
+            stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+            atomic_write(self.root / 'integrations/backups' / f'config-{stamp}.toml', before)
+            if _read(self.config) != before:
+                raise ValueError('Codex configuration changed during cleanup; retry the upgrade.')
+            try:
+                atomic_write(self.config, after)
+            except Exception:
+                if _read(self.config) == after:
+                    atomic_write(self.config, before)
+                raise
+        return {'removed': True, 'restart_required': True}
+
     def _paths(self, component):
         if component not in TOOLS:
             raise ValueError('Unknown bundle integration.')
-        directory, script = {'serena': ('serena', 'serena_mcp.py'),
-                             'local_summaries': ('local-compaction', 'local_summary_mcp.py'),
-                             'laya_router': ('laya', 'bundle_router_mcp.py')}[component]
+        script = {'serena': 'serena_mcp.py', 'laya_router': 'bundle_router_mcp.py'}[component]
+        from component_runtime import component_descriptor
+        descriptor = component_descriptor(self.root, 'laya' if component == 'laya_router' else component)
         return (self.root / 'headroom/.venv/Scripts/python.exe', self.root / script,
-                self.root / directory / '.venv/Scripts/python.exe')
+                self.root / descriptor['python_path'])
 
     @staticmethod
     def _pattern(component):

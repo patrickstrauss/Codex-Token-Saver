@@ -18,7 +18,7 @@ function node(id) { return nodes[id] ||= {textContent: '', hidden: false, disabl
     addEventListener(type, fn) { this.listeners[type] = fn; }}; }
 const idle = {busy: false, stage: 'ready', message: 'Ready', log: 'updates/last-operation.log', components: [
     {id:'headroom',current:'0.37.0',latest:'0.37.0',update_available:false,refresh_available:true,rollback_available:true},
-    {id:'rtk',current:'0.49.0',latest:'0.50.0',update_available:true,rollback_available:false}]};
+    {id:'rtk',current:'0.49.0',latest:'0.51.0',update_available:true,rollback_available:false}]};
 const context = {document: {getElementById: node, querySelector: () => ({content: 'csrf-fixture'})},
     setInterval(fn) { timers.push(fn); }, fetch: async (url, opts={}) => {
         calls.push({url, ...opts});
@@ -77,9 +77,40 @@ async function flush() { for (let i=0;i<8;i++) await Promise.resolve(); }
     assert data['check']['busy'] and data['check']['disabled']
     assert json.loads(data['install']['body']) == {'action': 'install', 'component': 'rtk'}
     assert 'Restart Codex' in data['restart'] and 'Serena already running' in data['restart']
-    assert 'summary jobs use the selected runtime' in data['restart']
+    assert 'Laya workers use the selected runtime' in data['restart']
     assert 'Another update is running' in data['failure']
     assert json.loads(data['failedRequest']['body']) == {'action': 'rollback', 'component': 'headroom'}
     assert data['afterError'].get('method', 'GET') == 'GET'
     assert data['busyClosedPolls'] == 1
     assert data['closedPolls'] == 0
+
+
+@pytest.mark.skipif(shutil.which('node') is None, reason='Requires Node for shipped JavaScript')
+@pytest.mark.parametrize('component,refresh', [('laya', False), ('headroom', True), ('serena', True), ('laya', True)])
+def test_optional_library_update_refresh_and_rollback_buttons(component, refresh):
+    source = (Path(__file__).parents[1] / 'static' / 'updates.js').read_text(encoding='utf-8')
+    harness = r'''const vm = require('node:vm'), nodes = {}, calls = [];
+const fixture = JSON.parse(require('node:fs').readFileSync(0, 'utf8')), id=fixture.id;
+function node(id) { return nodes[id] ||= {listeners:{}, addEventListener(k,v){this.listeners[k]=v}}; }
+const status = {busy:false,components:[{id,current:'0.4.0',latest:fixture.refresh?'0.4.0':'0.4.1',
+ update_available:!fixture.refresh,refresh_available:fixture.refresh,rollback_available:true}]};
+const context = {document:{getElementById:node,querySelector:()=>({content:'csrf'})},setInterval(){},
+ fetch:async(url,opts={})=>{calls.push({url,...opts});return {ok:true,json:async()=>status}}};
+vm.createContext(context);vm.runInContext(fixture.source,context);
+async function flush(){for(let i=0;i<10;i++)await Promise.resolve()}
+(async()=>{node('library-updates').open=true;node('library-updates').listeners.toggle();await flush();
+const rendered={current:node('update-'+id+'-current').textContent,latest:node('update-'+id+'-latest').textContent,
+ enabled:!node('update-'+id+'-install').disabled,label:node('update-'+id+'-install').textContent};
+node('update-'+id+'-install').listeners.click();await flush();
+node('update-'+id+'-rollback').listeners.click();await flush();
+process.stdout.write(JSON.stringify({rendered,posts:calls.filter(x=>x.method==='POST'),retired:Object.keys(nodes).filter(x=>/langmem|llama/.test(x))}));
+})().catch(e=>{process.stderr.write(e.stack);process.exitCode=1});'''
+    result = subprocess.run(['node', '-e', harness], input=json.dumps({'source': source, 'id': component, 'refresh': refresh}),
+                            text=True, capture_output=True, check=True, timeout=10)
+    value = json.loads(result.stdout)
+    assert value['rendered'] == {'current': '0.4.0', 'latest': '0.4.0' if refresh else '0.4.1', 'enabled': True,
+                                 'label': 'Refresh dependencies' if refresh else 'Update Laya'}
+    assert [json.loads(post['body']) for post in value['posts']] == [
+        {'action': 'install', 'component': component}, {'action': 'rollback', 'component': component}]
+    assert all(post['headers']['X-Codex-Update-Token'] == 'csrf' for post in value['posts'])
+    assert value['retired'] == []

@@ -37,7 +37,7 @@ def load_api(root):
     from service_control import ServiceController
     # The isolated helper imports this module too; pin it to the installed
     # bundle before helper scripts temporarily add their own artifact path.
-    import local_summary_engine  # noqa: F401
+    import scripts.verify_backend_receipt  # noqa: F401
     return SimpleNamespace(control=DesktopProxyControl(root), critical=CRITICAL_FILES,
                            atomic=atomic_write, lock=routing_lock, lifetime=lifetime_lock,
                            validate_runtime=validate_proxy_runtime, validate_model=validate_proxy_model,
@@ -57,7 +57,7 @@ def child_environment():
 
 
 def run_worker(root, flag, timeout):
-    from local_summary_engine import _windows_job
+    from scripts.verify_backend_receipt import _windows_job
     from service_control import ServiceController
     process = subprocess.Popen(
         [str(root / 'headroom/.venv/Scripts/python.exe'), str(SCRIPT),

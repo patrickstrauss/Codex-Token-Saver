@@ -15,7 +15,7 @@ from uuid import UUID
 
 MAX_EVENTS = 2000
 COMPONENTS = frozenset(('rtk', 'headroom_local', 'headroom_requests', 'headroom_hook',
-    'headroom_commands', 'serena', 'local_summaries', 'llama_cpp', 'playwright_cli',
+    'headroom_commands', 'serena', 'playwright_cli',
     'ast_grep', 'laya_router'))
 OUTCOMES = ('completed', 'failed', 'blocked', 'bypassed')
 KINDS = ('operation', 'informational', 'diagnostic')

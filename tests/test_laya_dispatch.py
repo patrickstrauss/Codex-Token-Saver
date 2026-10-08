@@ -41,7 +41,7 @@ class GatewayTests(unittest.TestCase):
     def test_router_off_blocks_public_calls_but_preserves_original_retrieval(self):
         set_preference(self.root, 'laya_router', False)
         for component, operation in (('headroom_local', 'headroom_read_file'), ('serena', 'find_symbol'),
-                                     ('local_summaries', 'get_local_summary'), ('rtk', 'command')):
+                                     ('rtk', 'command')):
             with self.assertRaisesRegex(RuntimeError, 'Laya router is Off'):
                 gate.authorize_explicit(self.root, component, operation)
         result = gate.authorize_explicit(self.root, 'headroom_local', 'headroom_retrieve')
@@ -51,7 +51,7 @@ class GatewayTests(unittest.TestCase):
 
     def test_component_toggle_is_checked_on_every_public_call(self):
         for component, operation in (('headroom_local', 'headroom_read_file'), ('serena', 'activate_project'),
-                                     ('local_summaries', 'get_local_summary'), ('playwright_cli', 'click')):
+                                     ('playwright_cli', 'click')):
             self.assertEqual(gate.authorize_explicit(self.root, component, operation)['status'], 'typed_route')
             set_preference(self.root, component, False)
             with self.assertRaisesRegex(RuntimeError, 'component is Off'):
@@ -81,15 +81,15 @@ class GatewayTests(unittest.TestCase):
         self.assertGreater(len(commands), 50)
         self.assertFalse(commands - gate.OPERATIONS['playwright_cli'], commands - gate.OPERATIONS['playwright_cli'])
 
-    def test_stats_and_task_list_outcomes_are_informational_including_gateway(self):
+    def test_stats_outcomes_are_informational_including_gateway(self):
         import bundle_activity
         with patch.object(gate, 'record_activity', side_effect=bundle_activity.record), patch.object(bundle_router, 'record') as legacy:
-            for component, operation in (('headroom_local', 'headroom_stats'), ('local_summaries', 'list_local_summary_tasks')):
+            for component, operation in (('headroom_local', 'headroom_stats'),):
                 with gate.explicit_call(self.root, component, operation):
                     pass
             legacy.assert_not_called()
         events = bundle_activity.snapshot(self.root)['recent']
-        self.assertEqual(len(events), 4)
+        self.assertEqual(len(events), 2)
         self.assertTrue(all(event['kind'] == 'informational' for event in events))
 
     def test_internal_context_scopes_component_root_and_lifetime(self):
@@ -260,7 +260,7 @@ class MCPGatewayTests(unittest.IsolatedAsyncioTestCase):
     async def test_exact_recovery_retains_original_bytes_and_signed_status(self):
         import desktop_mcp
         from exact_retrieval import exact_response_is_verified
-        original = 'original\r\nexact π text\r\n'
+        original = 'original\r\nexact ฯ€ text\r\n'
         backend = Mock()
         backend.retrieve.return_value = original
         set_preference(self.root, 'laya_router', False)
@@ -271,18 +271,6 @@ class MCPGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('retrieval recovery', result[0].text)
         self.assertTrue(exact_response_is_verified([x.model_dump() for x in result], root=self.root))
 
-    async def test_summary_subject_id_is_not_caller_attribution(self):
-        import local_summary_mcp
-        controller = Mock()
-        controller.get_summary.return_value = {'summary': 'kept'}
-        controller.status.return_value = {'job': None}
-        with patch.object(local_summary_mcp, 'ROOT', self.root), patch.object(local_summary_mcp, 'controller', controller):
-            result = await local_summary_mcp.call_tool('get_local_summary', {'task_id': '01a0e142-bea9-7e43-a984-77da94ac1faa'})
-            self.assertFalse(result.isError)
-            self.assertIsNone(self.activity.call_args.kwargs['task_id'])
-            set_preference(self.root, 'laya_router', False)
-            self.assertTrue((await local_summary_mcp.call_tool('refresh_local_summary', {'task_id': '01a0e142-bea9-7e43-a984-77da94ac1faa'})).isError)
-            controller.start.assert_not_called()
 
     async def test_serena_routes_every_tool_and_preserves_exact_bodies(self):
         from serena_mcp import GatedSerenaBridge, NAVIGATION_TOOLS
@@ -306,18 +294,15 @@ class MCPGatewayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_public_handlers_reject_nonobject_arguments_without_dispatch(self):
         import desktop_mcp
-        import local_summary_mcp
         from serena_mcp import GatedSerenaBridge
-        backend, controller, upstream = Mock(), Mock(), AsyncMock()
-        with patch.object(desktop_mcp, 'ROOT', self.root), patch.object(desktop_mcp, 'get_backend', return_value=backend), \
-                patch.object(local_summary_mcp, 'ROOT', self.root), patch.object(local_summary_mcp, 'controller', controller):
+        backend, upstream = Mock(), AsyncMock()
+        with patch.object(desktop_mcp, 'ROOT', self.root), patch.object(desktop_mcp, 'get_backend', return_value=backend):
             bridge = GatedSerenaBridge(self.root, upstream)
             for arguments in ([], '', False, 1):
-                for handler, name in ((desktop_mcp.call_tool, 'headroom_stats'), (local_summary_mcp.call_tool, 'list_local_summary_tasks'), (bridge.call_tool, 'find_symbol')):
+                for handler, name in ((desktop_mcp.call_tool, 'headroom_stats'), (bridge.call_tool, 'find_symbol')):
                     with self.subTest(name=name, arguments=arguments):
                         self.assertTrue((await handler(name, arguments)).isError)
             backend.stats.assert_not_called()
-            controller.list_tasks.assert_not_called()
             upstream.call_tool.assert_not_called()
 
     async def test_router_owned_serena_child_avoids_duplicate_routing(self):

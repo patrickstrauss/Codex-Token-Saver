@@ -30,7 +30,7 @@ foreach ($taskFile in $taskManifest.files) {
 }
 $taskPins = Get-Content -LiteralPath (Join-Path $taskPayload 'packaging\dependencies.json') -Raw | ConvertFrom-Json
 if ($Plan) {
-    [ordered]@{version=$taskManifest.version;destination=$taskRoot;components=$(if ($CoreOnly) {'Headroom, RTK, dashboard'} else {'Headroom, RTK, dashboard, Serena, LangMem, llama.cpp CPU, Playwright CLI, ast-grep, Laya'});integration=(-not $SkipIntegration);routing='existing connection preserved';models=$(if ($CoreOnly) {'no model downloaded'} else {'pinned local Laya classifier; no GGUF model downloaded'});verified_files=@($taskManifest.files).Count} | ConvertTo-Json
+    [ordered]@{version=$taskManifest.version;destination=$taskRoot;components=$(if ($CoreOnly) {'Headroom, RTK, dashboard'} else {'Headroom, RTK, dashboard, Serena, Playwright CLI, ast-grep, Laya'});integration=(-not $SkipIntegration);routing='existing connection preserved';models=$(if ($CoreOnly) {'no model downloaded'} else {'pinned local Laya classifier'});verified_files=@($taskManifest.files).Count} | ConvertTo-Json
     exit 0
 }
 $taskMarker = Join-Path $taskRoot 'team-install-source.json'
@@ -103,20 +103,19 @@ Invoke-BundleUv @('python','install',$taskPins.python,'--no-registry','--no-bin'
 $taskPython = [string](& $taskUv --no-config python find $taskPins.python)
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $taskPython)) { throw 'Managed Python was not installed.' }
 $taskComponents = @('headroom','dashboard')
-if (-not $CoreOnly) { $taskComponents += @('serena','langmem','laya') }
+if (-not $CoreOnly) { $taskComponents += @('serena','laya') }
 foreach ($taskComponent in $taskComponents) {
-    $taskDirectory = if ($taskComponent -eq 'langmem') {'local-compaction'} else {$taskComponent}
-    $taskVenv = Join-Path $taskRoot ($taskDirectory + '\.venv')
+    $taskVenv = Join-Path $taskRoot ($taskComponent + '\.venv')
     $taskReady = Join-Path $taskVenv 'team-runtime-ready.json'
     if (Test-Path -LiteralPath $taskReady) { Write-Host "Preserving installed $taskComponent runtime."; continue }
     if (-not (Test-Path -LiteralPath (Join-Path $taskVenv 'Scripts\python.exe'))) { Invoke-BundleUv @('venv','--python',$taskPython,$taskVenv) }
     Write-Host "Installing $taskComponent dependencies..."
-    Invoke-BundleUv @('pip','sync','--python',(Join-Path $taskVenv 'Scripts\python.exe'),'--require-hashes','--build-constraints','packaging/requirements-build.txt',(Join-Path $taskRoot "packaging\requirements-$taskComponent.txt"))
+    # Serena's proxy-tools ships as a source archive. Seed its hash-locked build
+    # tools before installation so no unpinned isolated build environment is used.
+    Invoke-BundleUv @('pip','sync','--python',(Join-Path $taskVenv 'Scripts\python.exe'),'--require-hashes','packaging/requirements-build.txt')
+    Invoke-BundleUv @('pip','install','--python',(Join-Path $taskVenv 'Scripts\python.exe'),'--require-hashes','--no-build-isolation','--requirement',(Join-Path $taskRoot "packaging\requirements-$taskComponent.txt"))
     Invoke-BundleUv @('pip','check','--python',(Join-Path $taskVenv 'Scripts\python.exe'))
     '{"validated_dependencies":true}' | Set-Content -LiteralPath $taskReady -Encoding ascii
-}
-if (-not $CoreOnly) {
-    Expand-VerifiedTool $taskPins.llama 'llama-cpu' 'llama-server.exe' (Join-Path $taskRoot 'local-compaction\llama-b10809')
 }
 $taskTokenizer = Get-VerifiedDownload $taskPins.tokenizer 'o200k_base.tiktoken'
 $taskTokenizerCache = Join-Path $taskRoot 'headroom\tokenizer-cache'
@@ -140,4 +139,4 @@ if (-not $SkipIntegration) {
 [ordered]@{version=$taskManifest.version;completed_at=(Get-Date -Format o);core_only=[bool]$CoreOnly;integration=(-not $SkipIntegration);source_sha256=$taskManifestHash} | ConvertTo-Json |
     Set-Content -LiteralPath (Join-Path $taskRoot 'team-install-result.json') -Encoding UTF8
 Write-Host "Installed and checked: $taskRoot"
-if (-not $SkipIntegration) { Write-Host 'Restart Codex, then open Codex Token Saver from the Start menu. Enable optional tools in its controls. To select your own GGUF model, run Select-Local-Model.ps1 in the installation folder.' }
+if (-not $SkipIntegration) { Write-Host 'Restart Codex, then open Codex Token Saver from the Start menu. Enable optional tools in its controls.' }

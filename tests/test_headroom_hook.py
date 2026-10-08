@@ -112,6 +112,21 @@ class HeadroomHookTests(unittest.TestCase):
         self.assertEqual(updated["description"], "Keep me")
         self.assertLess(elapsed, 5)
 
+    def test_retired_preference_keys_do_not_disable_retained_hook(self):
+        path = self.bundle / 'settings/components.json'
+        path.parent.mkdir(exist_ok=True)
+        try:
+            for retired in (False, True):
+                path.write_text(json.dumps({'schema_version': 1, 'components': {
+                    'rtk': False, 'headroom_local': True,
+                    'local_summaries': retired, 'llama_cpp': retired}}))
+                value, _ = self.run_hook(explicit(self.bundle, 'git status --short'))
+                self.assertIn('hookSpecificOutput', value)
+            path.write_text('{"schema_version":1,"components":{"local_summaries":"true"}}')
+            self.assertEqual(self.run_hook(explicit(self.bundle, 'git status --short'))[0], {})
+        finally:
+            path.unlink(missing_ok=True)
+
     def test_preferences_directory_is_invalid_not_missing(self):
         path = self.bundle / 'settings/components.json'
         path.mkdir(parents=True)

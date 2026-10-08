@@ -228,7 +228,9 @@ function Get-HeadroomRewrite {
                 $preferences.schema_version -isnot [long] -and $preferences.schema_version -isnot [int] -or
                 $preferences.schema_version -ne 1 -or $preferences.components -isnot [pscustomobject]) { throw 'schema' }
             foreach ($property in $preferences.components.PSObject.Properties) {
-                if ($property.Name -notin @('rtk', 'headroom_local', 'serena', 'local_summaries', 'llama_cpp') -or
+                # Older installations can retain these retired booleans. Ignore
+                # them without disabling the retained automatic fast paths.
+                if ($property.Name -notin @('rtk', 'headroom_local', 'serena', 'playwright_cli', 'ast_grep', 'laya_router', 'local_summaries', 'llama_cpp') -or
                     $property.Value -isnot [bool]) { throw 'component' }
             }
             $rtkEnabled = $preferences.components.rtk -ne $false

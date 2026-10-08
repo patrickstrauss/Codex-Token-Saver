@@ -6,8 +6,8 @@
     var csrf = document.querySelector('meta[name="bundle-update-token"]').content;
     var state = {busy: false, components: []};
     var actionPending = false, readPending = false, sequence = 0, requestError = '';
-    var components = ['headroom', 'rtk', 'serena', 'langmem', 'llama_cpp'];
-    var names = {headroom: 'Headroom', rtk: 'RTK', serena: 'Serena', langmem: 'LangMem', llama_cpp: 'llama.cpp'};
+    var components = ['headroom', 'rtk', 'serena', 'laya'];
+    var names = {headroom: 'Headroom', rtk: 'RTK', serena: 'Serena', laya: 'Laya'};
     function el(id) { return document.getElementById(id); }
     function render() {
         var busy = actionPending || state.busy;
@@ -26,7 +26,7 @@
             var component = (state.components || []).find(function (item) { return item.id === id; }) || {};
             el('update-' + id + '-current').textContent = component.current || 'Unavailable';
             el('update-' + id + '-latest').textContent = component.latest || 'Not checked';
-            var refresh = id === 'headroom' && component.refresh_available && !component.update_available;
+            var refresh = component.refresh_available && !component.update_available;
             el('update-' + id + '-install').disabled = busy || !(component.update_available || refresh);
             el('update-' + id + '-install').textContent = refresh ? 'Refresh dependencies' : 'Update ' + names[id];
             el('update-' + id + '-rollback').disabled = busy || !component.rollback_available;
@@ -35,7 +35,7 @@
         });
         el('updates-restart').hidden = !restart;
         el('updates-restart').textContent = restart
-            ? 'Restart Codex to load updated file tools or Serena already running. New command workers and summary jobs use the selected runtime.' : '';
+            ? 'Restart Codex to load updated file tools or Serena already running. New command and Laya workers use the selected runtime.' : '';
     }
     async function loadStatus() {
         if (readPending || actionPending) return;

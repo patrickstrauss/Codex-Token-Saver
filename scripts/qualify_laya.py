@@ -14,7 +14,6 @@ cases = [
     ('Search JavaScript for syntax matching the AST pattern console.log($A).', 'ast_search', ['file_read', 'symbols', 'ast_search', 'clarify']),
     ('Display the git commit history for this repository.', 'git_report', ['git_report', 'clarify']),
     ('Take a snapshot of the current browser page in the existing session.', 'browser_snapshot', ['browser_snapshot', 'clarify']),
-    ('Read the saved summary of this local task.', 'summary', ['summary', 'clarify']),
     ('Read this local JSON configuration file exactly.', 'file_read', ['file_read', 'symbols', 'clarify']),
     ('Find matching syntax nodes for the Python pattern print($A).', 'ast_search', ['file_read', 'symbols', 'ast_search', 'clarify']),
 ]

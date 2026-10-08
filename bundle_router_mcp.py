@@ -17,19 +17,17 @@ server = Server('codex-token-saver', instructions='Route explicit bundle work th
 async def list_tools():
     strings = {'path': 'Existing path inside project (file for reads; directory allowed for structural search).',
                'symbol': 'Optional exact symbol/name path for Serena.',
-               'pattern': 'Structural syntax, not a regex. Example: console.log($$$ARGS) finds calls with any arguments, ignoring comments/strings. Pair with language; no symbol/git/browser/summary fields.',
+               'pattern': 'Structural syntax, not a regex. Example: console.log($$$ARGS) finds calls with any arguments, ignoring comments/strings. Pair with language; no symbol/git/browser fields.',
                'language': 'ast-grep language, for example javascript or python.',
                'browser_session': 'Existing named Playwright CLI session; read-only snapshot only.',
-               'task_id': 'Explicit local task UUID for summaries.',
-               'caller_task_id': 'Current caller chat UUID for activity attribution, if known. Never use the summary target or another chat ID.'}
+               'caller_task_id': 'Current caller chat UUID for activity attribution, if known. Never use another chat ID.'}
     properties = {'intent': {'type': 'string', 'maxLength': 1200}, 'project': {'type': 'string'},
                   **{key: {'type': 'string', 'description': description, 'maxLength': 500} for key, description in strings.items()},
                   'git_operation': {'enum': ['status', 'diff', 'log']},
-                  'summary_action': {'enum': ['read', 'start'], 'description': 'start only when the user explicitly requests summary generation.'},
                   'max_matches': {'type': 'integer', 'minimum': 1, 'maximum': 200, 'default': 50, 'description': 'Structural search page size; exact match text and 1-based locations are preserved.'},
                   'offset': {'type': 'integer', 'minimum': 0, 'maximum': 1000000, 'default': 0, 'description': 'Repeat the same structural query using next_offset to get more matches. Paging reruns search; results can change when files change.'},
                   'exact': {'type': 'boolean', 'default': False}}
-    return [Tool(name='bundle_query', description='Main bundle entry. Prefer structural search for call shapes, nested expressions or repeated code: provide pattern + language (JavaScript ipcMain.handle($$$ARGS), Python subprocess.run($$$ARGS)). Exact, paged matches through Laya without classifier startup. For named symbols use symbol/path; file reads use path; Git reports use git_operation. Also supports existing browser snapshots and selected task summaries. No arbitrary commands or source rewrites.',
+    return [Tool(name='bundle_query', description='Main bundle entry. Prefer structural search for call shapes, nested expressions or repeated code: provide pattern + language (JavaScript ipcMain.handle($$$ARGS), Python subprocess.run($$$ARGS)). Exact, paged matches through Laya without classifier startup. For named symbols use symbol/path; file reads use path; Git reports use git_operation. Also supports existing browser snapshots. No arbitrary commands or source rewrites.',
                  inputSchema={'type': 'object', 'properties': properties, 'required': ['intent', 'project'], 'additionalProperties': False},
                  annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False))]
 

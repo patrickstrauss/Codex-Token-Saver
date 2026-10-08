@@ -15,7 +15,9 @@ RECIPES = {
     'ast_search': 'Match a structural syntax pattern in source code.',
     'git_report': 'Inspect git changes, status or commit history.',
     'browser_snapshot': 'Read the current page in an existing browser session.',
-    'summary': 'Read or explicitly request a local task summary.',
+    # Keep the calibrated choice menu stable. This negative class has no tool,
+    # executable recipe or component; it is folded into clarification below.
+    'unavailable': 'Read or explicitly request a local task summary.',
     'clarify': 'No available tool fits, or the request is ambiguous.',
 }
 
@@ -55,7 +57,8 @@ class Classifier:
         result = self.agent.system_one(intent, questions)
         answer = result['answers']['route']
         delivery = result['answers']['delivery']['choice']
-        return {'route': answer['choice'], 'confidence': answer['probabilities'][answer['choice']],
+        route = 'clarify' if answer['choice'] == 'unavailable' else answer['choice']
+        return {'route': route, 'confidence': answer['probabilities'][answer['choice']],
                 'delivery': delivery, 'truncated': result.get('usage', {}).get('truncated', False),
                 'elapsed_ms': round((time.monotonic() - started) * 1000, 1)}
 

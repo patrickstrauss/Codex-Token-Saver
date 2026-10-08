@@ -57,7 +57,12 @@ class LazySerenaSession:
                         try:
                             request = await asyncio.wait_for(queue.get(), timeout=self.idle_seconds)
                         except TimeoutError:
-                            return
+                            # wait_for can finish cancelling its empty get after
+                            # a caller queues work at the idle deadline. Consume
+                            # that request instead of draining it as unavailable.
+                            if queue.empty():
+                                return
+                            continue
                         if request is None:
                             return
                         name, arguments, future = request

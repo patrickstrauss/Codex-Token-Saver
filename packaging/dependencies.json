@@ -1,24 +1,19 @@
 {
-  "python": "3.13.14",
+  "python": "3.13.16",
   "node": {
     "version": "24.21.0",
     "url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip",
     "sha256": "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541"
   },
   "uv": {
-    "version": "0.12.17",
-    "url": "https://github.com/astral-sh/uv/releases/download/0.12.17/uv-x86_64-pc-windows-msvc.zip",
-    "sha256": "a252121d5b59398fcb137c6ea448176459a44010f33f67e0072305a637119ca7"
+    "version": "0.12.23",
+    "url": "https://github.com/astral-sh/uv/releases/download/0.12.23/uv-x86_64-pc-windows-msvc.zip",
+    "sha256": "75d05de6762778c31ee183398de7dd15093fad0ed90b1f236d8205ea5ec00c90"
   },
   "rtk": {
-    "version": "0.49.0",
-    "url": "https://github.com/rtk-ai/rtk/releases/download/v0.49.0/rtk-x86_64-pc-windows-msvc.zip",
-    "sha256": "cb971046598f0e8bd51f6c27780fcdd2c39a4c459a811bd95b0d77ba8c0d7c9f"
-  },
-  "llama": {
-    "version": "b10809",
-    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10809/llama-b10809-bin-win-cpu-x64.zip",
-    "sha256": "9df3158ed228a641a4b127942d7f459f24c9e13f04682659d05c00c80099b6b5"
+    "version": "0.51.0",
+    "url": "https://github.com/rtk-ai/rtk/releases/download/v0.51.0/rtk-x86_64-pc-windows-msvc.zip",
+    "sha256": "1623e9b45d28b15122d69e7314776e1123a804224885ce07e7182fb40080f05c"
   },
   "tokenizer": {
     "url": "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken",

@@ -1,6 +1,6 @@
 # Real-task performance review — 21 September 2026
 
-The installed ci-7 dashboard and managed request proxy are healthy. RTK is running, Serena is used implicitly, and no new proxy connection failures appeared relative to the previous audit (the cumulative count remains 53). Local summaries and llama.cpp remain off.
+The installed ci-7 dashboard and managed request proxy are healthy. RTK is running, Serena is used implicitly, and no new proxy connection failures appeared relative to the previous audit (the cumulative count remains 53).
 
 ## Evidence
 

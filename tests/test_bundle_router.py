@@ -114,13 +114,6 @@ def test_exact_requirement_overrides_classification(fixture):
     assert execute.call_args.args[-1] is True
 
 
-def test_summary_generation_needs_explicit_parameters_and_both_toggles(fixture):
-    root, project, request = fixture
-    set_preference(root, 'local_summaries', True)
-    request.update(task_id='00000000-0000-0000-0000-000000000000', summary_action='start')
-    assert 'summary' not in router.eligible_recipes(root, request, project)
-    set_preference(root, 'llama_cpp', True)
-    assert 'summary' in router.eligible_recipes(root, request, project)
 
 
 def test_literal_pattern_is_forwarded_without_shell(fixture):

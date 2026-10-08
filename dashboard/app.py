@@ -19,7 +19,6 @@ from flask import Flask, Response, jsonify
 from update_routes import register_update_routes
 from proxy_routes import PANEL_HTML as REQUEST_PROXY_PANEL_HTML, register_proxy_routes
 from component_routes import register_component_routes
-from summary_reminder_routes import register_summary_reminder_routes
 from rtk_metrics import window_metrics
 
 load_dotenv(Path(__file__).with_name('.env'))
@@ -282,7 +281,6 @@ _HEADROOM_SKIP_LABELS = {
 
 _update_routes = register_update_routes(app, Path(__file__).resolve().parent.parent, PORT, _cached_versions)
 register_proxy_routes(app, Path(__file__).resolve().parent.parent, _update_routes)
-register_summary_reminder_routes(app, Path(__file__).resolve().parent.parent, _update_routes)
 collect_components = register_component_routes(app, Path(__file__).resolve().parent.parent, _update_routes,
                                                observations=lambda: _collector.snapshot() or {},
                                                hook_activity=lambda **filters: collect_headroom_automation(**filters))
@@ -1820,17 +1818,11 @@ __REQUEST_PROXY_PANEL__
                 <div class="updates-actions"><button type="button" class="updates-button" id="update-serena-install" disabled>Update Serena</button><button type="button" class="updates-button" id="update-serena-rollback" disabled>Rollback</button><a href="https://github.com/oraios/serena/releases" target="_blank" rel="noopener noreferrer">Releases</a></div>
                 <p id="update-serena-error" class="updates-error"></p>
             </section>
-            <section class="updates-library" aria-label="LangMem library updates">
-                <h2>LangMem</h2>
-                <p class="updates-versions"><span>Installed <strong id="update-langmem-current">Loading</strong></span><span>Latest <strong id="update-langmem-latest">Not checked</strong></span></p>
-                <div class="updates-actions"><button type="button" class="updates-button" id="update-langmem-install" disabled>Update LangMem</button><button type="button" class="updates-button" id="update-langmem-rollback" disabled>Rollback</button><a href="https://github.com/langchain-ai/langmem/releases" target="_blank" rel="noopener noreferrer">Releases</a></div>
-                <p id="update-langmem-error" class="updates-error"></p>
-            </section>
-            <section class="updates-library" aria-label="llama.cpp library updates">
-                <h2>llama.cpp</h2>
-                <p class="updates-versions"><span>Installed <strong id="update-llama_cpp-current">Loading</strong></span><span>Latest <strong id="update-llama_cpp-latest">Not checked</strong></span></p>
-                <div class="updates-actions"><button type="button" class="updates-button" id="update-llama_cpp-install" disabled>Update llama.cpp</button><button type="button" class="updates-button" id="update-llama_cpp-rollback" disabled>Rollback</button><a href="https://github.com/ggml-org/llama.cpp/releases" target="_blank" rel="noopener noreferrer">Releases</a></div>
-                <p id="update-llama_cpp-error" class="updates-error"></p>
+            <section class="updates-library" aria-label="Laya library updates">
+                <h2>Laya</h2>
+                <p class="updates-versions"><span>Installed <strong id="update-laya-current">Loading</strong></span><span>Latest <strong id="update-laya-latest">Not checked</strong></span></p>
+                <div class="updates-actions"><button type="button" class="updates-button" id="update-laya-install" disabled>Update Laya</button><button type="button" class="updates-button" id="update-laya-rollback" disabled>Rollback</button><a href="https://pypi.org/project/laya/" target="_blank" rel="noopener noreferrer">Releases</a></div>
+                <p id="update-laya-error" class="updates-error"></p>
             </section>
         </div>
         <p id="updates-restart" class="updates-restart" hidden></p>

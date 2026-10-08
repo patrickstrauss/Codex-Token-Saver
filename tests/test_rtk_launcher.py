@@ -156,6 +156,18 @@ class NativeRtkLauncherTests(unittest.TestCase):
         self.assertEqual(result.returncode, 37)
         self.assertIn('fixture stderr', result.stderr.decode())
 
+    def test_retired_preferences_are_ignored_without_disabling_rtk(self):
+        for retired in (False, True):
+            with self.subTest(retired=retired):
+                self.write_preferences(json.dumps({'schema_version': 1, 'components': {
+                    'rtk': True, 'headroom_local': False,
+                    'local_summaries': retired, 'llama_cpp': retired}}))
+                result = self.run_launcher(['rg', 'value'])
+                self.assertEqual(json.loads(result.stdout.decode('utf-8-sig'))['args'], ['rg', 'value'])
+        self.write_preferences('{"schema_version":1,"components":{"llama_cpp":"true"}}')
+        result = self.run_launcher(['rg', 'value'])
+        self.assertEqual(json.loads(result.stdout.decode('utf-8-sig'))['args'], ['proxy', 'rg', 'value'])
+
     def test_rtk_off_rejects_rtk_only_verbs_and_preserves_diagnostics(self):
         self.write_preferences('{"schema_version":1,"components":{"rtk":false}}')
         result = self.run_launcher(['summary', 'example'])

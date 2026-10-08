@@ -157,7 +157,9 @@ class TransformTests(unittest.IsolatedAsyncioTestCase):
                 gate.wait(2)
             return 'Useful summary.'
         self.service.compressor = compress
-        value = request(self.text, budget_ms=40)
+        # Allow ordinary thread-pool scheduling before reaching the deliberately
+        # blocked second output. The two-second gate still exceeds this budget.
+        value = request(self.text, budget_ms=500)
         for suffix in ('slow', 'later'):
             entry = request(self.text + suffix)['entries'][0]
             entry['id'] = suffix

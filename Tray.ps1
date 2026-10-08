@@ -10,7 +10,6 @@ $taskMutex = $null
 $taskOwnsMutex = $false
 $script:taskLastError = ''
 $script:taskRequestStatus = $null
-$script:taskReminderTask = $null
 
 function Write-TrayLog([string]$Message) {
     Add-Content -LiteralPath $taskLog -Value ((Get-Date -Format o) + ' ' + $Message)
@@ -90,26 +89,6 @@ function Update-TrayStats {
     }
 }
 
-function Update-SummaryReminder {
-    try {
-        $taskReminderScript = Join-Path $taskRoot 'summary_reminders.py'
-        if (-not (Test-Path -LiteralPath $taskReminderScript -PathType Leaf)) { return }
-        $taskReminderJson = & (Join-Path $taskRoot 'headroom\.venv\Scripts\python.exe') $taskReminderScript
-        if ($LASTEXITCODE -ne 0) { return }
-        $taskReminder = ($taskReminderJson | ConvertFrom-Json).notification
-        if ($null -eq $taskReminder) { return }
-        if ($taskReminder.task_id -notmatch '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') { return }
-        $script:taskReminderTask = $taskReminder.task_id
-        $taskReminderTitle = [string]$taskReminder.title
-        if ($taskReminderTitle.Length -gt 100) { $taskReminderTitle = $taskReminderTitle.Substring(0, 100) }
-        $taskReminderText = "{0}`nReported context: {1:N0}%. Click to review or create a local summary." -f $taskReminderTitle,[double]$taskReminder.context_percent
-        $taskTray.ShowBalloonTip(10000, 'Local summary reminder', $taskReminderText, [Windows.Forms.ToolTipIcon]::Info)
-    } catch {
-        # Reminder failures must not interrupt service recovery or the tray.
-        Write-TrayLog ('Summary reminder unavailable: ' + $_.Exception.GetType().Name)
-    }
-}
-
 try {
     Write-TrayLog ('Tray starting; PID ' + $PID + '; root ' + $taskRoot)
     Add-Type -AssemblyName System.Windows.Forms
@@ -142,32 +121,24 @@ try {
     $taskHeadroomItem.Enabled = $false
     [void]$taskMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
     $taskRepairItem = $taskMenu.Items.Add('Restart / repair dashboard')
-    $taskSummaryItem = $taskMenu.Items.Add('Local summary reminders')
     $taskGuideItem = $taskMenu.Items.Add('Open setup and recovery guide')
     $taskDisableItem = $taskMenu.Items.Add(('Disable Token Saver' + [char]0x2026))
     $taskQuitItem = $taskMenu.Items.Add('Quit tray (services keep running)')
     $taskOpenItem.Add_Click({ Start-Dashboard; Start-Process 'http://127.0.0.1:8095/' })
     $taskTray.Add_MouseClick({ param($sender,$eventArgs); if ($eventArgs.Button -eq [Windows.Forms.MouseButtons]::Left) { Start-Dashboard; Start-Process 'http://127.0.0.1:8095/' } })
     $taskRepairItem.Add_Click({ Start-Dashboard; Update-TrayStats })
-    $taskSummaryItem.Add_Click({ Start-Process 'http://127.0.0.1:8095/#local-summary-panel' })
-    $taskTray.Add_BalloonTipClicked({
-        if ($script:taskReminderTask) {
-            Start-Process ('http://127.0.0.1:8095/?summary_task=' + $script:taskReminderTask + '#local-summary-panel')
-        }
-    })
     $taskGuideItem.Add_Click({ Start-Process notepad.exe -ArgumentList ('"' + (Join-Path $taskRoot 'README.md') + '"') })
     $taskDisableItem.Add_Click({ Start-DisableBundle })
     $taskQuitItem.Add_Click({ [Windows.Forms.Application]::Exit() })
     Start-Dashboard
     Update-TrayStats
-    Update-SummaryReminder
     if ($OpenDashboard) { Start-Process 'http://127.0.0.1:8095/' }
     $script:taskTick = 0
     $taskTimer = New-Object Windows.Forms.Timer
     $taskTimer.Interval = 15000
     $taskTimer.Add_Tick({
         $script:taskTick++
-        if (($script:taskTick % 4) -eq 0) { Start-Dashboard; Update-SummaryReminder }
+        if (($script:taskTick % 4) -eq 0) { Start-Dashboard }
         Update-TrayStats
     })
     $taskTimer.Start()

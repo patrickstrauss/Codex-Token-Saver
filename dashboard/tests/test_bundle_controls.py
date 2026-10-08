@@ -24,15 +24,12 @@ class Proxy:
 class Integrations:
     def status(self):
         return {name: {'installed': False, 'configured': False, 'managed': False}
-                for name in ('serena', 'local_summaries')}
+                for name in ('serena', 'laya_router')}
 
     def set_enabled(self, component, enabled):
         raise AssertionError('Unavailable integrations cannot be enabled')
 
 
-class Summaries:
-    def status(self):
-        return {'available': False, 'runtime_available': False, 'running': False}
 
 
 @pytest.fixture
@@ -42,7 +39,7 @@ def control(tmp_path):
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
-    return BundleControls(tmp_path, proxy=Proxy(), integrations=Integrations(), summaries=Summaries(), opencodex=lambda: {})
+    return BundleControls(tmp_path, proxy=Proxy(), integrations=Integrations(), opencodex=lambda: {})
 
 
 def by_id(control, observations=None):
@@ -195,11 +192,10 @@ def test_requested_but_bypassed_request_compression_degrades_overall(control):
 
 def test_selected_optional_component_dependencies_are_explicit(control):
     from bundle_preferences import set_preference
-    set_preference(control.root, 'local_summaries', True)
     rows = by_id(control)
-    assert rows['local_summaries']['state'] in ('unavailable', 'bypassed')
-    assert not rows['local_summaries']['effective_enabled']
-    assert rows['llama_cpp']['state'] == 'off'
+    assert rows['serena']['state'] == 'off'
+    assert rows['laya_router']['state'] == 'off'
+    assert not {'local_summaries', 'llama_cpp'} & rows.keys()
     with pytest.raises(RuntimeError):
         control.set_enabled('serena', True)
 

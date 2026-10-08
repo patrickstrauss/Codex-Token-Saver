@@ -1,5 +1,7 @@
 # Local conversation compaction research
 
+Historical investigation, retained for optional native compaction research. Its runtime recommendations are not part of the current bundle or fresh installation; use [the current bundle guide](USING-BUNDLE.md) for supported features. Existing user models and saved summaries are retained.
+
 Researched 2026-09-14. Research only: no model installation, routing changes, or service changes.
 
 **Conclusion:** Local summarization is feasible as an additional component. Replacing Codex Desktop's native compaction automatically is not a verified drop-in capability. The recommended first experiment is LangMem with a local inference server, integrated into the existing managed gateway, while retaining native compaction as fallback.

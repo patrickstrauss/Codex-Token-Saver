@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -71,7 +72,6 @@ def test_automatic_and_internal_headroom_do_not_duplicate_parent_activity(tmp_pa
 @pytest.mark.parametrize('fails', [False, True])
 def test_natural_routes_record_one_parent_component_outcome(tmp_path, monkeypatch, route, component, fails):
     from desktop_headroom import DesktopHeadroom
-    from local_summaries import LocalSummaries
     import cli_tools
     enable(tmp_path, *bundle_router.COMPONENT.values())
     project = tmp_path / 'project'
@@ -79,23 +79,23 @@ def test_natural_routes_record_one_parent_component_outcome(tmp_path, monkeypatc
     target = project / 'fixture.py'
     target.write_text('fixture')
     request = {'intent': 'fixture operation', 'project': str(project), 'path': target.name,
-               'caller_task_id': CALLER, 'task_id': 'b6e593dc-4bd7-40f6-8250-ae9d8990efe4',
-               'pattern': 'fixture', 'language': 'python', 'browser_session': 'fixture',
-               'git_operation': 'status', 'summary_action': 'read', 'exact': True}
-    monkeypatch.setenv('CODEX_THREAD_ID', request['task_id'])  # Stale shared-server identity must never win.
+               'caller_task_id': CALLER, 'exact': True}
+    request.update({'ast_search': {'pattern': 'fixture', 'language': 'python'},
+                    'browser_snapshot': {'browser_session': 'fixture'},
+                    'git_report': {'git_operation': 'status'}}.get(route, {}))
+    monkeypatch.setenv('CODEX_THREAD_ID', 'b6e593dc-4bd7-40f6-8250-ae9d8990efe4')  # Stale shared-server identity must never win.
     monkeypatch.delenv('CTS_ACTIVITY_KIND', raising=False)
     def backend(*args, **kwargs):
         if fails:
             raise OSError('private backend error')
         return 'fixture result'
     monkeypatch.setattr(DesktopHeadroom, 'read_file', backend)
-    monkeypatch.setattr(LocalSummaries, 'get_summary', backend)
     monkeypatch.setattr(bundle_router, 'serena_query', AsyncMock(side_effect=OSError('private backend error')) if fails else AsyncMock(return_value='fixture result'))
     monkeypatch.setattr(cli_tools, 'runtime_status', lambda _: {'available': True, 'versions': {}})
     monkeypatch.setattr(cli_tools, 'command', lambda *args: ['fixture.exe'])
     def command(argv, **kwargs):
         backend()
-        kwargs['stdout'].write(b'fixture result')
+        kwargs['stdout'].write(b'[]' if route == 'ast_search' else b'fixture result')
         return subprocess.CompletedProcess(argv, 0)
     monkeypatch.setattr(bundle_router.subprocess, 'run', command)
     predictor = lambda *_: {'route': route, 'confidence': .99, 'delivery': 'exact'}
@@ -103,7 +103,8 @@ def test_natural_routes_record_one_parent_component_outcome(tmp_path, monkeypatc
         with pytest.raises(OSError):
             bundle_router.query(tmp_path, request, predictor=predictor)
     else:
-        assert 'fixture result' in bundle_router.query(tmp_path, request, predictor=predictor)['result']
+        result = bundle_router.query(tmp_path, request, predictor=predictor)['result']
+        assert 'fixture result' in result or route == 'ast_search' and json.loads(result)['total_matches'] == 0
     events = bundle_activity.snapshot(tmp_path)['recent']
     assert len(events) == 2
     assert {event['component'] for event in events} == {'laya_router', component}

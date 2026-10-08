@@ -15,6 +15,7 @@ PYTEST_FILES = (
     'test_bundle_activity.py', 'test_bundle_router.py', 'test_cli_launchers.py',
     'test_cli_observability.py', 'test_cli_tools.py', 'test_headroom_gateway.py',
     'test_laya_guidance.py',
+    'test_structural_routing.py',
 )
 
 
@@ -29,17 +30,15 @@ def cases(suite):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--installed', type=Path)
-    parser.add_argument('--suite', choices=['core', 'summary'])
+    parser.add_argument('--suite', choices=['core'])
     parser.add_argument('--output', type=Path, default=ROOT / 'logs/verification')
     args = parser.parse_args()
     if args.suite:
-        names = (['test_local_summary_engine.py'] if args.suite == 'summary' else
-                 [path.name for path in sorted((ROOT / 'tests').glob('test_*.py'))
-                  if path.name not in (*PYTEST_FILES, 'test_local_summary_engine.py')])
+        names = [path.name for path in sorted((ROOT / 'tests').glob('test_*.py'))
+                 if path.name not in PYTEST_FILES]
         suite = unittest.TestSuite(unittest.defaultTestLoader.discover(str(ROOT / 'tests'), pattern=name)
                                    for name in names)
-        selected = [case for case in cases(suite)
-                    if args.suite == 'summary' or not case.id().startswith('test_local_summary_engine.')]
+        selected = list(cases(suite))
         if not selected:
             raise RuntimeError('No tests were discovered for the selected suite.')
         result = unittest.TextTestRunner(verbosity=1).run(unittest.TestSuite(selected))
@@ -52,7 +51,6 @@ def main():
     installed = args.installed.resolve()
     commands = {
         'core': [str(installed / 'headroom/.venv/Scripts/python.exe'), __file__, '--suite', 'core'],
-        'summary': [str(installed / 'local-compaction/.venv/Scripts/python.exe'), __file__, '--suite', 'summary'],
         'bundle': [str(installed / 'dashboard/.venv/Scripts/python.exe'), '-m', 'pytest',
                    *[str(ROOT / 'tests' / name) for name in PYTEST_FILES], '-q'],
         'dashboard': [str(installed / 'dashboard/.venv/Scripts/python.exe'), '-m', 'pytest', 'dashboard/tests', '-q'],

@@ -13,8 +13,6 @@ LABELS = {
     'headroom_local': 'Headroom local output',
     'headroom_requests': 'Headroom request compression',
     'serena': 'Serena symbol navigation',
-    'local_summaries': 'LangMem local summaries',
-    'llama_cpp': 'llama.cpp local inference',
     'playwright_cli': 'Playwright CLI browser automation',
     'ast_grep': 'ast-grep structural code search',
     'laya_router': 'Laya bundle tool routing',
@@ -52,7 +50,7 @@ def serena_diagnostics(activity):
 
 
 class BundleControls:
-    def __init__(self, root, *, proxy=None, integrations=None, summaries=None, opencodex=None, ocx_control=None):
+    def __init__(self, root, *, proxy=None, integrations=None, opencodex=None, ocx_control=None):
         self.root = Path(root).resolve()
         if proxy is None:
             from desktop_proxy_control import DesktopProxyControl
@@ -60,7 +58,7 @@ class BundleControls:
         if integrations is None:
             from bundle_integrations import BundleIntegrations
             integrations = BundleIntegrations(self.root)
-        self.proxy, self.integrations, self.summaries = proxy, integrations, summaries
+        self.proxy, self.integrations = proxy, integrations
         if opencodex is None:
             from opencodex_integration import discovery_status
             opencodex = discovery_status
@@ -79,11 +77,6 @@ class BundleControls:
             self.ocx_control = OpenCodexControl(self.root)
         return self.ocx_control
 
-    def _summary_status(self):
-        if self.summaries is None:
-            from local_summaries import LocalSummaries
-            self.summaries = LocalSummaries(self.root)
-        return self.summaries.status()
 
     def status(self, observations=None):
         observations = observations or {}
@@ -102,10 +95,6 @@ class BundleControls:
             integrations = self.integrations.status()
         except Exception:
             integrations = {}
-        try:
-            summaries = self._summary_status()
-        except Exception:
-            summaries = {'available': False, 'runtime_available': False, 'running': False}
         activity = {}
         try:
             with (self.root / 'serena/activity.json').open('r', encoding='utf-8') as stream:
@@ -195,6 +184,7 @@ class BundleControls:
                 from bundle_router import status as router_status
                 row.update(router_status(self.root))
                 row['reason'] = 'Laya is the main entry point for all explicit bundle requests when On. Typed MCP and CLI operations use validated routes without classification; free-form bundle_query uses the classifier and its confidence gate. Automatic compression and command hooks continue independently. Configured status does not verify a live task connection. No token savings are inferred.'
+                row['reason'] += ' Version ' + (row.get('version') or 'not installed') + '.'
                 if row.get('last_sequence'):
                     row['reason'] += ' Last sequence: ' + ' → '.join(row['last_sequence']) + '.'
                 integration = integrations.get(name, {})
@@ -202,40 +192,23 @@ class BundleControls:
                     row.update(state='needs_restart', reason='The bundle entry tool needs registration or reload.')
                 elif requested:
                     row.update(state='configured', effective_enabled=None)
-            elif name in ('serena', 'local_summaries'):
+            elif name == 'serena':
                 integration = integrations.get(name, {})
                 row['available'] = integration.get('installed') is True
                 row['restart_required'] = integration.get('restart_required') is True
-                if name == 'serena':
-                    row['last_use'] = activity.get('last_activity_at')
-                    row['diagnostics'] = serena_diagnostics(activity)
-                    row['activity'] = {key: value for key in ('completed', 'failed', 'blocked')
-                                       if type(value := activity.get(key)) is int and value >= 0}
-                    if activity.get('last_outcome') == 'failed':
-                        row['last_error'] = row['diagnostics'].get('last_failure', 'The last Serena lookup failed. Exact source tools remain available.')
-                    row['reason'] = 'Read-only symbol tools; activate a project explicitly. Reload Codex to discover newly configured tools.'
-                else:
-                    row['available'] = row['available'] and summaries.get('available') is True
-                    row['last_use'] = summaries.get('last_recorded_at')
-                    row['last_error'] = summaries.get('last_error')
-                    row['reason'] = 'Experimental, on demand. Native Codex compaction remains enabled; summaries do not replace chat history.'
-                    if requested and not values['llama_cpp']:
-                        row.update(state='bypassed', reason='llama.cpp is Off. Turn it On before requesting a local summary.')
-                    elif requested and summaries.get('running'):
-                        row['state'] = 'in_use'
-                if requested and row['state'] == 'off' and (not integration.get('configured') or not integration.get('managed')):
+                row['last_use'] = activity.get('last_activity_at')
+                row['diagnostics'] = serena_diagnostics(activity)
+                row['activity'] = {key: value for key in ('completed', 'failed', 'blocked')
+                                   if type(value := activity.get(key)) is int and value >= 0}
+                if activity.get('last_outcome') == 'failed':
+                    row['last_error'] = row['diagnostics'].get('last_failure', 'The last Serena lookup failed. Exact source tools remain available.')
+                row['reason'] = 'Read-only symbol tools; activate a project explicitly. Reload Codex to discover newly configured tools.'
+                if requested and (not integration.get('configured') or not integration.get('managed')):
                     row.update(state='needs_restart', reason='The bundle MCP entry is not configured or is unmanaged. Review configuration before enabling it.')
-                elif name == 'serena' and requested:
-                    # A TOML entry and historical calls cannot identify which tasks
-                    # currently have a live MCP connection. Do not invent a handshake.
+                elif requested:
+                    # Configuration and history cannot verify a task's live MCP connection.
                     row.update(state='configured', effective_enabled=None,
                                reason='Read-only tools are configured; loading in each Codex task is unverified. Reload Codex to discover newly configured tools. Recorded calls are historical activity.')
-            else:
-                row['available'] = summaries.get('runtime_available') is True
-                row['last_use'] = summaries.get('last_recorded_at')
-                row['reason'] = 'Loads the configured local model only for an explicit summary job, then unloads it. Off blocks new jobs.'
-                if requested and summaries.get('running'):
-                    row['state'] = 'in_use'
             if name != 'headroom_requests':
                 row_error = preferences.get('extension_error') if name in EXTENSIONS else settings_error
                 if row_error:
@@ -286,7 +259,7 @@ class BundleControls:
             row = next(row for row in self.status()['components'] if row['id'] == component)
             if not row['available']:
                 raise RuntimeError('This component has not been installed and validated.')
-        if component in ('serena', 'local_summaries', 'laya_router'):
+        if component in ('serena', 'laya_router'):
             return self.integrations.set_enabled(component, enabled)
         if component in ('playwright_cli', 'ast_grep'):
             from cli_tools import set_enabled

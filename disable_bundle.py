@@ -12,7 +12,8 @@ import tomllib
 
 import tomlkit
 
-from bundle_preferences import DEFAULTS, LEGACY_DEFAULTS, EXTENSIONS
+from bundle_preferences import LEGACY_DEFAULTS, EXTENSIONS
+from bundle_integrations import remove_retired_config
 from desktop_proxy_control import DesktopProxyControl, LOCAL_URL, _encode, _with_route, _without_route, routing_lock
 from install_command_hook import hook_group
 from install_desktop_mcp import replace_checked, server_config
@@ -61,11 +62,12 @@ def references_root(value, root):
 
 
 def disable_config(before, root):
+    before = remove_retired_config(before, root)
     source = (before or b'').decode('utf-8-sig')
     original = tomllib.loads(source)
     document = tomlkit.parse(source)
     expected = {'headroom_desktop': server_config(root)}
-    for name, script in (('bundle_serena', 'serena_mcp.py'), ('bundle_local_summaries', 'local_summary_mcp.py'),
+    for name, script in (('bundle_serena', 'serena_mcp.py'),
                          ('bundle_laya_router', 'bundle_router_mcp.py')):
         expected[name] = {'command': str(root / 'headroom/.venv/Scripts/python.exe'), 'args': [str(root / script)]}
     for name, entry in original.get('mcp_servers', {}).items():

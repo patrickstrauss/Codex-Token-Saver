@@ -32,8 +32,8 @@ Bundle branch: codex/opencodex-compatibility.
   34 + 9 + 17 + 16 tests respectively after the final migration regressions.
 - TypeScript, structure SSOT and privacy checks passed. GUI TypeScript/Vite build passed.
   The standalone Windows x64 executable was rebuilt after the live-policy correction.
-- Full bundle candidate-1 smoke passed: fresh pinned Headroom/RTK/dashboard/Serena/
-  LangMem/llama runtimes, repair, quality benchmark, repeated installation and isolated
+- Full bundle candidate-1 smoke passed: fresh pinned Headroom/RTK/dashboard/Serena
+  runtimes, repair, quality benchmark, repeated installation and isolated
   config-preservation checks. Candidate-2 adds source upgrade and handoff tooling;
   its separate upgrade/runtime/rollback report is in the final delivery folder.
 - All PowerShell upgrade entry points parse successfully.

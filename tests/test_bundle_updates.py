@@ -124,6 +124,94 @@ class BundleUpdateTests(unittest.TestCase):
         self.assertEqual(environment["UV_PYTHON_DOWNLOADS"], "never")
         self.assertEqual(environment["UV_NO_CONFIG"], "1")
 
+    def headroom_staging_runner(self, commands, fail=None, locked=None, frozen=None):
+        (self.root / 'tools/uv.exe').write_bytes(b'MZuv')
+        baseline = self.root / 'headroom/.venv/Scripts/python.exe'
+        baseline.parent.mkdir(exist_ok=True)
+        baseline.write_bytes(b'MZbaseline')
+        def run(arguments, *args, **kwargs):
+            commands.append(arguments)
+            operation = arguments[4] if 'pip' in arguments else ('venv' if 'venv' in arguments else 'probe')
+            if operation == fail:
+                raise updates.UpdateError('fixture ' + operation + ' failed')
+            if operation == 'venv':
+                python = Path(arguments[-1]) / 'Scripts/python.exe'
+                python.parent.mkdir(parents=True)
+                python.write_bytes(b'MZcandidate')
+            elif operation == 'compile':
+                Path(arguments[arguments.index('--output-file') + 1]).write_text(
+                    locked if locked is not None else '# from https://pypi.org/simple\nheadroom-ai==0.38.0 \\\n    --hash=sha256:' + 'a' * 64 + '\n')
+            elif operation == 'freeze':
+                return frozen if frozen is not None else 'headroom-ai==0.38.0\ntomlkit==0.15.1\n'
+            return ''
+        return run
+
+    def test_headroom_staging_resolves_checked_extras_to_candidate_hash_lock_before_install(self):
+        commands = []
+        with patch.object(self.manager, '_run', side_effect=self.headroom_staging_runner(commands)):
+            candidate = self.manager._stage_headroom({'version': '0.38.0'})
+        target = (self.root / candidate['runtime']).resolve()
+        python = target / 'Scripts/python.exe'
+        self.assertEqual([command[4] for command in commands[1:]], ['compile', 'install', 'check', 'freeze'])
+        compile_command, install = commands[1:3]
+        self.assertIn('--generate-hashes', compile_command)
+        self.assertEqual(Path(compile_command[5]), target / 'requirements.in')
+        self.assertEqual((target / 'requirements.in').read_text().splitlines(),
+                         ['headroom-ai[proxy,code,mcp,reports]==0.38.0', 'tomlkit'])
+        lock = Path(compile_command[compile_command.index('--output-file') + 1])
+        self.assertEqual(lock, target / 'requirements.txt')
+        self.assertIn('--require-hashes', install)
+        self.assertEqual(Path(install[install.index('-r') + 1]), lock)
+        self.assertNotIn('headroom-ai[proxy,code,mcp,reports]==0.38.0', install)
+        for command in commands[1:]:
+            self.assertEqual(Path(command[command.index('--python') + 1]), python)
+            self.assertIn('--no-config', command)
+            self.assertIn('--no-python-downloads', command)
+        for command in (compile_command, install):
+            self.assertEqual(command[command.index('--index-url') + 1], 'https://pypi.org/simple')
+            self.assertEqual(command[command.index('--only-binary') + 1], ':all:')
+            self.assertNotIn('--extra-index-url', command)
+            self.assertNotIn('--no-binary', command)
+            self.assertNotIn('--no-build-isolation', command)
+        receipt = json.loads((target / 'update-receipt.json').read_text())
+        self.assertEqual(receipt['lock_sha256'], hashlib.sha256(lock.read_bytes()).hexdigest())
+        self.assertFalse(receipt['validated'])
+        self.assertFalse((self.root / 'updates/active.json').exists())
+
+    def test_headroom_failed_resolution_or_hash_install_preserves_selected_runtime(self):
+        for failure in ('compile', 'install'):
+            with self.subTest(failure=failure):
+                selected = self.root / 'updates/active.json'
+                selected.write_text('{"schema":1,"headroom":null}')
+                original = selected.read_bytes()
+                commands = []
+                with patch.object(self.manager, '_run', side_effect=self.headroom_staging_runner(commands, fail=failure)), \
+                     patch.object(self.manager, '_validate_headroom', side_effect=AssertionError('validation after failed stage')):
+                    with self.assertRaisesRegex(updates.UpdateError, failure + ' failed'):
+                        self.manager._install_headroom({'version': '0.38.0'})
+                self.assertEqual(selected.read_bytes(), original)
+                self.assertEqual((self.root / 'headroom/.venv/Scripts/python.exe').read_bytes(), b'MZbaseline')
+                self.assertFalse(any('check' in command or 'freeze' in command for command in commands))
+                if failure == 'compile':
+                    self.assertFalse(any('install' in command for command in commands))
+
+    def test_headroom_lock_direct_source_is_rejected_before_install(self):
+        commands = []
+        with patch.object(self.manager, '_run', side_effect=self.headroom_staging_runner(
+                commands, locked='dependency @ https://bad.invalid/package.whl\n')):
+            with self.assertRaises(updates.UpdateError):
+                self.manager._install_headroom({'version': '0.38.0'})
+        self.assertFalse(any('install' in command for command in commands))
+        self.assertFalse((self.root / 'updates/active.json').exists())
+
+    def test_headroom_freeze_direct_sources_still_block_activation(self):
+        commands = []
+        with patch.object(self.manager, '_run', side_effect=self.headroom_staging_runner(
+                commands, frozen='dependency @ https://bad.invalid/package.whl\n')):
+            with self.assertRaises(updates.UpdateError):
+                self.manager._install_headroom({'version': '0.38.0'})
+        self.assertFalse((self.root / 'updates/active.json').exists())
+
     def test_expired_release_plan_is_not_offered_and_idle_versions_are_refreshed(self):
         self.checked()
         state = self.manager._read_state()
@@ -380,13 +468,25 @@ class BundleUpdateTests(unittest.TestCase):
         for probe in (config_probe, model_probe):
             self.assertEqual(probe.call_args.args[0].resolve(), runtime.resolve())
             self.assertTrue(Path(probe.call_args.args[1]).resolve().is_relative_to((self.root / 'updates/validation').resolve()))
-            self.assertEqual(probe.call_args.kwargs['timeout'], 45)
+            self.assertEqual(probe.call_args.kwargs['timeout'], 120 if probe is model_probe else 45)
         self.assertNotEqual(config_probe.call_args.args[1], model_probe.call_args.args[1])
         receipt = json.loads((runtime / 'update-receipt.json').read_text())
         self.assertEqual(receipt['validation_phases'][-2:], ['proxy-config', 'proxy-model'])
         self.assertEqual(receipt['proxy_validation']['configuration']['version'], '0.38.0')
         self.assertFalse((self.root / 'updates/active.json').exists())
         self.assertFalse((self.root / 'proxy/validation.json').exists())
+
+    def test_model_timeout_is_reported_separately_without_activating_candidate(self):
+        runtime, candidate, config = self.proxy_candidate()
+        (self.root / 'models').mkdir()
+        (self.root / 'models/headroom-proxy-model.json').write_text('{}')
+        with patch.object(self.manager, '_run', return_value='{"validated": true}'), \
+             patch('proxy_runtime.validate_proxy_runtime', return_value=config), \
+             patch('proxy_runtime.validate_proxy_model', return_value={
+                 'ok': False, 'error': 'Headroom runtime validation timed out'}):
+            with self.assertRaisesRegex(updates.UpdateError, 'Kompress.*timed out'):
+                self.manager._validate_headroom(candidate)
+        self.assertFalse((self.root / 'updates/active.json').exists())
 
     def test_failed_proxy_candidate_blocks_install_and_rollback_activation(self):
         runtime, candidate, config = self.proxy_candidate()

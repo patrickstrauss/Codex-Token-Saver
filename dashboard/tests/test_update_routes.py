@@ -93,7 +93,7 @@ def test_non_json_malformed_json_and_query_are_rejected(updater_api):
 
 
 @pytest.mark.parametrize('action,component', [('check', None), ('install', 'headroom'), ('rollback', 'rtk'),
-                                            ('install', 'serena'), ('install', 'langmem'), ('rollback', 'llama_cpp')])
+                                            ('install', 'serena'), ('install', 'laya'), ('rollback', 'laya')])
 def test_fixed_actions_start_one_background_operation(updater_api, action, component):
     client, updates, fake, _, _ = updater_api
     payload = {'action': action}

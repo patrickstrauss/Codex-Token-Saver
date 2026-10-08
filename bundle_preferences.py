@@ -4,14 +4,14 @@ import json
 
 from desktop_proxy_control import atomic_write, routing_lock
 
-LEGACY_DEFAULTS = {'rtk': True, 'headroom_local': True, 'serena': False,
-                   'local_summaries': False, 'llama_cpp': False}
+LEGACY_DEFAULTS = {'rtk': True, 'headroom_local': True, 'serena': False}
+RETIRED_COMPONENTS = frozenset(('local_summaries', 'llama_cpp'))
 EXTENSIONS = {'playwright_cli': False, 'ast_grep': False, 'laya_router': False}
 DEFAULTS = LEGACY_DEFAULTS | EXTENSIONS
 MAX_BYTES = 16384
 
 
-def _read_preferences(path, defaults):
+def _read_preferences(path, defaults, retired=()):
     try:
         with path.open('rb') as stream:
             raw = stream.read(MAX_BYTES + 1)
@@ -21,10 +21,10 @@ def _read_preferences(path, defaults):
         if (not isinstance(data, dict) or set(data) != {'schema_version', 'components'}
                 or type(data['schema_version']) is not int or data['schema_version'] != 1
                 or not isinstance(data['components'], dict)
-                or not set(data['components']) <= defaults.keys()
+                or not set(data['components']) <= defaults.keys() | set(retired)
                 or any(type(value) is not bool for value in data['components'].values())):
             raise ValueError('schema')
-        return {'values': dict(defaults, **data['components']), 'error': None}
+        return {'values': dict(defaults, **{key: value for key, value in data['components'].items() if key in defaults}), 'error': None}
     except FileNotFoundError:
         return {'values': dict(defaults), 'error': None}
     except (OSError, ValueError, UnicodeError, RecursionError):
@@ -35,7 +35,7 @@ def _read_preferences(path, defaults):
 def preference_status(root):
     # Older loaded MCP workers reject unknown component keys. Keep their file
     # byte-for-byte unchanged when enabling new extensions during a live upgrade.
-    legacy = _read_preferences(Path(root) / 'settings/components.json', LEGACY_DEFAULTS)
+    legacy = _read_preferences(Path(root) / 'settings/components.json', LEGACY_DEFAULTS, RETIRED_COMPONENTS)
     extensions = _read_preferences(Path(root) / 'settings/extensions.json', EXTENSIONS)
     return {'values': legacy['values'] | extensions['values'], 'error': legacy['error'],
             'extension_error': extensions['error']}

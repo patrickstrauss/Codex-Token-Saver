@@ -2,9 +2,12 @@
 from contextlib import contextmanager
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import subprocess
+import sys
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -272,10 +275,45 @@ class EntryPointTests(unittest.TestCase):
         process.wait.side_effect = subprocess.TimeoutExpired('test worker', 2)
         close = Mock()
         with patch.object(setup.subprocess, 'Popen', return_value=process), \
-                patch('local_summary_engine._windows_job', return_value=close):
+                patch('scripts.verify_backend_receipt._windows_job', return_value=close):
             with self.assertRaises(subprocess.TimeoutExpired):
                 setup.run_worker(ROOT, '--probe-worker', 2)
         close.assert_called_once_with()
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows fixture containment')
+    def test_receipt_fixture_cleanup_stops_owned_child_and_releases_files(self):
+        from scripts.verify_backend_receipt import _windows_job
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ready, go, log = root / 'ready', root / 'go', root / 'child.log'
+            child = ('from pathlib import Path; import time; '
+                     f'log = open({str(log)!r}, "wb"); '
+                     f'Path({str(ready)!r}).write_text("ready"); time.sleep(60)')
+            parent = ('from pathlib import Path; import subprocess, sys, time; '
+                      f'go = Path({str(go)!r})\n'
+                      'while not go.exists(): time.sleep(.01)\n'
+                      f'subprocess.Popen([sys.executable, "-B", "-c", {child!r}])\n'
+                      'time.sleep(60)\n')
+            process = subprocess.Popen([sys.executable, '-B', '-c', parent],
+                                       creationflags=subprocess.CREATE_NO_WINDOW)
+            close = None
+            try:
+                close = _windows_job(process)
+                go.touch()
+                deadline = time.monotonic() + 10
+                while not ready.exists() and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue(ready.exists(), 'Owned child did not start')
+                close()
+                process.wait(timeout=5)
+                log.unlink()  # Fails on Windows if an escaped child holds the file.
+                close()  # Cleanup can be repeated safely.
+            finally:
+                if close is not None:
+                    close()
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=5)
 
 
 if __name__ == '__main__':

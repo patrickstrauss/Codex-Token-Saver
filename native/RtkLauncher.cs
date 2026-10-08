@@ -19,7 +19,6 @@ internal static class RtkLauncher
     {
         var values = new Dictionary<string, bool> {
             {"rtk", true}, {"headroom_local", true}, {"serena", false},
-            {"local_summaries", false}, {"llama_cpp", false},
             {"playwright_cli", false}, {"ast_grep", false}, {"laya_router", false}
         };
         string path = Path.Combine(root, "settings", "components.json");
@@ -40,6 +39,12 @@ internal static class RtkLauncher
             if (components == null) throw new FormatException();
             foreach (var entry in components)
             {
+                // Accept old settings without exposing either retired feature.
+                if (entry.Key == "local_summaries" || entry.Key == "llama_cpp")
+                {
+                    if (!(entry.Value is bool)) throw new FormatException();
+                    continue;
+                }
                 if (!values.ContainsKey(entry.Key) || !(entry.Value is bool)) throw new FormatException();
                 values[entry.Key] = (bool)entry.Value;
             }

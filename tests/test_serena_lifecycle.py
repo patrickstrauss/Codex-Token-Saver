@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from mcp.types import CallToolResult, TextContent
 from bundle_preferences import set_preference
@@ -100,6 +101,34 @@ class SerenaLifecycleTests(unittest.IsolatedAsyncioTestCase):
         await other.call_tool('activate_project', {'project': 'checkout-B'})
         self.assertEqual((await self.worker.call_tool('find_symbol', {})).content[0].text, 'checkout-A')
         self.assertEqual((await other.call_tool('find_symbol', {})).content[0].text, 'checkout-B')
+
+    async def test_lookup_queued_at_idle_timeout_keeps_its_backend(self):
+        original = asyncio.wait_for
+        deadline = asyncio.Event()
+        resume = asyncio.Event()
+        injected = False
+
+        async def expire_at_lookup(waitable, timeout):
+            nonlocal injected
+            if (not injected and getattr(waitable, 'cr_code', None) is asyncio.Queue.get.__code__
+                    and self.worker._queue.empty()):
+                injected = True
+                waitable.close()
+                deadline.set()
+                await resume.wait()
+                raise TimeoutError
+            return await original(waitable, timeout)
+
+        with patch('serena_lifecycle.asyncio.wait_for', side_effect=expire_at_lookup):
+            await self.worker.call_tool('activate_project', {'project': 'checkout-A'})
+            await original(deadline.wait(), 2)
+            lookup = asyncio.create_task(self.worker.call_tool('find_symbol', {}))
+            await asyncio.sleep(0)
+            self.assertEqual(self.worker._queue.qsize(), 1)
+            resume.set()
+            response = await original(lookup, 2)
+            self.assertEqual(response.content[0].text, 'checkout-A')
+            self.assertEqual(len(self.connections), 1)
 
     async def test_backend_failure_is_not_replayed_and_next_call_can_restart(self):
         await self.worker.call_tool('activate_project', {'project': 'checkout-A'})

@@ -44,8 +44,7 @@ def test_incomplete_structural_request_explains_required_arguments(search, missi
 
 
 @pytest.mark.parametrize('extra', [dict(symbol='foo'), dict(git_operation='status'),
-    dict(browser_session='test'), dict(task_id='11111111-1111-4111-8111-111111111111'),
-    dict(summary_action='start')])
+    dict(browser_session='test')])
 def test_conflicting_structural_operations_require_separate_requests(search, extra):
     root, _, request = search
     with patch.object(router, 'execute') as execute:

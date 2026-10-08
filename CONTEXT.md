@@ -18,4 +18,4 @@ A bundle of optional tools that reduces material sent to Codex and reports the r
 
 **Exact retrieval**: Recovery of the complete original content rather than a compressed overview.
 
-**Experimental local summary**: An optional locally generated conversation summary; it does not replace Codex native compaction or establish actual model-request savings.
+**Native compaction**: Codex's own conversation compaction. Optional compaction research is separate from the shipped bundle.

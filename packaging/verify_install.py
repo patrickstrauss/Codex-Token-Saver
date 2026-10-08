@@ -56,16 +56,11 @@ def verify(root):
             assert [tool.name for tool in asyncio.run(router_tools())] == ['bundle_query']
         dashboard = root / 'dashboard/.venv/Scripts/python.exe'
         subprocess.run([str(dashboard), '-c', 'import flask, dotenv, tomlkit; print("dashboard dependencies OK")'], check=True, timeout=30)
-        for directory, imports in [('serena', 'import serena; import solidlsp'), ('local-compaction', 'import langmem; import langchain_openai')]:
-            python = root / directory / '.venv/Scripts/python.exe'
-            if python.is_file():
-                subprocess.run([str(python), '-c', imports], check=True, timeout=120)
-                if directory == 'serena':
-                    from serena_mcp import probe_runtime
-                    assert probe_runtime(root)['ok'], 'Serena navigation schemas are incompatible'
-        llama = root / 'local-compaction/llama-b10809/llama-server.exe'
-        if llama.is_file():
-            subprocess.run([str(llama), '--version'], check=True, timeout=30, stdout=subprocess.DEVNULL)
+        python = root / 'serena/.venv/Scripts/python.exe'
+        if python.is_file():
+            subprocess.run([str(python), '-c', 'import serena; import solidlsp'], check=True, timeout=120)
+            from serena_mcp import probe_runtime
+            assert probe_runtime(root)['ok'], 'Serena navigation schemas are incompatible'
     print(json.dumps({'validated': True, 'headroom': importlib.metadata.version('headroom-ai'), 'rtk': version.strip(), 'model_loaded': False}))
 
 

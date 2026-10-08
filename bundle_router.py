@@ -16,10 +16,10 @@ import urllib.request
 
 from bundle_preferences import load_preferences
 from desktop_proxy_control import atomic_write, routing_lock
-from laya_worker import RECIPES
+from component_runtime import component_descriptor, runtime_path
 
 COMPONENT = {'file_read': 'headroom_local', 'symbols': 'serena', 'ast_search': 'ast_grep',
-             'git_report': 'rtk', 'browser_snapshot': 'playwright_cli', 'summary': 'local_summaries'}
+             'git_report': 'rtk', 'browser_snapshot': 'playwright_cli'}
 
 
 def status(root):
@@ -31,16 +31,21 @@ def status(root):
             data = {}
     except (OSError, ValueError):
         pass
-    available = all((root / name).is_file() for name in (
-        'laya/.venv/Scripts/python.exe', 'laya/ready.json', 'laya/model/model.safetensors', 'bundle_router_mcp.py'))
-    if available:
-        try:
-            receipt = json.loads((root / 'laya/ready.json').read_bytes())
-            manifest = json.loads((root / 'packaging/laya-model.json').read_bytes())
-            available = receipt == {'version': '0.3.22', 'revision': manifest['revision'], 'inference_verified': True}
-        except (OSError, ValueError, KeyError, TypeError):
-            available = False
-    return {'available': available, 'last_use': data.get('last_use'),
+    available, version = False, None
+    try:
+        version = component_descriptor(root, 'laya')['version']
+        python = runtime_path(root, 'laya')
+        ready = python.parent.parent / 'bundle-ready.json'
+        if not ready.is_file() and python == (root / 'laya/.venv/Scripts/python.exe').resolve():
+            ready = root / 'laya/ready.json'
+        receipt = json.loads(ready.read_bytes())
+        manifest = json.loads((root / 'packaging/laya-model.json').read_bytes())
+        available = bool(version) and receipt == {'version': version, 'revision': manifest['revision'], 'inference_verified': True}
+        available = available and all((root / name).is_file() for name in (
+            'laya/model/model.safetensors', 'bundle_router_mcp.py'))
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return {'available': available, 'version': version, 'last_use': data.get('last_use'),
             'activity': {key: value if type(value := data.get(key)) is int and value >= 0 else 0
                          for key in ('completed', 'failed', 'blocked')},
             'last_sequence': data.get('sequence', []), 'last_route_ms': data.get('elapsed_ms')}
@@ -95,7 +100,7 @@ def classify(root, intent, eligible):
                 environment = dict(os.environ, PYTHONUTF8='1')
                 for name in ('PYTHONPATH', 'PYTHONHOME'):
                     environment.pop(name, None)
-                process = subprocess.Popen([str(root / 'laya/.venv/Scripts/python.exe'), str(root / 'laya_worker.py'),
+                process = subprocess.Popen([str(runtime_path(root, 'laya')), str(root / 'laya_worker.py'),
                                             '--root', str(root)], cwd=root, env=environment,
                     stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -114,7 +119,7 @@ def classify(root, intent, eligible):
 
 def validated_request(request):
     allowed = {'intent', 'project', 'path', 'symbol', 'pattern', 'language', 'git_operation',
-               'browser_session', 'task_id', 'caller_task_id', 'summary_action', 'exact', 'max_matches', 'offset'}
+               'browser_session', 'caller_task_id', 'exact', 'max_matches', 'offset'}
     if not isinstance(request, dict) or not set(request) <= allowed:
         raise ValueError('Unknown bundle query field.')
     if not isinstance(request.get('intent'), str) or not 1 <= len(request['intent']) <= 1200:
@@ -133,7 +138,7 @@ def validated_request(request):
     if structural:
         if not request.get('pattern', '').strip() or not request.get('language', '').strip():
             raise ValueError('Structural search requires both pattern and language; use literal search for plain text.')
-        if {'symbol', 'git_operation', 'browser_session', 'task_id', 'summary_action'} & request.keys():
+        if {'symbol', 'git_operation', 'browser_session'} & request.keys():
             raise ValueError('Send structural search and other operations as separate requests.')
     for key, minimum, maximum, default in (('max_matches', 1, 200, 50), ('offset', 0, 1000000, 0)):
         value = request.get(key, default)
@@ -147,12 +152,8 @@ def validated_request(request):
         raise ValueError('The target must exist within the selected project.')
     if request.get('git_operation', 'status') not in ('status', 'diff', 'log'):
         raise ValueError('Supported Git reports: status, diff, log.')
-    if request.get('summary_action', 'read') not in ('read', 'start'):
-        raise ValueError('Summary action must be read or explicitly requested start.')
     if 'browser_session' in request and not re.fullmatch('[a-zA-Z0-9_-]{1,64}', request['browser_session']):
         raise ValueError('Invalid browser session name.')
-    if 'task_id' in request and not re.fullmatch('[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', request['task_id']):
-        raise ValueError('Use an exact local task UUID.')
     if 'caller_task_id' in request and not re.fullmatch('[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', request['caller_task_id']):
         raise ValueError('Use an exact caller task UUID.')
     return project, path
@@ -173,9 +174,6 @@ def eligible_recipes(root, request, path):
         if route == 'git_report' and 'git_operation' not in request:
             continue
         if route == 'browser_snapshot' and not request.get('browser_session'):
-            continue
-        if route == 'summary' and (not request.get('task_id') or
-                request.get('summary_action') == 'start' and not enabled['llama_cpp']):
             continue
         candidates.append(route)
     return candidates + ['clarify']
@@ -284,15 +282,6 @@ def execute(root, route, request, project, path, exact):
         operation = request['git_operation']
         args = {'status': ['status', '--short'], 'diff': ['diff', '--stat'], 'log': ['log', '-10']}[operation]
         text = run_command([str(root / 'bin/rtk.exe'), 'git', *args], project, root, 'rtk', task_id=request.get('caller_task_id'))
-    else:
-        from local_summaries import LocalSummaries
-        summaries = LocalSummaries(root)
-        if request.get('summary_action') == 'start':
-            value = summaries.start(request['task_id'])
-            sequence.append('llama_cpp')
-        else:
-            value = summaries.get_summary(request['task_id'])
-        return json.dumps(value), sequence
     if not exact and load_preferences(root)['headroom_local']:
         from command_compression import CommandCompressor, configure_offline_environment
         state = root / 'headroom/desktop-state'

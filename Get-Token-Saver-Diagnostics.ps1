@@ -39,7 +39,6 @@ function Get-TokenSaverProcessSnapshot {
         elseif ($command -match 'desktop_proxy\.py') { $role = 'Request relay' }
         elseif ($command -match 'desktop_mcp\.py') { $role = 'Local file MCP' }
         elseif ($command -match 'serena_mcp\.py|serena\.cli') { $role = 'Serena MCP' }
-        elseif ($command -match 'local_summary_mcp\.py') { $role = 'Summary MCP' }
         elseif ($command -match 'headroom_run\.py') { $role = 'Command output worker' }
         elseif ($command -match '\bmcp\s+serve\b') { $role = 'Upstream Headroom MCP' }
         elseif ($command -match '\bheadroom\.cli\b.*\bproxy\b') { $role = 'Optional CLI proxy' }

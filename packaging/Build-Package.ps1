@@ -4,24 +4,33 @@ $ErrorActionPreference = 'Stop'
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $PSScriptRoot '..\.scratch\packages' }
 if ($Version -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,60}$') { throw 'Use a simple release version.' }
 $taskRepo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$taskPins = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'dependencies.json') -Raw | ConvertFrom-Json
+if (@($taskPins.PSObject.Properties.Name | Where-Object { $_ -in @('langmem','llama','llama_cpp') }).Count) {
+    throw 'Retired summary/inference dependency pins must be removed before packaging.'
+}
 $taskOutput = [IO.Path]::GetFullPath($OutputDirectory)
 $taskStage = Join-Path $taskOutput ('Codex-Token-Saver-' + $Version + '-windows-x64')
 if (Test-Path -LiteralPath $taskStage) { throw "Output already exists: $taskStage" }
 $taskPayload = Join-Path $taskStage 'payload'
 [void](New-Item -ItemType Directory -Path $taskPayload -Force)
 # Explicit source families; never traverse installed runtimes, hidden state, caches or models.
-$taskFiles = @(Get-ChildItem -LiteralPath $taskRepo -File | Where-Object Extension -in @('.py','.ps1','.ico'))
+$taskRetired = @('local_summaries.py','local_summary_engine.py','local_summary_mcp.py','summary_reminders.py',
+    'Select-Local-Model.ps1','Select-Local-Model.cmd','verify_local_summary.py')
+$taskFiles = @(Get-ChildItem -LiteralPath $taskRepo -File | Where-Object {
+    $_.Extension -in @('.py','.ps1','.ico') -and $_.Name -notin $taskRetired
+})
 foreach ($taskDoc in @('README.md','LIBRARY-UPDATES.md','DESKTOP-REQUEST-PROXY.md','DESKTOP-REPORT.md','INSTALL-PLAN.md','AUTOMATIC-HEADROOM-REPORT.md','HEADROOM-COMPARISON.md','REPAIR-REPORT.md','CONTEXT.md','dashboard\LICENSE','native\README.md')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo $taskDoc)
 }
-foreach ($taskLauncher in @('Select-Local-Model.cmd','Repair-Team-Setup.cmd','Setup-Request-Compression.cmd','Disable-Token-Saver.cmd','Get-Token-Saver-Diagnostics.cmd')) {
+foreach ($taskLauncher in @('Repair-Team-Setup.cmd','Setup-Request-Compression.cmd','Disable-Token-Saver.cmd','Get-Token-Saver-Diagnostics.cmd')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo $taskLauncher)
 }
 foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena')) {
     $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo $taskDirectory) -File |
-        Where-Object { $_.Extension -in @('.py','.ps1','.cs','.html','.yml') -or
+        Where-Object { $_.Name -notin $taskRetired -and ($_.Extension -in @('.py','.ps1','.cs','.html','.yml') -or
             ($taskDirectory -eq 'serena' -and $_.Name -eq 'tool-schemas.json') -or
-            ($taskDirectory -eq 'packaging' -and ($_.Name -in @('dependencies.json','package.json','package-lock.json','laya-model.json') -or $_.Name -like 'requirements-*.txt')) }
+            ($taskDirectory -eq 'packaging' -and $_.Name -in @('dependencies.json','package.json','package-lock.json','laya-model.json',
+                'requirements-build.txt','requirements-headroom.txt','requirements-dashboard.txt','requirements-serena.txt','requirements-laya.txt'))) }
 }
 $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'dashboard\static') -File -Recurse |
     Where-Object Extension -in @('.css','.js','.svg','.png','.ico','.woff2')

@@ -1,6 +1,6 @@
 # Browser and structural code tools
 
-The full Windows bundle includes **Playwright CLI 0.1.22** and **ast-grep 0.45.3**, with an owned **Node 24.21.0** runtime. Core-only installation omits their runtimes. The Node download is SHA-256 pinned; every npm dependency has a SHA-512 integrity entry in `packaging/package-lock.json`. Installation runs no npm lifecycle scripts and changes no global Node installation or PATH. These pins, including Playwright CLI's upstream alpha Playwright dependency, update with a tested bundle release.
+The full Windows bundle includes **Playwright CLI 0.1.22** and **ast-grep 0.45.3**, with an owned **Node 24.21.0 LTS** runtime. Core-only installation omits their runtimes. The Node download is SHA-256 pinned; every npm dependency has a SHA-512 integrity entry in `packaging/package-lock.json`. Installation runs no npm lifecycle scripts and changes no global Node installation or PATH. These pins, including Playwright CLI's upstream alpha Playwright dependency, update with a tested bundle release.
 
 Enable **Browser automation** or **Structural code search** under **Your toolkit**. The controls add/remove their own guidance in Codex's user AGENTS.md, preserve other instructions, and block new wrapper invocations immediately when Off. Reload/open a new Codex chat to pick up changed guidance. Existing browser sessions remain owned by their caller: detach an external app or close your own session before switching Off. Full bundle disable also removes this guidance.
 

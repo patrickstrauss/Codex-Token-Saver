@@ -56,8 +56,6 @@ In the dashboard's **Your toolkit** section, use these controls. Each row also n
 | Local file & output reading — Headroom | **On** (installed default) | Local file tools and eligible RTK output compression; activity can legitimately produce zero reduction. |
 | Code navigation — Serena | Turn **On** | Registers the symbol tools and coding guidance. Reopen Codex afterward so it loads them. |
 | Request compression — Headroom | **Off** until local setup passes | Run **Setup-Request-Compression.cmd**, then turn it On in the dashboard if desired. See below. |
-| Task summaries — LangMem | Leave **Off** | Local-summary work is paused; generating a summary does not reduce the existing Codex task's context. |
-| Local model — llama.cpp | Leave **Off** | llama.cpp is not required by RTK, local file tools or Serena. |
 
 Serena is preferred implicitly for relevant coding navigation; team members do not need to request it in every prompt. It does not intercept all activity. It retrieves symbols, exact bodies and references when useful, with native file tools as a fallback. See [Test Serena in Codex](SERENA-TESTING.md) for a repeatable test and an ordinary coding prompt.
 
@@ -70,28 +68,26 @@ Serena is preferred implicitly for relevant coding navigation; team members do n
   & "$env:USERPROFILE\CodexTokenSaver\bin\rtk.exe" --version
   ```
 
-  The initial bundle reports `rtk 0.49.0`. This checks the executable, not token savings. Use a supported command in your normal coding work to produce real activity.
+  The October 8, 2026 bundle reports `rtk 0.51.0`. This checks the executable, not token savings. Use a supported command in your normal coding work to produce real activity.
 - After enabling Serena and reopening Codex, open or resume a task in your own code project and ask: **“Identify this project's main entry points and relevant symbols. Do not edit files.”** Check for Serena tool calls and an updated **Code navigation** activity count. The [full Serena check](SERENA-TESTING.md) verifies bodies, references, project switching and disabling against isolated fixtures.
 - After trusting the hook, a single ordinary `git status --short`, `git diff`, `git log -5 --oneline` or `rg` display call in a Windows project can use RTK even if the task omits its prefix. Scripts, pipelines, dynamic arguments, machine output and WSL/POSIX paths deliberately stay native. Use `# rtk: exact` or `# headroom: exact` on a native call when completeness matters. RTK usage can increase with zero savings for small outputs; the dashboard itself does not execute commands.
 - At the next Windows login, check that the tray/dashboard starts. A successful installation test is not a substitute for a login test on your teammate's laptop.
 
 These controls work in existing coding tasks once their tools are loaded; no new conversation is required just to use RTK or Serena. Restarting Codex is for changed tool registration/configuration, not a routine per-command requirement. Activity and local token-reduction estimates are not measured weekly-quota savings.
 
-## Included libraries and deferred features
+## Included libraries
 
-Default installation includes Headroom 0.37.0, RTK 0.49.0, Serena 1.7.0, LangMem 0.0.30 and llama.cpp b10809 (CPU). New Python environments use 3.13.14. Serena, local summaries and local inference initially stay **off**; enable the desired controls in the dashboard. Follow [the Serena check](SERENA-TESTING.md) to verify navigation against your project.
-
-Local summaries are paused for the current team setup. If the team explicitly revisits that experiment later, **Select-Local-Model.cmd** inside the installed folder selects a compatible GGUF model you already have; **Task summaries** and **Local model** then allow an explicitly selected task to be summarized. No GGUF is downloaded or loaded by installation or selection. The CPU build needs no GPU driver but may be slow, and selecting a file does not prove model compatibility. Summaries remain separate, lossy reference files and do not replace native Codex compaction or the current conversation. There is no need to select a model for the recommended setup above.
+Default installation includes Headroom **0.40.0**, RTK **0.51.0**, Serena **1.7.0**, Playwright CLI **0.1.22**, ast-grep **0.45.3** and Laya **0.4.0** with its CPU classifier. It uses uv **0.12.23**, Node **24.21.0 LTS** and Python **3.13.16**, the latest release in the existing supported Python branch. Exact downloads and dependency hashes are pinned in `packaging/dependencies.json` and the hashed requirements files. Optional tools initially stay **off**; enable the desired controls in the dashboard. Follow [the Serena check](SERENA-TESTING.md) to verify navigation against your project. Headroom's ONNX Kompress model is downloaded separately by request-compression setup. Existing user model and saved-summary files are preserved during upgrades.
 
 ## Optional request compression
 
-1. Finish the normal installation first. Double-click **Setup-Request-Compression.cmd** in the extracted deployment package or installed folder. It downloads and verifies the public compression model; the first download can take up to 15 minutes and requires access to Hugging Face as well as GitHub. This model is separate from the optional GGUF summary model.
+1. Finish the normal installation first. Double-click **Setup-Request-Compression.cmd** in the extracted deployment package or installed folder. It downloads and verifies Headroom's ONNX Kompress model; the first download can take up to 15 minutes and requires access to Hugging Face as well as GitHub.
 2. Leave the window open until setup succeeds. Setup checks the installed runtime, compression, exact original-content retrieval and a backend on an isolated local port. It records validation for this machine and starts the managed connection in its paused state. Codex keeps its current connection throughout setup; no API key or paid model request is needed for validation.
 3. Refresh the dashboard and turn **Request compression** On. This warms the backend before the existing controller changes routing. Restart Codex once after enabling, then resume existing tasks. Check observed request activity rather than expecting every request to shrink.
 
 Setup preserves an already validated, enabled connection. A failure does not enable routing; keep the error text and retry after addressing it. Setup rolls back its proxy metadata and stops a supervisor it newly created when a later step fails. Shared Windows PATH/Start menu maintenance is not a full system transaction. Port conflicts preserve the existing service instead of stopping it. Use **Pause** in the dashboard or `Restore-Codex-Direct.ps1` for recovery; restart Codex after a routing change.
 
-Do not copy another person's validation receipts or run the historical `activate_validated_request_proxy.py` script. The normal installer never silently enables request compression. Local summaries and llama.cpp can stay Off while request compression is used.
+Do not copy another person's validation receipts or run the historical `activate_validated_request_proxy.py` script. The normal installer never silently enables request compression.
 
 ## Repair an earlier team installation
 
@@ -145,4 +141,4 @@ Pull requests trigger preview builds automatically. Pushes to `main`/`master` an
 
 Dependencies are pinned in `packaging/dependencies.json` and hashed `requirements-*.txt`. The Python archive checksum comes from the pinned uv release's embedded manifest. Requirements were resolved against the tested installation's package versions; `.in` files record direct requirements. No installed virtual environment is copied. To update locks, resolve deliberately, review the change, then run the complete smoke test before releasing.
 
-Upstream distribution references: [uv](https://docs.astral.sh/uv/), [Python management](https://docs.astral.sh/uv/concepts/python-versions/), [RTK releases](https://github.com/rtk-ai/rtk/releases), [Headroom](https://pypi.org/project/headroom-ai/0.37.0/), [Serena](https://pypi.org/project/serena-agent/1.7.0/), [LangMem](https://pypi.org/project/langmem/0.0.30/), and [llama.cpp b10809](https://github.com/ggml-org/llama.cpp/releases/tag/b10809). Dependencies retain their upstream licenses inside their installed distributions.
+Upstream distribution references: [uv](https://docs.astral.sh/uv/), [Python management](https://docs.astral.sh/uv/concepts/python-versions/), [RTK releases](https://github.com/rtk-ai/rtk/releases), [Headroom](https://pypi.org/project/headroom-ai/), [Serena](https://pypi.org/project/serena-agent/), [Playwright CLI](https://www.npmjs.com/package/@playwright/cli), [ast-grep](https://www.npmjs.com/package/@ast-grep/cli), and [Laya](https://pypi.org/project/laya/). Dependencies retain their upstream licenses inside their installed distributions.

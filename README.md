@@ -1,18 +1,16 @@
 # Codex Token Saver
 
-**A Windows tray app for controlling and measuring local token-saving tools used with Codex.** The dashboard provides independent controls for RTK, Headroom local output, Headroom request compression, Serena, LangMem summaries, llama.cpp, Playwright CLI, ast-grep and Laya. Requested settings, readiness and recent activity are shown separately. Start with [Using the bundle](docs/USING-BUNDLE.md). See [browser/Electron and structural search](docs/CLI-TOOLS.md) and the [experimental Laya entry tool](docs/LAYA-ROUTER.md).
+**A Windows tray app for controlling and measuring local token-saving tools used with Codex.** The dashboard provides independent controls for RTK, Headroom local output, Headroom request compression, Serena, Playwright CLI, ast-grep and Laya. Requested settings, readiness and recent activity are shown separately. Start with [Using the bundle](docs/USING-BUNDLE.md). See [browser/Electron and structural search](docs/CLI-TOOLS.md) and the [experimental Laya entry tool](docs/LAYA-ROUTER.md).
 
 The bundle lives in `%USERPROFILE%\CodexTokenSaver`, a regular user folder. The earlier `%LOCALAPPDATA%` installation was affected by Codex MSIX filesystem virtualization: files visible inside Codex differed from those seen by Explorer and login startup.
 
 Open **Codex Token Saver** from the Windows Start menu, open the [dashboard](http://127.0.0.1:8095/), or click the **TS** tray icon. Windows may hide the icon under the tray's up-arrow.
 
-**Team installation:** Follow [Download the workflow artifact and set up Codex](docs/TEAM-INSTALL.md#download-the-workflow-artifact). Choose an approved successful **Windows package** run in [GitHub Actions](https://github.com/patrickstrauss/Codex-Token-Saver/actions), download **windows-package**, extract both ZIP layers, then run **Install.cmd**. No developer tools are required. Earlier team installations can use **Repair-Team-Setup.cmd** from the new artifact to repair RTK paths and integration status. Optional **Setup-Request-Compression.cmd** validates the local request compressor before you enable it in the dashboard. Keep local summaries/local inference Off for now. Existing managed connections are preserved, and the installer will not overwrite an existing installation.
+**Team installation:** Follow [Download the workflow artifact and set up Codex](docs/TEAM-INSTALL.md#download-the-workflow-artifact). Choose an approved successful **Windows package** run in [GitHub Actions](https://github.com/patrickstrauss/Codex-Token-Saver/actions), download **windows-package**, extract both ZIP layers, then run **Install.cmd**. No developer tools are required. Earlier team installations can use **Repair-Team-Setup.cmd** from the new artifact to repair RTK paths and integration status. Optional **Setup-Request-Compression.cmd** validates the local request compressor before you enable it in the dashboard. Existing managed connections are preserved, and the installer will not overwrite an existing installation.
 
 **High memory or process counts:** run **Get-Token-Saver-Diagnostics.cmd** to capture a read-only report. To disable the bundle completely, choose **Disable Token Saver…** under **Your toolkit → Turn off Token Saver** or in the TS tray menu. Close Codex before confirming, then restart Windows after success. Files/history are retained; setup is needed to enable the bundle again. The command-line fallback and deleted-folder steps are in [process recovery](docs/PROCESS-RECOVERY.md).
 
-In **Local summaries**, paste a `codex://threads/<task-id>` link and look up the task before starting. Completed batches are saved for resumption. Summary generation does **not** require restarting Codex or replace native compaction. Restart only when Codex needs to load newly installed or updated local tools.
-
-Expand **Library updates** to check Headroom, RTK, Serena, LangMem and llama.cpp releases, install a validated candidate, or roll back to the retained previous runtime. **Refresh dependencies** updates Headroom's compatible Python dependencies when its core is current. Model GGUF files are not automatically replaced. Checks and installations are manual; see [Updating the libraries](LIBRARY-UPDATES.md).
+Expand **Library updates** to check Headroom, RTK, Serena and Laya releases, install a validated candidate, or roll back to the retained previous runtime. **Refresh dependencies** updates Headroom's compatible Python dependencies when its core is current. Checks and installations are manual; see [Updating the libraries](LIBRARY-UPDATES.md).
 
 ## Source checkout and development
 
@@ -38,13 +36,15 @@ Deploy only validated source into the stable installed bundle, retaining its run
 
 | Component | Purpose and location |
 | --- | --- |
-| RTK 0.49.0 | Compact supported terminal output; native `bin\rtk.exe` launches `tools\rtk.exe`; history is `data\rtk\history.db` |
+| RTK 0.51.0 | Compact supported terminal output; native `bin\rtk.exe` launches `tools\rtk.exe`; history is `data\rtk\history.db` |
 | Dashboard and tray | Separate savings counters on loopback port 8095; `dashboard\`, `Tray.ps1`, `Start-Services.ps1`; logs in `logs\` |
-| Headroom desktop | Installed Headroom 0.37.0 SDK, exposed through the optional local `headroom_desktop` MCP server; `desktop_mcp.py`, `desktop_headroom.py` |
+| Headroom desktop | Headroom 0.40.0 SDK, exposed through the optional local `headroom_desktop` MCP server; `desktop_mcp.py`, `desktop_headroom.py` |
 | Headroom request compression | Stable loopback relay on 8788, separate Headroom backend on 8789, supervised by the **Codex Token Saver Proxy** login task; controls and state in `proxy\` |
 | Headroom CLI proxy | Separate experimental option; loopback port 8787 when explicitly started |
-| Serena | Optional read-only symbol/navigation MCP tools; a live preference gate also controls already-loaded tasks |
-| LangMem + llama.cpp | Experimental summaries for explicitly selected tasks, generated with a configured local model; native Codex compaction remains enabled |
+| Serena 1.7.0 | Optional read-only symbol/navigation MCP tools; a live preference gate also controls already-loaded tasks |
+| Playwright CLI 0.1.22 | Browser automation through named CLI sessions; bundle-owned Node 24.21.0 LTS |
+| ast-grep 0.45.3 | Structural code search with exact matched text and locations |
+| Laya 0.4.0 | Local CPU classifier and explicit bundle gateway; selected runtime in `laya/runtime.json` |
 | Library updater | Manual dashboard controls; `bundle_updates.py`, `runtime_selection.py`, staged environments and rollback records in `updates\` |
 
 RTK works when supported `rtk` commands are invoked. The optional trusted command hook also adds RTK to eligible bare `git status`, `git diff`, `git log`, and `rg` calls. Its native launcher checks eligible stdout with Headroom when running inside Codex. The RTK command executes exactly once; optional compression happens afterward. The launcher keeps RTK history in the stable bundle data directory and preserves command arguments; `bin\rtk.cmd` remains for legacy use.

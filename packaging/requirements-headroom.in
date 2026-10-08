@@ -1,2 +1,2 @@
-headroom-ai[proxy,code,mcp,reports]==0.37.0
+headroom-ai[proxy,code,mcp,reports]==0.40.0
 tomlkit==0.15.1

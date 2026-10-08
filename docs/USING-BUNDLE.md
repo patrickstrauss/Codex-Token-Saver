@@ -16,10 +16,11 @@ Use **Bundle controls** to change one component at a time. **On** is your saved 
 | Headroom local output | Checks eligible local files and command output. Off keeps original output and disables the extra local filtering of RTK results. Existing original-content retrieval remains available. This switch is independent of RTK. |
 | Headroom request compression | Uses the existing managed Enable/Pause controller. Off restores the owned direct-routing setting. Already-open connections can retain their previous route until closed; restart Codex when convenient after changing it. |
 | Serena symbol navigation | Offers four read-only navigation tools. A project must be selected explicitly. Off blocks new calls in already-loaded tasks; in-flight reads may finish. Idle language-server processes may remain until Codex reloads them. |
-| LangMem local summaries | Allows explicit local summary jobs. Off prevents new jobs; saved summaries remain readable. Requires llama.cpp to be On. |
-| llama.cpp local inference | Allows the local model to load for a requested summary job. The model unloads afterward. Off prevents new jobs; use **Cancel running job** to stop work already started by the bundle. |
+| Playwright CLI | Allows browser automation through named CLI sessions. |
+| ast-grep | Allows structural code searches with exact matched text and locations. |
+| Laya router | Routes explicit bundle work and classifies natural-language requests locally on CPU. Automatic Headroom/RTK hooks retain their fast paths. |
 
-Missing runtimes have unavailable controls and an explanation. Enabling one library does not silently enable its dependencies. After installing this update, restart Codex once: existing file-tool processes need to load the new controls, and newly registered Serena and summary tools need discovery. Existing tasks can then be resumed. Later preference changes are checked on each new tool call by the updated wrappers.
+Missing runtimes have unavailable controls and an explanation. Enabling one library does not silently enable its dependencies. After installing this update, restart Codex once: existing file-tool processes need to load the new controls, and newly registered tools need discovery. Existing tasks can then be resumed. Later preference changes are checked on each new tool call by the updated wrappers.
 
 For unavailable request compression, run **Setup-Request-Compression.cmd** from the latest extracted deployment package. It downloads and validates the local compressor while preserving Codex's current connection. After success, turn the dashboard control On and restart Codex once. For an earlier team installation showing RTK history errors or missing local-tool status, use **Repair-Team-Setup.cmd** from that package and restart the dashboard. See the [team setup and repair guide](TEAM-INSTALL.md).
 
@@ -31,22 +32,11 @@ RTK defaults to **Today**. Select **7 days** or **Lifetime** to compare periods.
 
 RTK, Headroom local output, and Headroom model-request counters measure different stages. They can overlap and are never added together. Local retrieval costs can lower net savings. Serena reports observed navigation calls, without inventing a token-saving estimate. The dashboard does not measure your Codex account quota or bill.
 
-## Request a local summary
-
-1. Turn **LangMem local summaries** and **llama.cpp local inference** On after their runtimes and local GGUF model are configured.
-2. Expand **Experimental local summaries** and select the intended task.
-3. Choose **Refresh summary** once. The job processes the pending history in batches and shows progress. The local model stays loaded between batches and unloads when the job ends.
-4. Use **Cancel running job** if needed. Completed batches remain saved; another refresh resumes them. New conversation messages added during a job are picked up on the next refresh. Original conversation files remain unchanged.
-
-This is an optional local aid, not a replacement for Codex's encrypted native compaction. Native compaction stays enabled. Summaries are not automatically injected into model requests. Long jobs can take time. The reader scans a fixed source snapshot, ignores native compaction metadata, and reports incomplete/malformed records or records exceeding its 16 MiB bound. Coverage counts text segments, so long messages can count as several segments. Older summary formats are marked stale and rebuilt on explicit refresh.
-
-Historical source-evidence notes retain nonzero command exit codes and incomplete-output observations across batches. They do not establish whether a failure remains unresolved, and cannot prove the summary is factually complete. A shorter local summary does not by itself establish any savings in Codex usage. Check originals for exact facts, paths and requirements before relying on a generated summary.
-
 ## Update libraries
 
-Expand **Library updates**, click **Check for updates**, and select an installed runtime: **Headroom**, **RTK**, **Serena**, **LangMem**, or **llama.cpp**. Each candidate is staged and checked before its runtime selection changes; **Rollback** returns to the retained previous selection when available. Headroom also offers **Refresh dependencies** when appropriate.
+Expand **Library updates**, click **Check for updates**, and select an installed runtime: **Headroom**, **RTK**, **Serena**, or **Laya**. Each candidate is staged and checked before its runtime selection changes; **Rollback** returns to the retained previous selection when available. Headroom also offers **Refresh dependencies** when appropriate. Laya uses `laya/runtime.json` to select its staged runtime and preserves its pinned classifier model manifest and revision.
 
-Checks and installs are manual. Model GGUF files are not automatically replaced. Existing MCP processes may need a Codex reload after a runtime update. New command workers and summary jobs use the selected runtime. Running work must finish before incompatible runtime operations proceed.
+Checks and installs are manual. Existing MCP processes may need a Codex reload after a runtime update. New command workers use the selected runtime. Running work must finish before incompatible runtime operations proceed.
 
 ## If something stops working
 
