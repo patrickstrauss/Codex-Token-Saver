@@ -4,6 +4,8 @@
 
 The bundle lives in `%USERPROFILE%\CodexTokenSaver`, a regular user folder. The earlier `%LOCALAPPDATA%` installation was affected by Codex MSIX filesystem virtualization: files visible inside Codex differed from those seen by Explorer and login startup.
 
+**Native Codex:** Open Codex and Token Saver; OpenCodex is optional. Native request compression retains your ChatGPT account and chosen model. Existing OpenCodex users should use the [checked native handoff](docs/NATIVE-CODEX.md), then restart Codex once to reload its connection.
+
 Open **Codex Token Saver** from the Windows Start menu, open the [dashboard](http://127.0.0.1:8095/), or click the **TS** tray icon. Windows may hide the icon under the tray's up-arrow.
 
 **Team installation:** Follow [Download the workflow artifact and set up Codex](docs/TEAM-INSTALL.md#download-the-workflow-artifact). Choose an approved successful **Windows package** run in [GitHub Actions](https://github.com/patrickstrauss/Codex-Token-Saver/actions), download **windows-package**, extract both ZIP layers, then run **Install.cmd**. No developer tools are required. Earlier team installations can use **Repair-Team-Setup.cmd** from the new artifact to repair RTK paths and integration status. Optional **Setup-Request-Compression.cmd** validates the local request compressor before you enable it in the dashboard. Existing managed connections are preserved, and the installer will not overwrite an existing installation.

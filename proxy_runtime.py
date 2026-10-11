@@ -416,10 +416,56 @@ def _write_exact_retrieval_runtime_receipt():
             os.unlink(temporary)
 
 
+def _transform_original(ref, root):
+    """Read a stable DB/WAL copy; SQLite never opens the owned source store."""
+    from contextlib import closing
+    import hashlib
+    import sqlite3
+    import shutil
+    import tempfile
+    path = Path(root) / 'proxy/transform-state/originals.db'
+    sources = (path, Path(str(path) + '-wal'))
+    def signature(source):
+        try:
+            stat = source.stat()
+            return stat.st_size, stat.st_mtime_ns, stat.st_ino
+        except FileNotFoundError:
+            return None
+    try:
+        before = [signature(source) for source in sources]
+        if before[0] is None or sum(item[0] for item in before if item) > 256 * 1024 * 1024:
+            return None
+        with tempfile.TemporaryDirectory(prefix='tokensaver-original-') as temporary:
+            copied = Path(temporary) / path.name
+            for source, stamp in zip(sources, before):
+                if stamp is not None:
+                    with source.open('rb') as original, (Path(temporary) / source.name).open('wb') as target:
+                        remaining = stamp[0]
+                        while remaining:
+                            block = original.read(min(1024 * 1024, remaining))
+                            if not block:
+                                return None
+                            target.write(block)
+                            remaining -= len(block)
+            if [signature(source) for source in sources] != before:
+                return None  # A writer/checkpoint raced the copy; keep the SDK miss.
+            with closing(sqlite3.connect(copied.as_uri() + '?mode=ro', uri=True, timeout=.1)) as db:
+                db.execute('PRAGMA query_only=ON')
+                row = db.execute('SELECT text FROM originals WHERE ref=? AND expires>?', (ref, time.time())).fetchone()
+        if row and isinstance(row[0], str):
+            encoded = row[0].encode('utf-8')
+            if len(encoded) <= 8 * 1024 * 1024 and hashlib.sha256(encoded).hexdigest()[:12] == ref:
+                return row[0]
+    except (OSError, sqlite3.Error, UnicodeError):
+        pass
+    return None
+
+
 class ExactRetrievalReceipt:
     """Publish proof only when this process actually receives network traffic."""
-    def __init__(self, app):
+    def __init__(self, app, root=ROOT):
         self.app = app
+        self.root = root
         self.recorded = False
 
     async def __call__(self, scope, receive, send):
@@ -429,6 +475,53 @@ class ExactRetrievalReceipt:
         if not self.recorded and scope['type'] in ('http', 'websocket'):
             _write_exact_retrieval_runtime_receipt()
             self.recorded = True
+        if scope['type'] == 'http' and scope.get('method') == 'GET':
+            import re
+            match = re.fullmatch(r'/v1/retrieve/([0-9a-f]{12})', scope.get('path', ''))
+            if match:
+                pending, buffered, size = None, [], 0
+                async def authorized_miss(message):
+                    nonlocal pending, buffered, size
+                    if message['type'] == 'http.response.start' and message['status'] == 404:
+                        pending = message
+                        return
+                    if pending is None:
+                        await send(message)
+                        return
+                    buffered.append(message)
+                    size += len(message.get('body', b''))
+                    complete = message['type'] == 'http.response.body' and not message.get('more_body', False)
+                    if size > 65536 or len(buffered) > 64 or (message['type'] != 'http.response.body'):
+                        complete = True
+                        original = None
+                    elif not complete:
+                        return
+                    else:
+                        # The SDK hides loopback denials as 404 too. Reuse its
+                        # exact peer/Host guard before considering the old store.
+                        from fastapi import HTTPException, Request
+                        from headroom.proxy.loopback_guard import require_loopback
+                        try:
+                            require_loopback(Request(scope))
+                        except HTTPException:
+                            original = None
+                        else:
+                            original = _transform_original(match[1], self.root)
+                    if original is not None:
+                        body = json.dumps({'hash': match[1], 'original_content': original}, ensure_ascii=False).encode('utf-8')
+                        headers = [(key, value) for key, value in pending.get('headers', [])
+                                   if key.lower() not in (b'content-type', b'content-length', b'content-encoding', b'etag')]
+                        headers.extend([(b'content-type', b'application/json'),
+                                        (b'content-length', str(len(body)).encode('ascii'))])
+                        await send(dict(pending, status=200, headers=headers))
+                        await send({'type': 'http.response.body', 'body': body})
+                    else:
+                        await send(pending)
+                        for part in buffered:
+                            await send(part)
+                    pending, buffered, size = None, [], 0
+                await self.app(scope, receive, authorized_miss)
+                return
         await self.app(scope, receive, send)
 
 

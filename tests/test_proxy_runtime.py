@@ -213,5 +213,155 @@ print(json.dumps(tracker.snapshot()))
             self.assertEqual(snapshot['lifetime']['tokens_saved'], 40)
 
 
+class TransformOriginalCompatibilityTests(unittest.TestCase):
+    def setUp(self):
+        import hashlib
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        self.db = self.root / 'proxy/transform-state/originals.db'
+        self.original = 'Exact original: café\n  indentation\r\n雪'
+        self.ref = hashlib.sha256(self.original.encode()).hexdigest()[:12]
+
+    def store(self, text=None, expiry=None):
+        from contextlib import closing
+        import sqlite3
+        import time
+        self.db.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(self.db)) as db:
+            db.execute('CREATE TABLE originals (ref TEXT PRIMARY KEY, text TEXT, expires REAL)')
+            db.execute('INSERT INTO originals VALUES (?, ?, ?)',
+                       (self.ref, self.original if text is None else text,
+                        time.time() + 1800 if expiry is None else expiry))
+            db.commit()
+
+    def request(self, path=None, method='GET', kind='http', status=404,
+                client=('127.0.0.1', 1234), host=b'127.0.0.1:8789', chunks=None):
+        import asyncio
+        from proxy_runtime import ExactRetrievalReceipt
+        sent = []
+        async def sdk(scope, receive, send):
+            await send({'type': 'http.response.start', 'status': status,
+                        'headers': [(b'x-content-type-options', b'nosniff')]})
+            parts = [b'SDK fallback'] if chunks is None else chunks
+            for index, part in enumerate(parts):
+                await send({'type': 'http.response.body', 'body': part,
+                            **({'more_body': True} if index < len(parts) - 1 else {})})
+        async def receive():
+            return {'type': 'http.request', 'body': b'', 'more_body': False}
+        async def send(message):
+            sent.append(message)
+        scope = {'type': kind, 'method': method, 'path': path or '/v1/retrieve/' + self.ref,
+                 'client': client, 'headers': [(b'host', host)]}
+        with patch('proxy_runtime._write_exact_retrieval_runtime_receipt'):
+            asyncio.run(ExactRetrievalReceipt(sdk, self.root)(scope, receive, send))
+        return sent
+
+    def snapshot(self):
+        return {p.relative_to(self.root): p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+
+    def test_exact_http_response_preserves_original_and_database_bytes(self):
+        self.store()
+        before = self.snapshot()
+        response = self.request()
+        body = ('{"hash": "' + self.ref + '", "original_content": "Exact original: café\\n  indentation\\r\\n雪"}').encode()
+        self.assertEqual(response, [
+            {'type': 'http.response.start', 'status': 200, 'headers': [
+                (b'x-content-type-options', b'nosniff'),
+                (b'content-type', b'application/json'), (b'content-length', str(len(body)).encode())]},
+            {'type': 'http.response.body', 'body': body}])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_expired_original_falls_through_without_deletion(self):
+        self.store(expiry=100)
+        before = self.snapshot()
+        self.assertEqual(self.request()[-1]['body'], b'SDK fallback')
+        self.assertEqual(self.snapshot(), before)
+
+    def test_hash_mismatch_falls_through_without_deletion(self):
+        self.store(text='corrupted original')
+        before = self.snapshot()
+        self.assertEqual(self.request()[0]['status'], 404)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_corrupt_database_falls_through_unchanged(self):
+        self.db.parent.mkdir(parents=True)
+        self.db.write_bytes(b'not a sqlite database')
+        before = self.snapshot()
+        self.assertEqual(self.request()[0]['status'], 404)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_missing_database_is_never_created(self):
+        self.assertEqual(self.request()[0]['status'], 404)
+        self.assertFalse(self.db.parent.exists())
+
+    def test_other_routes_methods_and_invalid_references_reach_sdk(self):
+        self.store()
+        before = self.snapshot()
+        for path, method in [('/v1/responses', 'POST'), ('/health', 'GET'),
+                             ('/v1/retrieve/' + self.ref, 'POST'),
+                             ('/v1/retrieve/' + self.ref.upper(), 'GET'),
+                             ('/v1/retrieve/' + self.ref + '/extra', 'GET'),
+                             ('/v1/retrieve/000000000000', 'GET')]:
+            with self.subTest(path=path, method=method):
+                self.assertEqual(self.request(path, method)[0]['status'], 404)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_sdk_auth_rejections_and_success_do_not_read_legacy_store(self):
+        self.store()
+        for status in (200, 401, 403, 429, 500):
+            with self.subTest(status=status), patch('proxy_runtime._transform_original') as read:
+                response = self.request(status=status)
+                self.assertEqual(response[0]['status'], status)
+                self.assertEqual(response[-1]['body'], b'SDK fallback')
+                read.assert_not_called()
+
+    def test_sdk_hidden_loopback_denials_never_read_legacy_store(self):
+        self.store()
+        for client, host in [(('203.0.113.8', 1234), b'127.0.0.1'),
+                             (None, b'127.0.0.1'), (('127.0.0.1', 1234), b'attacker.example')]:
+            with self.subTest(client=client, host=host), patch('proxy_runtime._transform_original') as read:
+                self.assertEqual(self.request(client=client, host=host)[0]['status'], 404)
+                read.assert_not_called()
+
+    def test_closed_production_wal_database_creates_no_source_sidecars(self):
+        from request_transform import OriginalStore
+        store = OriginalStore(self.db)
+        self.assertEqual(store.put(self.original), self.ref)
+        before = self.snapshot()
+        self.assertEqual(self.request()[0]['status'], 200)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_chunked_sdk_miss_is_replaced_after_complete_response(self):
+        self.store()
+        response = self.request(chunks=[b'first', b'second'])
+        self.assertEqual(response[0]['status'], 200)
+        self.assertEqual(len(response), 2)
+        self.assertEqual(json.loads(response[-1]['body'])['original_content'], self.original)
+
+    def test_oversized_sdk_miss_passes_through_without_reading_old_store(self):
+        self.store()
+        chunks = [b'x' * 65537, b'tail']
+        with patch('proxy_runtime._transform_original') as read:
+            response = self.request(chunks=chunks)
+            self.assertEqual(response[0]['status'], 404)
+            self.assertEqual([part['body'] for part in response[1:]], chunks)
+            read.assert_not_called()
+
+    def test_uncheckpointed_production_wal_original_survives_snapshot(self):
+        import sqlite3
+        from request_transform import OriginalStore
+        store = OriginalStore(self.db)
+        writer = sqlite3.connect(self.db)
+        self.addCleanup(writer.close)
+        writer.execute('PRAGMA wal_autocheckpoint=0')
+        writer.execute('SELECT count(*) FROM originals').fetchone()
+        self.assertEqual(store.put(self.original), self.ref)
+        self.assertTrue(Path(str(self.db) + '-wal').is_file())
+        before = self.snapshot()
+        self.assertEqual(self.request()[0]['status'], 200)
+        self.assertEqual(self.snapshot(), before)
+
+
 if __name__ == '__main__':
     unittest.main()
