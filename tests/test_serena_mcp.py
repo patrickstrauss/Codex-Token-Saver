@@ -77,6 +77,60 @@ class SerenaLauncherTests(unittest.TestCase):
             self.assertIn("  - " + name + "\n", context)
         self.assertNotIn("planning mode", context)
 
+    def test_navigation_schema_validation_accepts_sdk_protocol_aliases(self):
+        module = self.module()
+        module.validate_navigation_tools(ROOT, module.navigation_tools(ROOT))
+
+    def test_navigation_schema_validation_rejects_changed_input(self):
+        from mcp.types import Tool
+        module = self.module()
+        tools = module.navigation_tools(ROOT)
+        record = tools[0].model_dump(by_alias=True)
+        record['inputSchema'] = {'type': 'object', 'required': ['unexpected_argument']}
+        tools[0] = Tool.model_validate(record)
+        with self.assertRaises(RuntimeError):
+            module.validate_navigation_tools(ROOT, tools)
+
+    def test_new_activation_session_field_keeps_public_schema(self):
+        from mcp.types import Tool
+        module = self.module()
+        tools = module.navigation_tools(ROOT)
+        index = next(i for i, tool in enumerate(tools) if tool.name == 'activate_project')
+        record = tools[index].model_dump(by_alias=True)
+        record['inputSchema']['properties']['session_id'] = {'type': 'string'}
+        record['inputSchema'].setdefault('required', []).append('session_id')
+        tools[index] = Tool.model_validate(record)
+        module.validate_navigation_tools(ROOT, tools)
+
+    def test_navigation_description_change_preserves_input_contract(self):
+        from mcp.types import Tool
+        module = self.module()
+        tools = module.navigation_tools(ROOT)
+        record = tools[0].model_dump(by_alias=True)
+        field = next(iter(record['inputSchema']['properties'].values()))
+        field['description'] = 'Updated upstream documentation.'
+        tools[0] = Tool.model_validate(record)
+        module.validate_navigation_tools(ROOT, tools)
+
+    def test_new_serena_keeps_navigation_tools_interface(self):
+        module = self.module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            python = root / 'serena/.venv/Scripts/python.exe'
+            python.parent.mkdir(parents=True)
+            python.touch()
+            for version in ('1.7.0', '2.0.0'):
+                metadata = python.parent.parent / ('Lib/site-packages/serena_agent-' + version + '.dist-info/METADATA')
+                metadata.parent.mkdir(parents=True)
+                metadata.write_text('Name: serena-agent\nVersion: ' + version + '\n')
+                command, _ = module.launch_spec(root, environ={})
+                if version.startswith('2.'):
+                    self.assertIn('--agent-interface', command)
+                    self.assertEqual(command[command.index('--agent-interface') + 1], 'tools')
+                else:
+                    self.assertNotIn('--agent-interface', command)
+                metadata.unlink()
+
     @unittest.skipUnless((ROOT / "serena/.venv/Scripts/python.exe").exists(), "Serena not installed")
     def test_actual_mcp_probe_verifies_declared_navigation_tools(self):
         module = self.module()
@@ -84,7 +138,8 @@ class SerenaLauncherTests(unittest.TestCase):
         report = module.probe_runtime(ROOT)
         self.assertTrue(report["ok"])
         self.assertEqual(set(report["tools"]), set(module.NAVIGATION_TOOLS))
-        self.assertEqual(report["version"], "1.7.0")
+        selected = json.loads((ROOT / 'serena/runtime.json').read_text())
+        self.assertEqual(report["version"], selected['version'])
 
 
 if __name__ == "__main__":

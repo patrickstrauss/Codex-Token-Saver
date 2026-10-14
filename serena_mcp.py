@@ -30,8 +30,21 @@ def navigation_tools(root: Path):
 
 
 def validate_navigation_tools(root, tools):
-    expected = {tool.name: tool.inputSchema for tool in navigation_tools(root)}
-    actual = {tool.name: tool.inputSchema for tool in tools}
+    # MCP 2 uses snake_case attributes; wire aliases stay stable across SDKs.
+    expected = {tool.name: tool.model_dump(by_alias=True)['inputSchema'] for tool in navigation_tools(root)}
+    actual = {tool.name: tool.model_dump(by_alias=True)['inputSchema'] for tool in tools}
+    activation = actual.get('activate_project', {})
+    session_field = activation.get('properties', {}).pop('session_id', None)
+    if session_field is not None:
+        if session_field.get('type') != 'string':
+            raise RuntimeError('Unsupported Serena activation session schema.')
+        activation['required'] = [name for name in activation.get('required', []) if name != 'session_id']
+    for schemas in (expected, actual):
+        for schema in schemas.values():
+            # The gateway advertises our verified descriptions; compare input contracts.
+            schema.pop('description', None)
+            for field in schema.get('properties', {}).values():
+                field.pop('description', None)
     if len(tools) != len(expected) or actual != expected:
         raise RuntimeError('Serena navigation schemas changed; revalidate the managed runtime.')
 
@@ -81,6 +94,11 @@ def launch_spec(root: Path = ROOT, *, environ=None, python_path: Path | None = N
         "--open-web-dashboard", "false", "--log-level", "WARNING",
         "--trace-lsp-communication", "false", "--tool-timeout", "90",
     ]
+    from component_runtime import _package_version
+    version = _package_version(python, 'serena-agent')
+    if version and int(version.split('.')[0]) >= 2:
+        # Serena 2 defaults to a REPL; retain the four read-only named tools.
+        command.extend(['--agent-interface', 'tools'])
     return command, env
 
 

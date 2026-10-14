@@ -6,14 +6,14 @@
     "sha256": "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541"
   },
   "uv": {
-    "version": "0.12.23",
-    "url": "https://github.com/astral-sh/uv/releases/download/0.12.23/uv-x86_64-pc-windows-msvc.zip",
-    "sha256": "75d05de6762778c31ee183398de7dd15093fad0ed90b1f236d8205ea5ec00c90"
+    "version": "0.13.0",
+    "url": "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-pc-windows-msvc.zip",
+    "sha256": "088962f9e7b7bd9ea740c04c650b2a21c8928c345bd99ac24350dc924dba656c"
   },
   "rtk": {
-    "version": "0.51.0",
-    "url": "https://github.com/rtk-ai/rtk/releases/download/v0.51.0/rtk-x86_64-pc-windows-msvc.zip",
-    "sha256": "1623e9b45d28b15122d69e7314776e1123a804224885ce07e7182fb40080f05c"
+    "version": "1.0.0",
+    "url": "https://github.com/rtk-ai/rtk/releases/download/v1.0.0/rtk-x86_64-pc-windows-msvc.zip",
+    "sha256": "011bffd00d3b9142987f77f9ec2c4db018d833ea9b2a175167068c2a74b2599e"
   },
   "tokenizer": {
     "url": "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken",

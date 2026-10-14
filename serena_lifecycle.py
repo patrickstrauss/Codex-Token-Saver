@@ -1,8 +1,20 @@
 """On-demand, per-connection Serena backend with safe idle cleanup."""
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 import sys
+
+
+class _NavigationClient:
+    def __init__(self, client, session_id):
+        self.client = client
+        self.session_id = session_id
+
+    async def call_tool(self, name, arguments):
+        if name == 'activate_project' and self.session_id:
+            arguments = {**arguments, 'session_id': self.session_id}
+        return await self.client.call_tool(name, arguments)
 
 
 class LazySerenaSession:
@@ -29,8 +41,12 @@ class LazySerenaSession:
         async with stdio_client(params, errlog=sys.stderr) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                validate_navigation_tools(self.root, (await session.list_tools()).tools)
-                yield session
+                tools = (await session.list_tools()).tools
+                validate_navigation_tools(self.root, tools)
+                activation = next(tool for tool in tools if tool.name == 'activate_project')
+                needs_id = 'session_id' in activation.model_dump(by_alias=True)['inputSchema']['properties']
+                # Serena registers unknown client IDs. Keep one per child connection.
+                yield _NavigationClient(session, uuid.uuid4().hex if needs_id else None)
 
     async def call_tool(self, name, arguments):
         async with self._lock:

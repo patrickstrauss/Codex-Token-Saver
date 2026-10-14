@@ -61,6 +61,24 @@ class SerenaLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def wait_idle(self):
         await asyncio.wait_for(self.exits.get(), 1)
 
+    async def test_activation_uses_managed_session_id(self):
+        from serena_lifecycle import _NavigationClient
+        received = []
+
+        class Client:
+            async def call_tool(self, name, arguments):
+                received.append((name, arguments))
+                return result('ok')
+
+        arguments = {'project': 'checkout-A'}
+        for session_id in ('a' * 32, 'b' * 32):
+            client = _NavigationClient(Client(), session_id)
+            await client.call_tool('activate_project', arguments)
+            self.assertEqual(received[-1][1], {**arguments, 'session_id': session_id})
+            await client.call_tool('find_symbol', {'name_path_pattern': 'First'})
+            self.assertEqual(received[-1][1], {'name_path_pattern': 'First'})
+        self.assertEqual(arguments, {'project': 'checkout-A'})
+
     async def test_unused_and_disabled_connections_never_start_backend(self):
         await asyncio.sleep(0.04)
         self.assertEqual(self.connections, [])

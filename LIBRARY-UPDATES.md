@@ -25,7 +25,9 @@ An already-running request backend retains its current libraries. After active t
 
 **Laya:** staged Python runtimes must pass classifier compatibility checks before activation through `laya/runtime.json`. Rollback restores the retained prior selection. Updates preserve the classifier's pinned model manifest and revision; the shared worker loads the selected runtime when it next starts.
 
-The October 8, 2026 bundle targets Headroom **0.40.0**, RTK **0.51.0**, Serena **1.7.0** and Laya **0.4.0**. Fresh installation also includes Playwright CLI **0.1.22**, ast-grep **0.45.3**, uv **0.12.23**, Node **24.21.0 LTS** and Python **3.13.16**, the latest release in the existing supported Python branch. Exact downloads and dependency hashes are recorded in the packaging manifests and locks.
+The October 14, 2026 bundle targets Headroom **0.40.0**, RTK **1.0.0**, Serena **2.0.0** and Laya **0.4.6**. Fresh installation also includes Playwright CLI **0.1.22**, ast-grep **0.50.0**, uv **0.13.0**, Node **24.21.0 LTS** and Python **3.13.16**, the latest release in the existing supported Python branch. Exact downloads and dependency hashes are recorded in the packaging manifests and locks.
+
+Serena 2 defaults to a REPL interface. The managed launcher selects its named-tools interface, keeps the same four read-only public tools, and supplies the child connection's activation session ID internally. Schema validation supports both MCP SDK attribute conventions, tolerates changed field descriptions, and continues to reject changed input contracts. The existing public activation arguments and idle project restoration remain available.
 
 The custom dashboard, tray, and integration code are maintained separately. This updater does not replace them with the upstream dashboard or change the experimental CLI proxy environment. Savings history, exact-original cache data, Codex settings, model, reasoning, authentication, and hook trust are preserved. Headroom's ONNX Kompress model and Laya's CPU classifier remain separate from native compaction research. Existing user models and saved summaries are retained.
 
