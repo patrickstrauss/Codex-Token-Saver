@@ -71,7 +71,7 @@ def qualify_rtk_operations(root, environment):
 
 def verify(root, package, config_home):
     # Never accept the normal user installation/profile as a synthetic test target.
-    assert root.parent == config_home.parent and root.name == 'bundle' and config_home.name == 'codex'
+    assert root.parent == config_home.parent and root.name in ('bundle', 'CodexTokenSaver') and config_home.name == 'codex'
     assert root.parent.name.startswith('token-saver-package-'), 'Use Smoke-Package.ps1 to create an isolated sandbox.'
     for name in ('Repair-Team-Setup.cmd', 'Setup-Request-Compression.cmd',
                  'Disable-Token-Saver.cmd', 'Get-Token-Saver-Diagnostics.cmd'):
