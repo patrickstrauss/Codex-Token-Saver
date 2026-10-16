@@ -84,6 +84,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+      actions: read
     steps:
       - name: Create preview draft with qualified package and evidence
         shell: pwsh
@@ -96,7 +97,8 @@ jobs:
           if ($env:GITHUB_REF_TYPE -ne 'tag' -and -not $env:REQUESTED_TAG) { throw 'An explicit tag is required.' }
           gh run download $env:GITHUB_RUN_ID --name windows-package-windows-2025 --dir assets
           if ($LASTEXITCODE -ne 0) { throw 'Qualified assets are missing.' }
-          $assets = @(Get-ChildItem -LiteralPath assets -File | Select-Object -ExpandProperty FullName)
+          $assets = @(Get-ChildItem -LiteralPath assets -File -Recurse | Select-Object -ExpandProperty FullName)
+          if ($assets.Count -lt 5) { throw 'Package, checksum and qualification evidence are required.' }
           $body = @'
           Preview for Windows x64. Download ZIP and SHA-256, verify and fully extract, close Codex, then run Install.cmd. See docs/INSTALL.md for setup, upgrade, recovery and uninstall.
 
