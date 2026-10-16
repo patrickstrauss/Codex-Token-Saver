@@ -2462,4 +2462,8 @@ def events():
 
 
 if __name__ == "__main__":
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from storage_cleanup import start_housekeeping
+    start_housekeeping(Path(__file__).resolve().parent.parent)
     app.run(host=HOST, port=PORT, debug=False, threaded=True)

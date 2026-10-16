@@ -201,6 +201,7 @@ class BundleUpdater:
         self._thread = None
         self._mutex = threading.RLock()
         self._selection_diagnostic = False
+        self._staged_runtimes = set()
         if not self.state_path.exists():
             handle = self._claim_lock()
             if handle:
@@ -331,6 +332,7 @@ class BundleUpdater:
             log.write(now() + " " + stage + ": " + message + "\n")
 
     def _job(self, action, component, handle):
+        self._staged_runtimes.clear()
         try:
             (self.directory / "last-operation.log").write_text("", encoding="utf-8")
             if action == "check":
@@ -359,7 +361,16 @@ class BundleUpdater:
             with (self.directory / "last-operation.log").open("a", encoding="utf-8") as log:
                 log.write(now() + " failed: " + message + "\n")
         finally:
-            self._release_lock(handle)
+            try:
+                if action != 'check':
+                    try:
+                        from storage_cleanup import cleanup
+                        cleanup(self.root, apply=True, lock_held=True, fresh_candidates=self._staged_runtimes)
+                    except Exception:
+                        # Maintenance cannot mask an update's actual result.
+                        pass
+            finally:
+                self._release_lock(handle)
 
     def _current_versions(self):
         runtime = self.root / "headroom/.venv"
@@ -551,7 +562,9 @@ class BundleUpdater:
         baseline = self._baseline_python()
         if not uv.is_file() or not baseline.is_file():
             raise UpdateError("The bundled update runtime is missing. Repair the bundle before updating.")
+        self._require_disk_space('headroom')
         target = self.directory / "runtimes" / ("headroom-" + version + "-" + uuid.uuid4().hex)
+        self._staged_runtimes.add(target.relative_to(self.root).as_posix())
         target.parent.mkdir(parents=True, exist_ok=True)
         self._stage("creating_runtime", "Creating an isolated Python 3.13 runtime.")
         self._run([str(uv), "--no-config", "--no-python-downloads", "venv", "--python", str(baseline), str(target)], "Creating the staged Headroom runtime failed.")
@@ -874,6 +887,12 @@ print(json.dumps({'validated':True,'version':sys.argv[1],'phase':phase}))
         return self._check_optional_python('laya')
 
 
+    def _require_disk_space(self, component):
+        minimum = (4 if component == 'laya' else 2) * 1024 ** 3
+        if shutil.disk_usage(self.root).free < minimum:
+            raise UpdateError('Not enough free disk space to stage this update safely. Free at least '
+                              + str(minimum // 1024 ** 3) + ' GiB and retry; the active runtime is unchanged.')
+
     def _stage_optional_python(self, component, plan):
         version = plan.get('version')
         if stable_version(version) is None:
@@ -882,8 +901,10 @@ print(json.dumps({'validated':True,'version':sys.argv[1],'phase':phase}))
         baseline = self._baseline_python()
         if not uv.is_file() or not baseline.is_file():
             raise UpdateError('The bundled update runtime is missing. Repair it before updating.')
+        self._require_disk_space(component)
         base = Path(OPTIONAL_COMPONENTS[component][0]).parent
         target = self.root / base / 'runtimes' / (component + '-' + version + '-' + uuid.uuid4().hex)
+        self._staged_runtimes.add(target.relative_to(self.root).as_posix())
         target.parent.mkdir(parents=True, exist_ok=True)
         self._stage('creating_runtime', 'Creating an isolated optional-library runtime.')
         self._run([str(uv), '--no-config', '--no-python-downloads', 'venv', '--python', str(baseline), str(target)],

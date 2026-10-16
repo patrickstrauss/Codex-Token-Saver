@@ -33,6 +33,24 @@ The custom dashboard, tray, and integration code are maintained separately. This
 
 ## Recovery
 
+The app performs storage housekeeping after library updates and installation,
+and once daily while the dashboard is open. It retains baseline, selected and
+rollback runtimes. Obsolete generated runtimes and validation fixtures are
+removed after 24 hours, only when no running worker could still use them.
+Failed candidates created by the current update can be removed immediately
+under the same protection checks. Updates check free disk space before staging
+(4 GiB for Laya; 2 GiB for Headroom/Serena) to avoid filling the drive midway.
+Malformed selections or an unavailable process inspection defer cleanup.
+Private installer/updater caches are pruned with uv's locked cache API; shared
+Python/Hugging Face caches, models, activity, exact originals and user backups
+are preserved. Cache pruning does not remove installed dependencies
+([uv cache safety](https://docs.astral.sh/uv/concepts/cache/)).
+
+`storage_cleanup.py --root PATH` previews eligible artifacts. Add `--apply` to
+clean them. A small overwritten report lives at `updates/storage-cleanup.json`.
+Byte counts in that report are file sizes, not physical disk savings: hardlinks
+and other activity can change the space actually reclaimed.
+
 Failed downloads, missing compatible Windows packages, or failed validation leave the previous version selected. The progress area reports the failure; retry the explicit action after resolving it. Interrupted staging remains separate from active libraries. The updater allows one operation at a time across app instances.
 
 Rollback uses the retained prior runtime or verified RTK backup. It changes the selected library version, not your saved activity. A Headroom rollback also applies to fresh tool processes; already-running file tools keep their loaded version until Codex restarts.

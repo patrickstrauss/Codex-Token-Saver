@@ -156,6 +156,8 @@ if (-not $SkipIntegration) {
 [ordered]@{version=$taskManifest.version;completed_at=(Get-Date -Format o);core_only=[bool]$CoreOnly;integration=(-not $SkipIntegration);codex_integration=($Harness -eq 'codex');source_sha256=$taskManifestHash} | ConvertTo-Json |
     Set-Content -LiteralPath (Join-Path $taskRoot 'team-install-result.json') -Encoding UTF8
 Write-Host "Installed and checked: $taskRoot"
+& $taskHeadroomPython (Join-Path $taskRoot 'storage_cleanup.py') --root $taskRoot --apply
+# Housekeeping is best-effort and never turns a valid installation into a failure.
 if (-not $SkipIntegration) {
     if ($Harness -eq 'codex') { Write-Host 'Restart Codex, then open Codex Token Saver from the Start menu. Enable optional tools in its controls.' }
     else { Write-Host 'Open Codex Token Saver from the Start menu. Use its Coding clients panel or Connect-Harness.ps1 to configure your MCP client.' }
