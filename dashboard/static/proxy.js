@@ -3,7 +3,7 @@
     'use strict';
     if (!document.getElementById('request-proxy')) return;
     var token = document.querySelector('meta[name="bundle-update-token"]').content;
-    var state = {}, reading = false, changing = false, sequence = 0, errorMessage = '';
+    var state = {}, reading = false, changing = false, sequence = 0, errorMessage = '', connectionChangedHere = false;
     function el(id) { return document.getElementById('request-proxy-' + id); }
     function number(value) { return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : 'Unavailable'; }
     function percent(value) { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? number(value) + '%' : 'Unavailable'; }
@@ -45,6 +45,7 @@
         el('routing').textContent = state.route_enabled
             ? 'Codex is configured to use this request connection.'
             : 'Codex is configured for its normal connection. Loaded tasks may retain their previous connection until restarted.';
+        if (state.restart_required) el('routing').textContent += ' Already-open tasks can retain an earlier connection. Restart Codex only if a task has not picked up the selected connection.';
         el('backend').textContent = !state.installed ? 'Request compression has not been installed.'
             : !state.validated ? 'Request compression is waiting for validation.'
             : state.backend_ready ? 'Headroom compression engine is ready.'
@@ -55,9 +56,11 @@
             : 'No request savings recorded yet';
         el('error').textContent = errorMessage || state.last_error || '';
         el('error').hidden = !el('error').textContent;
-        el('restart').hidden = !state.restart_required;
-        el('restart').textContent = state.restart_required
-            ? 'Restart Codex when convenient to apply the connection change to tasks already loaded. You can continue existing tasks after restarting.' : '';
+        // The persisted flag records a past config change, not whether today's tasks need a restart.
+        // Keep that caveat in connection details; show a conditional notice after a choice made here.
+        el('restart').hidden = !state.restart_required || !connectionChangedHere;
+        el('restart').textContent = state.restart_required && connectionChangedHere
+            ? 'Connection preference saved. Restart Codex only if an already-open task has not picked up this change. Tasks already using the selected connection can continue.' : '';
         if (state.mode === 'opencodex') {
             el('status').textContent = changing ? 'Applying request compression setting...'
                 : state.effective_enabled ? 'OpenCodex compression enabled'
@@ -84,6 +87,7 @@
             el('recorded').textContent = savings.last_recorded_at
                 ? 'Last measured OpenCodex reply: ' + new Date(savings.last_recorded_at).toLocaleString()
                 : 'Waiting for the first measured OpenCodex reply.';
+            el('restart').hidden = !state.restart_required;
             el('restart').textContent = state.restart_required ? 'OpenCodex must reload its integration settings before compression can become active.' : '';
         }
     }
@@ -118,7 +122,7 @@
                 body: JSON.stringify({action: action})
             });
             var data = await response.json();
-            if (response.ok) state = data;
+            if (response.ok) { state = data; connectionChangedHere = true; }
             else errorMessage = data.error || 'The setting could not be changed. Check the current state.';
         } catch (error) {
             errorMessage = 'The response was interrupted. Check the current state before trying again.';
