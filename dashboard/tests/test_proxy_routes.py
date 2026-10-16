@@ -107,7 +107,7 @@ def test_opencodex_headline_uses_only_live_ledger(proxy_api, tmp_path):
                                  'before': 1000, 'after': 250, 'saved': 750}) + '\n')
     current = client.get('/api/request-proxy', **url).get_json()
     assert current['savings']['saved_tokens'] == 750
-    assert current['recent_savings']['windows']['today']['saved_tokens'] == 750
+    assert current['recent_savings']['windows']['last_24_hours']['saved_tokens'] == 750
     assert current['savings_history_only'] is False
     assert current['native_savings']['saved_tokens'] == 321
 
@@ -141,8 +141,8 @@ def test_recent_ledger_coverage_is_explicit_and_read_only(proxy_api, tmp_path, c
     assert recent['available'] == (coverage in ('complete', 'partial'))
     assert recent['complete'] == (coverage == 'complete')
     if recent['available']:
-        assert recent['windows']['fifteen_minutes']['requests'] == 1
-        assert recent['windows']['fifteen_minutes']['saved_tokens'] == 60
+        assert recent['windows']['last_24_hours']['requests'] == 1
+        assert recent['windows']['last_24_hours']['saved_tokens'] == 60
     assert response.json['savings']['saved_tokens'] == 321  # Remains independent.
     assert (path.read_bytes() if path.exists() else None) == original
     assert not proxy_api[2].calls
@@ -206,4 +206,7 @@ def test_page_contains_request_controls_before_library_updates():
     assert page.index('id="request-proxy"') < page.index('id="library-updates"')
     assert '/static/proxy.js' in page
     assert '__REQUEST_PROXY_PANEL__' not in page
-    assert 'id="request-proxy-window"><option value="fifteen_minutes">Last 15 minutes</option>' in page
+    panel = page[page.index('id="request-proxy"'):page.index('</section>', page.index('id="request-proxy"'))]
+    assert 'id="request-proxy-window">Last 24 hours</span>' in panel
+    assert '<select' not in panel
+    assert 'Lifetime' not in panel and '7 days' not in panel

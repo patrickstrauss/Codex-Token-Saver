@@ -23,10 +23,10 @@ function setup(initial){
 async function flush(){for(let i=0;i<20;i++)await Promise.resolve()}
 function view(test){return {hidden:test.node('request-proxy-restart').hidden,text:test.node('request-proxy-restart').textContent,saved:test.node('request-proxy-saved').textContent,routing:test.node('request-proxy-routing').textContent}}
 const running={mode:'optimized',installed:true,validated:true,enabled:true,route_enabled:true,ready:true,backend_ready:true,restart_required:true,
- recent_savings:{available:true,windows:{today:{saved_tokens:100,requests:1}}}};
+ recent_savings:{available:true,windows:{last_24_hours:{saved_tokens:100,requests:1}}}};
 (async()=>{
  const test=setup(running);await flush();const initial=view(test);
- test.responses.push({...running,recent_savings:{available:true,windows:{today:{saved_tokens:200,requests:2}}}});test.timers[0]();await flush();const ticking=view(test);
+ test.responses.push({...running,recent_savings:{available:true,windows:{last_24_hours:{saved_tokens:200,requests:2}}}});test.timers[0]();await flush();const ticking=view(test);
  const paused={...running,mode:'paused',enabled:false,route_enabled:false};
  test.responses.push(paused);test.node('request-proxy-pause').listeners.click();await flush();const changed=view(test);
  const reloaded=setup(paused);await flush();

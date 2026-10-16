@@ -16,22 +16,23 @@
         el('enable').disabled = changing || !state.installed || !state.validated || (state.enabled && state.route_enabled);
         el('pause').disabled = changing || !(state.enabled || state.route_enabled);
         var savings = state.savings || {}, requests = state.requests || {};
-        var recent = state.recent_savings, key = el('window').value || 'fifteen_minutes';
-        var selected = key !== 'lifetime' ? ((recent && recent.windows) || {})[key] || {} : savings;
-        var available = key !== 'lifetime' ? recent && recent.available : savings.available;
-        var label = key !== 'lifetime' ? ({fifteen_minutes:'last 15 minutes', today:'today', seven_days:'last 7 days'}[key]) : 'lifetime';
+        var recent = state.recent_savings, label = 'last 24 hours';
+        var selected = ((recent && recent.windows) || {}).last_24_hours;
+        var available = recent && recent.available && selected;
+        selected = selected || {};
         el('saved').textContent = available ? number(selected.saved_tokens) : 'Unavailable';
         el('scope').textContent = 'Estimated input tokens avoided · ' + label + ' · all tasks. Individual-task attribution is unavailable.';
+        if (available && !recent.complete) el('scope').textContent += ' Partial record coverage; this total may be incomplete.';
         el('window-detail').textContent = available ? number(selected.requests)
-            + (key === 'lifetime' ? ' requests recorded' : ' savings events in this window')
+            + ' savings events in this window'
             + (selected.reduction_pct == null ? '' : ' · ' + number(selected.reduction_pct) + '% reduction within recorded events') : 'No readable records for this window.';
-        el('coverage').textContent = key !== 'lifetime' && recent && recent.available
+        el('coverage').textContent = recent && recent.available
             ? 'Headroom records positive-savings events only; zero-savings requests and expansions are excluded. This is not an overall traffic reduction rate.'
                 + (!recent.complete ? ' Partial ledger coverage: older or invalid records were omitted. These are totals from available records only.' : '') : '';
         var metrics = state.backend_metrics || {}, diagnostics = metrics.diagnostics || {};
         el('active-rate').textContent = percent(metrics.active_reduction_pct);
         el('whole-rate').textContent = percent(metrics.whole_reduction_pct);
-        el('backend-scope').textContent = 'Current backend counters across all tasks; independent of the selected savings window. Counters reset with backend metrics.'
+        el('backend-scope').textContent = 'Current backend counters across all tasks; independent of the 24-hour savings total. Counters reset with backend metrics.'
             + (metrics.collected_at ? ' Snapshot retrieved: ' + new Date(metrics.collected_at).toLocaleString() + '.' : ' Snapshot unavailable.');
         el('diagnostics').textContent = 'WebSocket compression frames: ' + number(diagnostics.frames_attempted)
             + ' attempted; ' + number(diagnostics.frames_compressed) + ' compressed; ' + number(diagnostics.frames_failed)
@@ -69,12 +70,13 @@
             el('pause').disabled = changing || !state.enabled;
             el('saved').textContent = available ? number(selected.saved_tokens) : 'Waiting for first measurement';
             el('scope').textContent = 'Estimated tokens removed from OpenCodex tool results · ' + label + ' · all tasks. Measured since live metering was enabled.';
+            if (available && !recent.complete) el('scope').textContent += ' Partial record coverage; this total may be incomplete.';
             el('window-detail').textContent = available ? number(selected.requests) + ' transform replies measured in this window' : 'No live OpenCodex measurements recorded yet.';
             el('coverage').textContent = 'Includes cached replies, zero-savings replies and diagnostic checks. These estimates measure worker responses, not confirmed provider usage or quota savings.'
                 + (recent && !recent.complete ? ' Partial ledger coverage: totals include only available valid records.' : '');
             el('active-rate').textContent = percent(selected.reduction_pct);
             el('whole-rate').textContent = 'Not reported';
-            el('backend-scope').textContent = 'Rates use the selected savings window and all tool text submitted to the worker, including replies with no savings. Complete-request token totals are not measured.';
+            el('backend-scope').textContent = 'Rates use the last 24 hours and all tool text submitted to the worker, including replies with no savings. Complete-request token totals are not measured.';
             el('rate-note').textContent = 'Only eligible tool-result text is submitted for compression. Protected conversation content is preserved. Savings before live metering was enabled cannot be reconstructed.';
             el('diagnostics').textContent = 'Worker outcomes below count newly computed batches since worker start; cached replies also contribute to the measured savings above.';
             el('timing').hidden = true;
@@ -133,7 +135,6 @@
     }
     el('enable').addEventListener('click', function () { change('enable'); });
     el('pause').addEventListener('click', function () { change('pause'); });
-    el('window').addEventListener('change', render);
     setInterval(loadStatus, 5000);
     render();
     loadStatus();

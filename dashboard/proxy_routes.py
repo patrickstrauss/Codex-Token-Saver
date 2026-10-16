@@ -14,7 +14,7 @@ PANEL_HTML = '''
   <div class="updates-body">
     <div class="request-heading">
       <div class="request-title"><span class="tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-9 12h7l-1 8 10-13h-8l1-7Z"/></svg></span><div><h2 id="request-proxy-heading">Headroom request savings</h2><p id="request-proxy-status" role="status">Checking desktop connection...</p></div></div>
-      <label class="window-control" for="request-proxy-window">Window <select class="bundle-select" id="request-proxy-window"><option value="fifteen_minutes">Last 15 minutes</option><option value="today">Today</option><option value="seven_days">7 days</option><option value="lifetime">Lifetime</option></select></label>
+      <span class="window-control" id="request-proxy-window">Last 24 hours</span>
     </div>
     <div class="request-metrics" aria-label="Compression effectiveness">
       <div class="request-total"><div id="request-proxy-saved">Unavailable</div><div class="metric-caption">Estimated input tokens avoided</div></div>
@@ -117,10 +117,10 @@ def register_proxy_routes(app, root, security, control_factory=None):
         try:
             snapshot = manager().status() if enabled is None else manager().set_enabled(enabled)
             if snapshot.get('mode') == 'opencodex':
-                recent = request_windows(root / 'proxy/transform-state/savings_events.jsonl', include_lifetime=True)
+                recent = request_windows(root / 'proxy/transform-state/savings_events.jsonl')
                 snapshot['native_savings'] = snapshot.get('savings', {})
                 snapshot['recent_savings'] = recent
-                snapshot['savings'] = dict(recent['windows']['lifetime'], available=recent['available'])
+                snapshot['savings'] = dict(recent['windows']['last_24_hours'], available=recent['available'])
                 snapshot['savings_history_only'] = False
             else:
                 snapshot['recent_savings'] = request_windows(root / 'proxy/backend-state/savings_events.jsonl')

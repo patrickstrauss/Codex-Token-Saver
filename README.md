@@ -65,6 +65,11 @@ retrieval can erase savings. Never add RTK/local/request estimates together or
 present them as measured ChatGPT quota savings. An end-to-end A/B protocol is
 documented; its model-quality/quota results have not been measured.
 
+The Headroom request counter shows a rolling **last 24 hours**, across local
+midnight. It uses the token-only event ledger, never substitutes lifetime totals,
+and visibly marks partial coverage. The dashboard streams at most 32 MiB per
+snapshot to bound memory and I/O; it does not delete or rewrite savings history.
+
 ## Privacy, development and licensing
 
 Compression caches can contain source files and command output. Keep loopback
