@@ -81,7 +81,7 @@ def upgrade(root, package, *, plan=False, validate=None):
     # An app source update must not claim to have upgraded an existing runtime.
     for name in owned.keys() | incoming.keys():
         if name.startswith('packaging/') and (name.endswith('.txt') or name.endswith('.json')):
-            if name in owned and name in incoming and owned[name] != incoming[name]:
+            if owned.get(name) != incoming.get(name):
                 raise ValueError('Runtime pins changed. Use the clean reinstall procedure: ' + name)
     changed = {n for n in owned.keys() | incoming.keys() if owned.get(n) != incoming.get(n)}
     if plan:

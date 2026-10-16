@@ -178,6 +178,17 @@ class OptionalUpdateTests(unittest.TestCase):
                 self.assertEqual(receipt['lock_sha256'], hashlib.sha256(lock.read_bytes()).hexdigest())
                 self.assertFalse((self.root / component / 'runtime.json').exists())
 
+    def test_update_lock_includes_private_native_runtime_when_packaged(self):
+        commands = []
+        runner = self.staging_runner('laya', '0.4.0', commands)
+        native = self.root / 'packaging/requirements-windows-runtime.txt'
+        native.write_text('msvc-runtime==14.44.35112 --hash=sha256:' + 'c' * 64 + '\n')
+        with patch.object(self.manager, '_run', side_effect=runner):
+            descriptor = self.manager._stage_optional_python('laya', {'version': '0.4.0'})
+        target = (self.root / descriptor['python_path']).parent.parent
+        self.assertIn('-r "' + native.as_posix() + '"', (target / 'requirements.in').read_text().splitlines())
+        self.assertFalse((self.root / 'laya/runtime.json').exists())
+
     def test_optional_resolution_install_and_build_failures_preserve_loaded_runtime_selection(self):
         for component, version in (('serena', '1.7.0'), ('laya', '0.4.0')):
             for failure in ('compile', 'install', *(['build'] if component == 'serena' else [])):

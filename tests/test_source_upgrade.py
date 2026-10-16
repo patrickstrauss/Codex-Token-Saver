@@ -80,6 +80,15 @@ class SourceUpgradeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Runtime pins changed'):
             upgrade_module.upgrade(self.root, self.package)
 
+    def test_added_and_removed_runtime_locks_also_require_reinstall(self):
+        for old, new in (({}, {'packaging/requirements-native.txt': b'new'}),
+                         ({'packaging/requirements-native.txt': b'old'}, {})):
+            with self.subTest(added=bool(new)):
+                self.make_manifest(self.root, 'old', {'app.py': b'old', **old}, 'packaging/installed-manifest.json')
+                self.make_manifest(self.package / 'payload', 'new', {'app.py': b'new', **new}, '../package-manifest.json')
+                with self.assertRaisesRegex(ValueError, 'Runtime pins changed'):
+                    upgrade_module.upgrade(self.root, self.package, plan=True)
+
 
 if __name__ == '__main__':
     unittest.main()

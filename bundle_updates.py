@@ -526,6 +526,11 @@ class BundleUpdater:
     def _lock_requirements(self, target, python, requirements, build_options=()):
         source = target / 'requirements.in'
         locked = target / 'requirements.txt'
+        native = self.root / 'packaging/requirements-windows-runtime.txt'
+        if native.is_file():
+            # Fresh update venvs need the same private DLLs as a clean install.
+            # Compile the fixed version/hash input into the candidate's lock.
+            requirements = [*requirements, '-r "' + native.as_posix() + '"']
         source.write_text('\n'.join(requirements) + '\n', encoding='utf-8')
         self._stage('resolving_dependencies', 'Resolving compatible dependencies and package hashes from PyPI.')
         self._run([str(self.root / 'tools/uv.exe'), '--no-config', '--no-python-downloads', 'pip', 'compile',
