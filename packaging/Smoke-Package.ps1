@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$PackageDirectory, [switch]$CoreOnly)
+param([Parameter(Mandatory)][string]$PackageDirectory, [switch]$CoreOnly, [string]$EvidenceDirectory = '')
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'Test-InstallPlan.ps1') -PackageDirectory $PackageDirectory
 if (-not $?) { throw 'Install plan regression check failed.' }
@@ -36,4 +36,32 @@ try {
 } finally { $env:CODEX_HOME = $taskPreviousCodex }
 & (Join-Path $PackageDirectory 'Install.ps1') -InstallDirectory $taskInstall -SkipIntegration -CoreOnly:$CoreOnly
 if (-not $?) { throw 'Repeated package install failed.' }
+try {
+    $env:CODEX_HOME = $taskProfile
+    & $taskPython (Join-Path $taskInstall 'packaging\qualify_lifecycle.py') --root $taskInstall --package $PackageDirectory --codex-home $taskProfile
+    if ($LASTEXITCODE -ne 0) { throw 'Source upgrade, rollback or integration removal failed.' }
+    & (Join-Path $taskInstall 'Uninstall-Token-Saver.ps1') -BundleRoot $taskInstall -Plan
+    if (-not $?) { throw 'Uninstall preview failed.' }
+    if (-not (Test-Path -LiteralPath $taskInstall)) { throw 'Uninstall preview moved files.' }
+    # Windows registration is exercised only on a clean CI runner, never a daily profile.
+    if ($env:CI -eq 'true') {
+        & (Join-Path $taskInstall 'scripts\Register-App.ps1') -Root $taskInstall -Version 'qualification'
+        if (-not $?) { throw 'Windows Installed apps registration failed.' }
+    }
+    & (Join-Path $taskInstall 'Uninstall-Token-Saver.ps1') -BundleRoot $taskInstall -Yes
+    if (-not $?) { throw 'Isolated uninstall failed.' }
+    if (Test-Path -LiteralPath $taskInstall) { throw 'Uninstall left the installation directory.' }
+    if (@(Get-ChildItem -LiteralPath (Join-Path $taskSandbox 'CodexTokenSaver-Backups') -Directory).Count -ne 1) { throw 'Uninstall backup is missing.' }
+    if ($env:CI -eq 'true' -and (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexTokenSaver')) { throw 'Uninstall left the Windows Apps entry.' }
+    & (Join-Path $PackageDirectory 'Install.ps1') -InstallDirectory $taskInstall -SkipIntegration -CoreOnly:$CoreOnly
+    if (-not $?) { throw 'Clean reinstall after uninstall failed.' }
+} finally { $env:CODEX_HOME = $taskPreviousCodex }
+if ($EvidenceDirectory) {
+    [void](New-Item -ItemType Directory -Path $EvidenceDirectory -Force)
+    Copy-Item -LiteralPath (Join-Path $taskSandbox 'performance-benchmark.json') -Destination $EvidenceDirectory
+    Copy-Item -LiteralPath (Join-Path $taskSandbox 'lifecycle-result.json') -Destination $EvidenceDirectory
+    & $taskPython (Join-Path $taskInstall 'packaging\make_inventory.py') --root $taskInstall --output (Join-Path $EvidenceDirectory 'runtime-inventory.json')
+    if ($LASTEXITCODE -ne 0) { throw 'Runtime inventory failed.' }
+}
+Write-Output 'PASS: source upgrade, injected rollback, owned integration removal, uninstall preview, backup-preserving uninstall and clean reinstall.'
 Write-Output "PASS: fresh RTK history, dashboard readiness, artifact repair, runtime checks, compression quality benchmark, repeated install, and isolated Codex settings preservation. Evidence: $taskSandbox"

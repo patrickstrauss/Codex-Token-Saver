@@ -52,6 +52,7 @@ foreach ($taskFile in $taskManifest.files) {
         Copy-Item -LiteralPath (Join-Path $taskPayload $taskFile.path) -Destination $taskTarget
     }
 }
+Copy-Item -LiteralPath $taskManifestPath -Destination (Join-Path $taskRoot 'packaging\installed-manifest.json') -Force
 $taskDownloads = Join-Path $taskRoot 'downloads\team-installer'
 [void](New-Item -ItemType Directory -Path $taskDownloads -Force)
 [void](New-Item -ItemType Directory -Path (Join-Path $taskRoot 'tools') -Force)
@@ -131,10 +132,14 @@ if (-not $CoreOnly) {
 & $taskHeadroomPython (Join-Path $taskRoot 'packaging\verify_install.py') $taskRoot
 if ($LASTEXITCODE -ne 0) { throw 'Installed runtime smoke check failed. Codex settings were not changed.' }
 if (-not $SkipIntegration) {
+    # Record intent before registration so a partially completed setup can be disabled.
+    [ordered]@{version=$taskManifest.version;completed=$false;integration=$true} | ConvertTo-Json |
+        Set-Content -LiteralPath (Join-Path $taskRoot 'team-install-result.json') -Encoding UTF8
     & $taskHeadroomPython (Join-Path $taskRoot 'packaging\configure_install.py') $taskRoot
     if ($LASTEXITCODE -ne 0) { throw 'Codex tool registration failed. See the backup and error above.' }
     & (Join-Path $taskRoot 'Install-Startup.ps1')
     if (-not $?) { throw 'Startup registration failed. Dependencies are installed; rerun to retry.' }
+    & (Join-Path $taskRoot 'scripts\Register-App.ps1') -Root $taskRoot -Version $taskManifest.version
 }
 [ordered]@{version=$taskManifest.version;completed_at=(Get-Date -Format o);core_only=[bool]$CoreOnly;integration=(-not $SkipIntegration);source_sha256=$taskManifestHash} | ConvertTo-Json |
     Set-Content -LiteralPath (Join-Path $taskRoot 'team-install-result.json') -Encoding UTF8

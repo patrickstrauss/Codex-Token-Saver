@@ -19,10 +19,10 @@ $taskRetired = @('local_summaries.py','local_summary_engine.py','local_summary_m
 $taskFiles = @(Get-ChildItem -LiteralPath $taskRepo -File | Where-Object {
     $_.Extension -in @('.py','.ps1','.ico') -and $_.Name -notin $taskRetired
 })
-foreach ($taskDoc in @('README.md','LIBRARY-UPDATES.md','DESKTOP-REQUEST-PROXY.md','DESKTOP-REPORT.md','INSTALL-PLAN.md','AUTOMATIC-HEADROOM-REPORT.md','HEADROOM-COMPARISON.md','REPAIR-REPORT.md','CONTEXT.md','dashboard\LICENSE','native\README.md')) {
+foreach ($taskDoc in @('README.md','LICENSE','THIRD-PARTY-NOTICES.md','SECURITY.md','LIBRARY-UPDATES.md','DESKTOP-REQUEST-PROXY.md','INSTALL-PLAN.md','HEADROOM-COMPARISON.md','dashboard\LICENSE','native\README.md')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo $taskDoc)
 }
-foreach ($taskLauncher in @('Repair-Team-Setup.cmd','Setup-Request-Compression.cmd','Disable-Token-Saver.cmd','Get-Token-Saver-Diagnostics.cmd')) {
+foreach ($taskLauncher in @('Repair-Team-Setup.cmd','Setup-Request-Compression.cmd','Disable-Token-Saver.cmd','Uninstall-Token-Saver.cmd','Get-Token-Saver-Diagnostics.cmd')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo $taskLauncher)
 }
 foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena')) {
@@ -34,7 +34,9 @@ foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena'
 }
 $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'dashboard\static') -File -Recurse |
     Where-Object Extension -in @('.css','.js','.svg','.png','.ico','.woff2')
-foreach ($taskDoc in @('TEAM-INSTALL.md','USING-BUNDLE.md','CLI-TOOLS.md','LAYA-ROUTER.md','SERENA-INTEGRATION.md','SERENA-TESTING.md','CONTROL-UI-VALIDATION.md','PERFORMANCE-CHECK.md','PROCESS-RECOVERY.md','NATIVE-CODEX.md','OPENCODEX-INTEGRATION.md','OPENCODEX-COMPATIBILITY.md')) {
+$taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'docs\benchmarks') -File |
+    Where-Object Extension -in @('.md','.json')
+foreach ($taskDoc in @('INSTALL.md','BENCHMARK.md','RELEASE-CHECKLIST.md','TEAM-INSTALL.md','USING-BUNDLE.md','CLI-TOOLS.md','LAYA-ROUTER.md','SERENA-INTEGRATION.md','SERENA-TESTING.md','CONTROL-UI-VALIDATION.md','PERFORMANCE-CHECK.md','PROCESS-RECOVERY.md','NATIVE-CODEX.md','OPENCODEX-INTEGRATION.md','OPENCODEX-COMPATIBILITY.md')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo ('docs\' + $taskDoc))
 }
 foreach ($taskDoc in @('README.md','VALIDATION.md','token-saver-v2.64.0.patch','offline-witness.json')) {
@@ -53,7 +55,7 @@ foreach ($taskBuild in @('Build-RtkLauncher.ps1','Build-HeadroomLauncher.ps1','B
 }
 # Kept only because the existing startup installer checks for its legacy fallback.
 '@echo off', '"%~dp0rtk.exe" %*' | Set-Content -LiteralPath (Join-Path $taskPayload 'bin\rtk.cmd') -Encoding ascii
-foreach ($taskEntry in @('Install.cmd','Install.ps1','Repair-Team-Setup.cmd','Setup-Request-Compression.cmd','Disable-Token-Saver.cmd','Get-Token-Saver-Diagnostics.cmd')) {
+foreach ($taskEntry in @('Install.cmd','Install.ps1','Upgrade-App.cmd','Upgrade-App.ps1','Repair-Team-Setup.cmd','Setup-Request-Compression.cmd','Disable-Token-Saver.cmd','Uninstall-Token-Saver.cmd','Get-Token-Saver-Diagnostics.cmd')) {
     Copy-Item -LiteralPath (Join-Path $taskRepo $taskEntry) -Destination $taskStage
 }
 $taskEntries = @(Get-ChildItem -LiteralPath $taskPayload -File -Recurse | Sort-Object FullName | ForEach-Object {

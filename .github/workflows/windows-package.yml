@@ -8,11 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       draft_release:
-        description: Create a private-repository draft release after checks
+        description: Create a preview draft release after all checks
         type: boolean
         default: false
       tag:
-        description: Release tag for a manually requested draft (for example v0.1.0)
+        description: Draft release tag (for example v0.1.0-preview.1)
         type: string
         default: ''
 
@@ -21,12 +21,32 @@ permissions:
 
 jobs:
   package:
-    runs-on: windows-latest
-    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            core_only: 'false'
+          - os: windows-2022
+            core_only: 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
     outputs:
       version: ${{ steps.version.outputs.value }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Scan Git history (redacted findings)
+        shell: powershell
+        run: .\packaging\Check-Secrets.ps1
+      - name: Source update and benchmark unit checks
+        shell: powershell
+        run: |
+          python -m unittest discover -s tests -p test_source_upgrade.py
+          if ($LASTEXITCODE -ne 0) { throw 'Source upgrade tests failed.' }
+          python -m unittest discover -s tests -p test_performance_benchmark.py
+          if ($LASTEXITCODE -ne 0) { throw 'Benchmark tests failed.' }
       - name: Select package version
         id: version
         shell: pwsh
@@ -36,33 +56,34 @@ jobs:
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } elseif ($env:REQUESTED_TAG) { $env:REQUESTED_TAG } else { 'ci-' + $env:GITHUB_RUN_NUMBER }
           if ($version -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,60}$') { throw 'Invalid version.' }
           "value=$version" >> $env:GITHUB_OUTPUT
-      - name: Build source-only distributable and native launchers
+      - name: Build source distributable and native launchers
         shell: powershell
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.value }}
         run: .\packaging\Build-Package.ps1 -Version $env:PACKAGE_VERSION -OutputDirectory "$env:RUNNER_TEMP\packages"
-      - name: Fresh install, runtimes and synthetic Codex preservation
+      - name: Clean install, upgrade, rollback, uninstall and reinstall
         shell: powershell
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.value }}
-        run: .\packaging\Smoke-Package.ps1 -PackageDirectory "$env:RUNNER_TEMP\packages\Codex-Token-Saver-$env:PACKAGE_VERSION-windows-x64"
+          CORE_ONLY: ${{ matrix.core_only }}
+        run: .\packaging\Smoke-Package.ps1 -PackageDirectory "$env:RUNNER_TEMP\packages\Codex-Token-Saver-$env:PACKAGE_VERSION-windows-x64" -CoreOnly:([bool]::Parse($env:CORE_ONLY)) -EvidenceDirectory "$env:RUNNER_TEMP\evidence"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: windows-package
+          name: windows-package-${{ matrix.os }}
           path: |
             ${{ runner.temp }}/packages/*.zip
             ${{ runner.temp }}/packages/*.sha256
+            ${{ runner.temp }}/evidence/*.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
   draft-release:
-    needs: package
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.draft_release)
+    needs: package
     runs-on: windows-latest
     permissions:
       contents: write
-      actions: read
     steps:
-      - name: Download checked package and create draft
+      - name: Create preview draft with qualified package and evidence
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -70,11 +91,15 @@ jobs:
           RELEASE_TAG: ${{ needs.package.outputs.version }}
           REQUESTED_TAG: ${{ inputs.tag }}
         run: |
-          if ($env:GITHUB_REF_TYPE -ne 'tag' -and -not $env:REQUESTED_TAG) { throw 'A tag is required for a manual draft release.' }
-          gh run download $env:GITHUB_RUN_ID --name windows-package --dir release
-          if ($LASTEXITCODE -ne 0) { throw 'Artifact download failed.' }
-          $assets = @(Get-ChildItem -LiteralPath release -File | Select-Object -ExpandProperty FullName)
-          $body = 'Windows x64 per-user installer. Extract all files, then run Install.cmd. See docs/TEAM-INSTALL.md in the source repository. Unsigned; first install requires internet. Review this draft before publishing.'
+          if ($env:GITHUB_REF_TYPE -ne 'tag' -and -not $env:REQUESTED_TAG) { throw 'An explicit tag is required.' }
+          gh run download $env:GITHUB_RUN_ID --name windows-package-windows-2025 --dir assets
+          if ($LASTEXITCODE -ne 0) { throw 'Qualified assets are missing.' }
+          $assets = @(Get-ChildItem -LiteralPath assets -File | Select-Object -ExpandProperty FullName)
+          $body = @'
+          Preview for Windows x64. Download ZIP and SHA-256, verify and fully extract, close Codex, then run Install.cmd. See docs/INSTALL.md for setup, upgrade, recovery and uninstall.
+
+          Includes isolated Windows Server CI qualification, dependency inventory and offline benchmark results. Desktop Windows 11 reboot/login acceptance remains a separate manual gate. Not code signed. No Codex quota savings or end-to-end model quality claim is made. Upstream components retain their own licenses, including Serena 2 GPL-3.0-or-later.
+          '@
           [IO.File]::WriteAllText((Join-Path $pwd 'release-notes.txt'), $body)
-          gh release create $env:RELEASE_TAG @assets --draft --target $env:GITHUB_SHA --title "Codex Token Saver $env:RELEASE_TAG" --notes-file release-notes.txt
+          gh release create $env:RELEASE_TAG @assets --draft --prerelease --target $env:GITHUB_SHA --title "Codex Token Saver $env:RELEASE_TAG" --notes-file release-notes.txt
           if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed.' }

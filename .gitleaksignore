@@ -1,0 +1,22 @@
+# Reviewed: synthetic redaction fixtures and SHA-256 cache/request fingerprints; exact historical findings only.
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:curl-auth-header:123
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:curl-auth-header:139
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:curl-auth-header:55
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:curl-auth-header:59
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:curl-auth-header:63
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:curl-auth-header:67
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:curl-auth-user:71
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:generic-api-key:113
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:generic-api-key:139
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:generic-api-key:187
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:github-oauth:103
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:github-oauth:105
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:github-pat:100
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:github-pat:98
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:stripe-access-token:134
+16541547f7907b853a590d3769f84234f6d62dc0:dashboard/tests/test_app.py:stripe-access-token:136
+16541547f7907b853a590d3769f84234f6d62dc0:tests/test_desktop_headroom.py:generic-api-key:313
+4ae9b8a6f2738d42a202254815be188692cebcee:docs/opencodex/offline-witness.json:generic-api-key:33
+4ae9b8a6f2738d42a202254815be188692cebcee:docs/opencodex/offline-witness.json:generic-api-key:34
+dbcafc8e8cd9110e5867b670a2b4003023cb1c63:docs/opencodex/text-block-witness.json:generic-api-key:38
+dbcafc8e8cd9110e5867b670a2b4003023cb1c63:docs/opencodex/text-block-witness.json:generic-api-key:39

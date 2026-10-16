@@ -56,7 +56,7 @@ def timed(action):
     return value, (perf_counter() - started) * 1000
 
 
-def headroom_case(backend, folder, name, original, facts, repeats):
+def headroom_case(backend, folder, name, original, facts, repeats, expected_compressed=True):
     source = folder / name
     source.write_bytes(original.encode('utf-8'))
     samples = []
@@ -80,7 +80,8 @@ def headroom_case(backend, folder, name, original, facts, repeats):
                         'retrieval_tokens': backend._count(exact) if compressed else 0})
     sample = samples[-1]
     return {
-        'fixture': name, **summarize_samples(samples),
+        'fixture': name, **summarize_samples(samples), 'expected_compressed': expected_compressed,
+        'fixture_sha256': hashlib.sha256(original.encode('utf-8')).hexdigest(),
         'first_call_ms': round(cold_ms, 3),
         'retrieval_median_ms': round(median(item['retrieval_ms'] for item in samples), 3),
         'compressed': all(item['compressed'] for item in samples),
@@ -181,6 +182,8 @@ def run_benchmark(installed, repeats):
                 headroom = [
                     headroom_case(backend, folder, 'records.json', records, ['CRITICAL_DB_FAILURE E78'], repeats),
                     headroom_case(backend, folder, 'worker.log', logs, ['CRITICAL_FAILURE_73'], repeats),
+                    headroom_case(backend, folder, 'small.txt', 'timeout_seconds=30\nretry_limit=3\n',
+                                  ['timeout_seconds=30', 'retry_limit=3'], repeats, expected_compressed=False),
                 ]
                 rtk = rtk_case(installed, folder, backend, repeats)
             finally:
@@ -192,7 +195,8 @@ def run_benchmark(installed, repeats):
                     sdk_connection.close()
     return {
         'timestamp': datetime.now(timezone.utc).isoformat(),
-        'passed': all(case['passed'] and case['compressed'] for case in headroom)
+        'schema_version': 1,
+        'passed': all(case['passed'] and case['compressed'] == case['expected_compressed'] for case in headroom)
                   and rtk.get('passed', False),
         'headroom': headroom, 'rtk': rtk,
         'isolated_from_live_ledgers': True, 'external_model_calls': 0,
