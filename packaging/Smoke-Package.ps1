@@ -22,6 +22,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Fresh RTK history or artifact repair check fai
 & $taskPython (Join-Path $taskInstall 'scripts\benchmark_modules.py') --installed $taskInstall --output (Join-Path $taskSandbox 'performance-benchmark.json') --repeats 3
 if ($LASTEXITCODE -ne 0) { throw 'Offline compression quality benchmark failed. See the benchmark output above.' }
 $taskPreviousCodex = $env:CODEX_HOME
+$taskPreviousProfile = $env:USERPROFILE
 try {
     $env:CODEX_HOME = $taskProfile
     & $taskPython (Join-Path $taskInstall 'packaging\configure_install.py') $taskInstall
@@ -45,12 +46,16 @@ try {
     if (-not (Test-Path -LiteralPath $taskInstall)) { throw 'Uninstall preview moved files.' }
     # Windows registration is exercised only on a clean CI runner, never a daily profile.
     if ($env:CI -eq 'true') {
-        $taskPreviousProfile = $env:USERPROFILE
-        try {
-            $env:USERPROFILE = $taskSandbox
-            & (Join-Path $taskInstall 'Install-Startup.ps1')
-            if (-not $?) { throw 'Windows startup and Start menu registration failed.' }
-        } finally { $env:USERPROFILE = $taskPreviousProfile }
+        $env:USERPROFILE = $taskSandbox
+        & (Join-Path $taskInstall 'Install-Startup.ps1')
+        if (-not $?) { throw 'Windows startup and Start menu registration failed.' }
+        $taskRecoveryLinkPath = Join-Path ([Environment]::GetFolderPath('Programs','DoNotVerify')) 'Codex Token Saver - Restore Direct.lnk'
+        $taskRecoveryShell = New-Object -ComObject WScript.Shell
+        $taskRecoveryLink = $taskRecoveryShell.CreateShortcut($taskRecoveryLinkPath)
+        $taskRecoveryLink.TargetPath = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $taskRecoveryLink.Arguments = '-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $taskInstall 'Restore-Codex-Direct.ps1') + '"'
+        $taskRecoveryLink.WorkingDirectory = $taskInstall
+        $taskRecoveryLink.Save()
         & (Join-Path $taskInstall 'scripts\Register-App.ps1') -Root $taskInstall -Version 'qualification'
         if (-not $?) { throw 'Windows Installed apps registration failed.' }
         $taskInstallResultPath = Join-Path $taskInstall 'team-install-result.json'
@@ -65,11 +70,14 @@ try {
     if ($env:CI -eq 'true' -and (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexTokenSaver')) { throw 'Uninstall left the Windows Apps entry.' }
     if ($env:CI -eq 'true') {
         if (Get-ScheduledTask -TaskName 'Codex Token Saver' -ErrorAction SilentlyContinue) { throw 'Uninstall left the owned startup task.' }
-        if (Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Programs')) 'Codex Token Saver.lnk')) { throw 'Uninstall left the Start menu shortcut.' }
+        if (Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Programs', 'DoNotVerify')) 'Codex Token Saver.lnk')) { throw 'Uninstall left the Start menu shortcut.' }
+        if (Test-Path -LiteralPath $taskRecoveryLinkPath) { throw 'Uninstall left the recovery shortcut.' }
+        $taskUserPath=[Environment]::GetEnvironmentVariable('Path','User')
+        if ($taskUserPath -and $taskUserPath.IndexOf((Join-Path $taskInstall 'bin'),[StringComparison]::OrdinalIgnoreCase) -ge 0) { throw 'Uninstall left its user PATH entry.' }
     }
     & (Join-Path $PackageDirectory 'Install.ps1') -InstallDirectory $taskInstall -SkipIntegration -CoreOnly:$CoreOnly
     if (-not $?) { throw 'Clean reinstall after uninstall failed.' }
-} finally { $env:CODEX_HOME = $taskPreviousCodex }
+} finally { $env:CODEX_HOME = $taskPreviousCodex; $env:USERPROFILE = $taskPreviousProfile }
 if ($EvidenceDirectory) {
     [void](New-Item -ItemType Directory -Path $EvidenceDirectory -Force)
     Copy-Item -LiteralPath (Join-Path $taskSandbox 'performance-benchmark.json') -Destination $EvidenceDirectory

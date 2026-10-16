@@ -78,7 +78,7 @@ try {
     $taskScheduler.Connect()
     $taskFolder = $taskScheduler.GetFolder('\')
     $taskShell = New-Object -ComObject WScript.Shell
-    $taskShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'Codex Token Saver.lnk'
+    $taskShortcut = Join-Path ([Environment]::GetFolderPath('Startup', 'DoNotVerify')) 'Codex Token Saver.lnk'
     $taskStartupPlan = Get-BundleDisableStartupPlan $taskFolder $taskRoot $taskShortcut $taskShell
     $taskArguments = @((Join-Path $PSScriptRoot 'disable_bundle.py'), '--root', $taskRoot)
     if ($Plan) { $taskArguments += '--plan' } else {

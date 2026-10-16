@@ -46,22 +46,48 @@ try {
     }
     $taskShell = New-Object -ComObject WScript.Shell
     $taskShortcuts = @()
-    foreach ($taskLocation in @([Environment]::GetFolderPath('Programs'), [Environment]::GetFolderPath('Startup'))) {
+    foreach ($taskLocation in @([Environment]::GetFolderPath('Programs', 'DoNotVerify'), [Environment]::GetFolderPath('Startup', 'DoNotVerify'))) {
         $taskShortcut = Join-Path $taskLocation 'Codex Token Saver.lnk'
         if (Test-Path -LiteralPath $taskShortcut) {
             $taskLink = $taskShell.CreateShortcut($taskShortcut)
             $taskOwned = Test-BundleStartupAction $taskRoot 'tray' $taskLink.TargetPath $taskLink.Arguments $taskLink.WorkingDirectory
-            if ($taskLocation -eq [Environment]::GetFolderPath('Programs') -and
+            if ($taskLocation -eq [Environment]::GetFolderPath('Programs', 'DoNotVerify') -and
                 $taskLink.TargetPath -ieq (Join-Path $taskRoot 'bin\token-saver-tray.exe') -and
                 $taskLink.Arguments -ceq '-OpenDashboard' -and $taskLink.WorkingDirectory.TrimEnd('\') -ieq $taskRoot) { $taskOwned = $true }
             if (-not $taskOwned) { throw 'An unrelated shortcut uses this name; it was preserved.' }
             $taskShortcuts += $taskShortcut
         }
     }
+    $taskRestoreShortcut = Join-Path ([Environment]::GetFolderPath('Programs', 'DoNotVerify')) 'Codex Token Saver - Restore Direct.lnk'
+    if (Test-Path -LiteralPath $taskRestoreShortcut) {
+        $taskLink = $taskShell.CreateShortcut($taskRestoreShortcut)
+        $taskExpectedArgs = '-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $taskRoot 'Restore-Codex-Direct.ps1') + '"'
+        if ($taskLink.TargetPath -ine (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -or
+            $taskLink.Arguments -cne $taskExpectedArgs -or $taskLink.WorkingDirectory.TrimEnd('\') -ine $taskRoot) {
+            throw 'An unrelated Restore Direct shortcut uses this name; it was preserved.'
+        }
+        $taskShortcuts += $taskRestoreShortcut
+    }
     $taskRegistry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexTokenSaver'
     if (Test-Path -LiteralPath $taskRegistry) {
         if ((Get-ItemProperty -LiteralPath $taskRegistry).InstallLocation -ine $taskRoot) { throw 'The Apps entry belongs to another installation; preserved.' }
     }
+    $taskEnvironmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+    try {
+        if ($null -ne $taskEnvironmentKey -and $taskEnvironmentKey.GetValueNames() -contains 'Path') {
+            $taskPathKind = $taskEnvironmentKey.GetValueKind('Path')
+            if ($taskPathKind -notin @([Microsoft.Win32.RegistryValueKind]::String,[Microsoft.Win32.RegistryValueKind]::ExpandString)) { throw 'User PATH has an unexpected type; preserved.' }
+            $taskPathBefore = [string]$taskEnvironmentKey.GetValue('Path','',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            $taskPathAfter = Get-BundleUserPathWithoutInstall $taskPathBefore $taskRoot
+            if ($taskPathAfter -cne $taskPathBefore) {
+                [pscustomobject]@{before=$taskPathBefore;after=$taskPathAfter;kind=[string]$taskPathKind} | ConvertTo-Json |
+                    Set-Content -LiteralPath (Join-Path $taskRoot 'backups\uninstall-user-path.json') -Encoding UTF8
+                if ([string]$taskEnvironmentKey.GetValue('Path','',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) -cne $taskPathBefore) { throw 'User PATH changed concurrently; preserved.' }
+                $taskEnvironmentKey.SetValue('Path',$taskPathAfter,$taskPathKind)
+                if ([string]$taskEnvironmentKey.GetValue('Path','',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) -cne $taskPathAfter) { throw 'User PATH removal failed verification.' }
+            }
+        }
+    } finally { if ($null -ne $taskEnvironmentKey) { $taskEnvironmentKey.Dispose() } }
     # Validate resolved source and destination before the directory move.
     [void](New-Item -ItemType Directory -Path $taskBackupParent -Force)
     if ((Get-Item -LiteralPath $taskBackupParent -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Backup folder must not be a link.' }

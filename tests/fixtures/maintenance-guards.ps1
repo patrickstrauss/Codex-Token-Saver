@@ -29,6 +29,9 @@ try {
     $taskRefused = $false
     try { Assert-BundleDirectory (Split-Path -Parent $taskTemp) } catch { $taskRefused = $true }
     if (-not $taskRefused) { throw 'Unowned parent accepted' }
+    $taskPath = 'C:\Other;%SystemRoot%;' + (Join-Path $taskTemp 'bin') + ';C:\Last;'
+    if ((Get-BundleUserPathWithoutInstall $taskPath $taskTemp) -cne 'C:\Other;%SystemRoot%;C:\Last;') { throw 'User PATH removal changed unrelated raw entries' }
+    if ((Get-BundleUserPathWithoutInstall 'C:\Other;;C:\Last;' $taskTemp) -cne 'C:\Other;;C:\Last;') { throw 'Unrelated PATH changed' }
     Write-Output 'PASS: owned root, open Codex, Python worker, tray worker and unrelated worker guards.'
 } finally {
     Remove-Item -LiteralPath (Join-Path $taskTemp 'team-install-source.json')

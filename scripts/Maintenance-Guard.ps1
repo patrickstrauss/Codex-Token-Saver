@@ -27,3 +27,16 @@ function Assert-BundleDirectory([string]$Root) {
     }
     return $taskFull
 }
+
+function Get-BundleUserPathWithoutInstall([AllowEmptyString()][string]$Original, [string]$Root) {
+    $taskBin = [IO.Path]::GetFullPath((Join-Path $Root 'bin')).TrimEnd('\')
+    $taskEntries = @(foreach ($taskEntry in $Original.Split(';')) {
+        $taskOwned = $false
+        try {
+            $taskExpanded = [Environment]::ExpandEnvironmentVariables($taskEntry.Trim().Trim('"'))
+            if ($taskExpanded) { $taskOwned = [IO.Path]::GetFullPath($taskExpanded).TrimEnd('\') -ieq $taskBin }
+        } catch { }
+        if (-not $taskOwned) { $taskEntry }
+    })
+    return $taskEntries -join ';'
+}

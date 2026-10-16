@@ -187,7 +187,7 @@ function Install-BundleShortcut([string]$Folder, [string]$Label, [bool]$OpenDash
 }
 
 foreach ($taskShortcutSpec in @(
-    @{ Folder = [Environment]::GetFolderPath('Programs'); Label = 'start-menu'; OpenDashboard = $true }
+    @{ Folder = [Environment]::GetFolderPath('Programs', 'DoNotVerify'); Label = 'start-menu'; OpenDashboard = $true }
 )) {
     try {
         $taskShortcutResult = Install-BundleShortcut @taskShortcutSpec
@@ -224,7 +224,7 @@ try {
     $taskAction.Arguments = $taskArguments
     $taskAction.WorkingDirectory = $taskRoot
     $taskShell = New-Object -ComObject WScript.Shell
-    $taskStartupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'Codex Token Saver.lnk'
+    $taskStartupShortcut = Join-Path ([Environment]::GetFolderPath('Startup', 'DoNotVerify')) 'Codex Token Saver.lnk'
     $taskMigration = Invoke-BundleStartupMigration $taskSchedulerRoot $taskDefinition $taskRoot $taskUser $taskStartupShortcut $taskShell $taskBackupRoot -Start:$Start
     $taskResult.scheduled_task = $taskMigration.scheduled_task
     $taskResult.backups += $taskMigration.backups
