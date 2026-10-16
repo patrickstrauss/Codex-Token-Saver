@@ -91,6 +91,11 @@ def upgrade(root, package, *, plan=False, validate=None):
     targets[receipt] = (package / 'package-manifest.json').read_bytes()
     targets[marker] = (json.dumps({'version': new['version'], 'package_sha256':
                                    digest(targets[receipt])}) + '\n').encode()
+    result_path = checked_path(root, 'team-install-result.json')
+    if result_path.exists():
+        result_value = json.loads(result_path.read_text(encoding='utf-8-sig'))
+        result_value.update(version=new['version'], source_sha256=digest(targets[receipt]))
+        targets[result_path] = (json.dumps(result_value, indent=2) + '\n').encode()
     before = {p: p.read_bytes() if p.exists() else None for p in targets}
     backup = checked_path(root, 'backups/app-upgrade-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ'))
     backup.mkdir(parents=True)

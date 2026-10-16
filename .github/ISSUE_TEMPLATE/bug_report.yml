@@ -1,0 +1,31 @@
+name: Bug report
+description: Report a reproducible installation or app problem
+body:
+  - type: markdown
+    attributes:
+      value: Do not post credentials, real chat history, full file caches or unredacted diagnostics. Use private vulnerability reporting for security issues.
+  - type: input
+    id: version
+    attributes:
+      label: App version and Windows version
+      placeholder: Preview version, Windows 11 x64
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use synthetic files or a public example repository where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual result
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Redacted error text
+      description: Remove usernames, personal paths, repository names, tokens and file contents.

@@ -11,4 +11,8 @@ $taskArgs = @((Join-Path $taskPayload 'packaging\source_upgrade.py'), '--root', 
 if ($Plan) { $taskArgs += '--plan' }
 & (Join-Path $taskRoot 'headroom\.venv\Scripts\python.exe') @taskArgs
 if ($LASTEXITCODE -ne 0) { throw 'App upgrade failed. Keep the error and backup above; do not delete the installation.' }
-if (-not $Plan) { Write-Host 'Source update validated. Runtimes and component choices were preserved. Reopen Codex Token Saver.' }
+if (-not $Plan) {
+    $taskResult = Get-Content -LiteralPath (Join-Path $taskRoot 'team-install-result.json') -Raw | ConvertFrom-Json
+    if ($taskResult.integration) { & (Join-Path $taskRoot 'scripts\Register-App.ps1') -Root $taskRoot -Version $taskResult.version }
+    Write-Host 'Source update validated. Runtimes and component choices were preserved. Reopen Codex Token Saver.'
+}

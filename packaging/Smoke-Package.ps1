@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'Test-InstallPlan.ps1') -PackageDirectory $PackageDirectory
 if (-not $?) { throw 'Install plan regression check failed.' }
 $taskSandbox = Join-Path ([IO.Path]::GetTempPath()) ('token-saver-package-' + [guid]::NewGuid().ToString('N'))
-$taskInstall = Join-Path $taskSandbox 'bundle'
+$taskInstall = Join-Path $taskSandbox 'CodexTokenSaver'
 $taskProfile = Join-Path $taskSandbox 'codex'
 [void](New-Item -ItemType Directory -Path $taskProfile -Force)
 $taskConfig = 'model = "preserve-this-model"' + "`n" + 'model_reasoning_effort = "high"' + "`n" + 'approval_policy = "untrusted"' + "`n" + 'openai_base_url = "https://existing.example/v1"' + "`n"
@@ -45,14 +45,28 @@ try {
     if (-not (Test-Path -LiteralPath $taskInstall)) { throw 'Uninstall preview moved files.' }
     # Windows registration is exercised only on a clean CI runner, never a daily profile.
     if ($env:CI -eq 'true') {
+        $taskPreviousProfile = $env:USERPROFILE
+        try {
+            $env:USERPROFILE = $taskSandbox
+            & (Join-Path $taskInstall 'Install-Startup.ps1')
+            if (-not $?) { throw 'Windows startup and Start menu registration failed.' }
+        } finally { $env:USERPROFILE = $taskPreviousProfile }
         & (Join-Path $taskInstall 'scripts\Register-App.ps1') -Root $taskInstall -Version 'qualification'
         if (-not $?) { throw 'Windows Installed apps registration failed.' }
+        $taskInstallResultPath = Join-Path $taskInstall 'team-install-result.json'
+        $taskInstallResult = Get-Content -LiteralPath $taskInstallResultPath -Raw | ConvertFrom-Json
+        $taskInstallResult.integration = $true
+        $taskInstallResult | ConvertTo-Json | Set-Content -LiteralPath $taskInstallResultPath -Encoding UTF8
     }
     & (Join-Path $taskInstall 'Uninstall-Token-Saver.ps1') -BundleRoot $taskInstall -Yes
     if (-not $?) { throw 'Isolated uninstall failed.' }
     if (Test-Path -LiteralPath $taskInstall) { throw 'Uninstall left the installation directory.' }
     if (@(Get-ChildItem -LiteralPath (Join-Path $taskSandbox 'CodexTokenSaver-Backups') -Directory).Count -ne 1) { throw 'Uninstall backup is missing.' }
     if ($env:CI -eq 'true' -and (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexTokenSaver')) { throw 'Uninstall left the Windows Apps entry.' }
+    if ($env:CI -eq 'true') {
+        if (Get-ScheduledTask -TaskName 'Codex Token Saver' -ErrorAction SilentlyContinue) { throw 'Uninstall left the owned startup task.' }
+        if (Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Programs')) 'Codex Token Saver.lnk')) { throw 'Uninstall left the Start menu shortcut.' }
+    }
     & (Join-Path $PackageDirectory 'Install.ps1') -InstallDirectory $taskInstall -SkipIntegration -CoreOnly:$CoreOnly
     if (-not $?) { throw 'Clean reinstall after uninstall failed.' }
 } finally { $env:CODEX_HOME = $taskPreviousCodex }

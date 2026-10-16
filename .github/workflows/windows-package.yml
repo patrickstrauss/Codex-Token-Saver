@@ -43,6 +43,8 @@ jobs:
       - name: Source update and benchmark unit checks
         shell: powershell
         run: |
+          .\tests\fixtures\maintenance-guards.ps1
+          if (-not $?) { throw 'Windows maintenance guards failed.' }
           python -m unittest discover -s tests -p test_source_upgrade.py
           if ($LASTEXITCODE -ne 0) { throw 'Source upgrade tests failed.' }
           python -m unittest discover -s tests -p test_performance_benchmark.py
