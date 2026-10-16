@@ -102,6 +102,7 @@ try {
     if (Test-Path -LiteralPath $taskRegistry) { Remove-Item -LiteralPath $taskRegistry -ErrorAction Stop }
     Write-Host "Uninstalled. All files and recovery backups are retained at: $taskBackup"
     Write-Host 'After confirming Codex works normally, you can delete that backup yourself to reclaim disk space.'
+    Write-Host 'You can now close this maintenance window.'
 } catch {
     if (Test-Path -LiteralPath $taskBackup) { Write-Host "Installation data was moved safely to $taskBackup. Windows entry cleanup did not finish; keep this path and the error for recovery." }
     throw
