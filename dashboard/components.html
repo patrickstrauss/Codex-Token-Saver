@@ -1,4 +1,4 @@
-<section class="updates-panel component-panel" id="bundle-activity" aria-labelledby="activity-heading">
+<section class="updates-panel component-panel" id="bundle-activity" data-workspace-view="activity" hidden aria-labelledby="activity-heading">
   <div class="updates-body">
     <div class="component-heading"><div><p class="section-kicker">Recorded operations</p><h2 id="activity-heading">Recent activity</h2></div><button type="button" class="updates-button" id="activity-refresh">Refresh activity</button></div>
     <p class="updates-muted">New activity only, within a bounded recent window. These filters do not change savings. Existing aggregate counters are legacy mixed records; no task history has been backfilled.</p>
@@ -14,7 +14,7 @@
     <div class="activity-table-wrap"><table class="activity-table"><thead><tr><th>Time</th><th>Component</th><th>Outcome / category</th><th>Kind</th><th>Task</th></tr></thead><tbody id="activity-recent"></tbody></table></div>
   </div>
 </section>
-<section class="updates-panel component-panel" id="bundle-components" aria-labelledby="components-heading">
+<section class="updates-panel component-panel" id="bundle-components" data-workspace-view="toolkit" hidden aria-labelledby="components-heading">
   <div class="updates-body">
     <div class="component-heading"><div><p class="section-kicker">Workspace settings</p><h2 id="components-heading">Your toolkit</h2></div><span id="components-health" role="status">Checking components…</span></div>
     <p class="updates-muted">Choose the tools that work for you. Each switch saves your preference; its status shows what is ready to use.</p>

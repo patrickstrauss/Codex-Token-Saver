@@ -1635,23 +1635,40 @@ body {
 </style>
 <meta name="bundle-update-token" content="__BUNDLE_UPDATE_CSRF__">
 <link rel="stylesheet" href="/static/components.css">
+<link rel="stylesheet" href="/static/dashboard.css?v=20261016">
 </head>
 <body>
-<!-- Header -->
+<a class="skip-link" href="#main-content">Skip to content</a>
+<aside class="sidebar" aria-label="Workspace sidebar">
+  <a class="brand" href="#overview" aria-label="Codex Token Saver overview">
+    <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-9 12h7l-1 8 10-13h-8l1-7Z"/></svg></span>
+    <span class="brand-name">Token Saver<small>Codex workspace</small></span>
+  </a>
+  <p class="nav-label">Workspace</p>
+  <nav class="workspace-nav" aria-label="Main navigation"><a href="#overview" data-view-link="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Overview</span></a>
+<a href="#toolkit" data-view-link="toolkit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6V4h6v2M3 10h18M4 6h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z"/><path d="M10 10v3h4v-3"/></svg><span>Toolkit</span></a>
+<a href="#activity" data-view-link="activity"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Activity</span></a>
+<a href="#updates" data-view-link="updates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7a9 9 0 1 0 1 8M20 3v5h-5"/></svg><span>Updates</span></a>
+<a href="#diagnostics" data-view-link="diagnostics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM8 9l3 3-3 3m6 0h3"/></svg><span>Diagnostics</span></a></nav>
+  <div class="sidebar-footer"><p><span class="local-dot"></span>Local dashboard</p><p>127.0.0.1 &middot; Your device</p>
+    <a href="https://github.com/patrickstrauss/Codex-Token-Saver" target="_blank" rel="noopener noreferrer">Project &amp; documentation &nearr;</a>
+  </div>
+</aside>
+<div class="app-shell">
 <header class="header" role="banner">
-    <h1 class="sr-only">Codex Token Saver</h1>
-    <a class="header-left" href="https://github.com/patrickstrauss/Codex-Token-Saver" target="_blank" rel="noopener noreferrer" title="View source on GitHub">
-        <div class="pulse-dot" id="health-pulse" title="All collectors healthy"></div>
-        <div class="header-title">Codex Token Saver</div>
-    </a>
-    <div class="header-centre" id="combined">Local compression activity</div>
-    <div class="header-right" id="clock">--:--:-- &blacksquare; -- --- ----</div>
+  <div class="breadcrumb"><span>Workspace</span><span aria-hidden="true">/</span><strong>Codex Token Saver</strong></div>
+  <div class="header-actions">
+    <span id="combined" class="sr-only">Local compression activity</span>
+    <time class="header-right" id="clock">Connecting…</time>
+    <span class="connection-badge" role="status"><span class="pulse-dot" id="health-pulse" data-pending="true" title="Connecting to dashboard collectors"></span><span id="connection-label">Connecting</span></span>
+    <button type="button" class="icon-button" id="refresh-dashboard" aria-label="Refresh dashboard" title="Refresh dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7a9 9 0 1 0 1 8M20 3v5h-5"/></svg></button>
+    <button type="button" class="icon-button" id="theme-toggle" aria-label="Switch to light theme" title="Change appearance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/></svg></button>
+  </div>
 </header>
-<main role="main" aria-label="Tool savings dashboard">
-
-<p class="connection-note">Headroom request compression handles eligible content across Codex model requests when enabled below. RTK and local Headroom tools provide additional output reduction.</p>
-<p class="measurement-note">RTK estimates terminal-output tokens avoided. Headroom local output counts local file/stdout reductions before Codex truncation, including returned text and retrieval costs. These separate counters may overlap. They do not measure your ChatGPT quota or bill.</p>
-<!-- Stats Ticker -->
+<main id="main-content" role="main" aria-label="Tool savings dashboard" tabindex="-1">
+  <div class="page-intro"><div><div class="eyebrow">Codex Token Saver</div><h1 id="page-title" tabindex="-1">Overview</h1><p id="page-description">A clear view of your Codex workspace.</p></div><a class="intro-link" id="manage-toolkit" href="#toolkit">Manage toolkit <span aria-hidden="true">&rarr;</span></a></div>
+  <noscript><p class="empty-note">Enable JavaScript to load live measurements and controls. No settings change when this page opens.</p></noscript>
+  <section id="overview" data-workspace-view="overview" aria-label="Savings overview">
 <div class="ticker" id="ticker">
     <span title="Tokens saved by all tools since your weekly Claude reset">Saved This Week: <span class="tv" id="tk-this-week">--</span></span>
     <span class="sep">|</span>
@@ -1670,9 +1687,8 @@ body {
     <span title="Headroom lifetime dollar savings (compression + provider prefix-cache discount)">Saved $: <span class="tv" id="tk-combined-usd">--</span></span>
 </div>
 
-<!-- Cards -->
-__COMPONENTS_PANEL__
 __REQUEST_PROXY_PANEL__
+<div class="section-heading"><h2>Output savings</h2><span>Separate layers &middot; separate measurements</span></div>
 <div class="cards">
     <!-- RTK -->
     <div class="card" id="rtk-card">
@@ -1689,9 +1705,11 @@ __REQUEST_PROXY_PANEL__
         </div>
         <div class="sparkline-container"><svg id="rtk-sparkline" viewBox="0 0 200 35" preserveAspectRatio="none"></svg></div>
         <div class="card-delta" id="rtk-delta"></div>
+        <details class="metric-details"><summary>History &amp; measurement details</summary>
         <p class="rtk-note" id="rtk-recent"></p>
         <p class="rtk-note" id="rtk-lifetime"></p>
         <p class="rtk-note" id="rtk-outlier"></p>
+        </details>
     </div>
 
     <!-- Headroom local output -->
@@ -1702,6 +1720,8 @@ __REQUEST_PROXY_PANEL__
         </div>
         <div class="card-value clr-headroom" id="desktop-headroom-value">--</div>
         <div class="card-sub" id="desktop-headroom-sub">net content tokens avoided (estimate)</div>
+        <p class="card-sub">Negative values mean added output, including retrieval costs.</p>
+        <details class="metric-details"><summary>Coverage &amp; measurement details</summary>
         <div class="card-sub" id="desktop-headroom-check"></div>
         <div class="card-sub" id="desktop-headroom-outcomes"></div>
         <div class="card-sub" id="desktop-headroom-scope">This counter covers local files and selected command outputs; request savings are tracked separately below.</div>
@@ -1710,8 +1730,70 @@ __REQUEST_PROXY_PANEL__
         <div class="card-sub" id="desktop-headroom-status">Configuration loading</div>
         <div class="card-sub" id="desktop-headroom-skips"></div>
         <div class="card-delta" id="desktop-headroom-recorded"></div>
+        </details>
     </div>
 
+</div>
+<div class="overview-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></svg><p>Request, command, and local output savings are separate estimates of tokens avoided. These separate counters may overlap and are never added together. They do not measure your ChatGPT quota or bill.</p></div></section>
+__COMPONENTS_PANEL__
+<section id="updates" data-workspace-view="updates" aria-label="Library updates" hidden>
+<details class="updates-panel" id="library-updates">
+    <summary>Library updates <span id="updates-summary">Bundle runtimes</span></summary>
+    <div class="updates-body">
+        <p class="updates-muted">Update installed bundle runtimes with compatibility checks and rollback. Local model files are not automatically replaced.</p>
+        <div class="updates-actions">
+            <button type="button" class="updates-button" id="updates-check">Check for updates</button>
+            <span class="updates-muted" id="updates-checked">No release check yet</span>
+            <progress id="updates-progress" aria-label="Library update in progress" hidden></progress>
+            <span class="updates-muted" id="updates-stage"></span>
+        </div>
+        <p id="updates-message" role="status" aria-live="polite">Check manually when you want newer releases.</p>
+        <p id="updates-error" class="updates-error" role="alert" hidden></p>
+        <div class="updates-libraries">
+            <section class="updates-library" aria-label="Headroom library updates">
+                <h2>Headroom</h2>
+                <p class="updates-versions"><span>Installed core <strong id="update-headroom-current">Loading</strong></span><span>Latest core <strong id="update-headroom-latest">Not checked</strong></span></p>
+                <p class="updates-muted">When the core is current, refresh its compatible Python dependencies. Changes are validated before switching.</p>
+                <div class="updates-actions">
+                    <button type="button" class="updates-button" id="update-headroom-install" disabled>Update Headroom</button>
+                    <button type="button" class="updates-button" id="update-headroom-rollback" disabled>Rollback</button>
+                    <a href="https://github.com/headroomlabs-ai/headroom/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+                </div>
+                <p id="update-headroom-error" class="updates-error"></p>
+            </section>
+            <section class="updates-library" aria-label="RTK library updates">
+                <h2>RTK</h2>
+                <p class="updates-versions"><span>Installed <strong id="update-rtk-current">Loading</strong></span><span>Latest <strong id="update-rtk-latest">Not checked</strong></span></p>
+                <div class="updates-actions">
+                    <button type="button" class="updates-button" id="update-rtk-install" disabled>Update RTK</button>
+                    <button type="button" class="updates-button" id="update-rtk-rollback" disabled>Rollback</button>
+                    <a href="https://github.com/rtk-ai/rtk/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+                </div>
+                <p id="update-rtk-error" class="updates-error"></p>
+            </section>
+            <section class="updates-library" aria-label="Serena library updates">
+                <h2>Serena</h2>
+                <p class="updates-versions"><span>Installed <strong id="update-serena-current">Loading</strong></span><span>Latest <strong id="update-serena-latest">Not checked</strong></span></p>
+                <div class="updates-actions"><button type="button" class="updates-button" id="update-serena-install" disabled>Update Serena</button><button type="button" class="updates-button" id="update-serena-rollback" disabled>Rollback</button><a href="https://github.com/oraios/serena/releases" target="_blank" rel="noopener noreferrer">Releases</a></div>
+                <p id="update-serena-error" class="updates-error"></p>
+            </section>
+            <section class="updates-library" aria-label="Laya library updates">
+                <h2>Laya</h2>
+                <p class="updates-versions"><span>Installed <strong id="update-laya-current">Loading</strong></span><span>Latest <strong id="update-laya-latest">Not checked</strong></span></p>
+                <div class="updates-actions"><button type="button" class="updates-button" id="update-laya-install" disabled>Update Laya</button><button type="button" class="updates-button" id="update-laya-rollback" disabled>Rollback</button><a href="https://pypi.org/project/laya/" target="_blank" rel="noopener noreferrer">Releases</a></div>
+                <p id="update-laya-error" class="updates-error"></p>
+            </section>
+        </div>
+        <p id="updates-restart" class="updates-restart" hidden></p>
+        <p class="updates-muted">Checks and installs run only when you click. Progress is recorded locally; a failed request is never retried automatically.</p>
+        <p id="updates-log" class="updates-muted"></p>
+    </div>
+</details>
+
+</section>
+<section id="diagnostics" data-workspace-view="diagnostics" aria-label="Detailed diagnostics" hidden>
+<p class="empty-note">The optional CLI proxy below is separate from Codex desktop request compression. Unconfigured tools do not indicate a desktop connection failure.</p>
+<div class="cards">
     <!-- Optional Headroom CLI proxy -->
     <div class="card" id="headroom-card">
         <div class="card-header">
@@ -1778,59 +1860,6 @@ __REQUEST_PROXY_PANEL__
 
 </div>
 
-<details class="updates-panel" id="library-updates">
-    <summary>Library updates <span id="updates-summary">Bundle runtimes</span></summary>
-    <div class="updates-body">
-        <p class="updates-muted">Update installed bundle runtimes with compatibility checks and rollback. Local model files are not automatically replaced.</p>
-        <div class="updates-actions">
-            <button type="button" class="updates-button" id="updates-check">Check for updates</button>
-            <span class="updates-muted" id="updates-checked">No release check yet</span>
-            <progress id="updates-progress" aria-label="Library update in progress" hidden></progress>
-            <span class="updates-muted" id="updates-stage"></span>
-        </div>
-        <p id="updates-message" role="status" aria-live="polite">Check manually when you want newer releases.</p>
-        <p id="updates-error" class="updates-error" role="alert" hidden></p>
-        <div class="updates-libraries">
-            <section class="updates-library" aria-label="Headroom library updates">
-                <h2>Headroom</h2>
-                <p class="updates-versions"><span>Installed core <strong id="update-headroom-current">Loading</strong></span><span>Latest core <strong id="update-headroom-latest">Not checked</strong></span></p>
-                <p class="updates-muted">When the core is current, refresh its compatible Python dependencies. Changes are validated before switching.</p>
-                <div class="updates-actions">
-                    <button type="button" class="updates-button" id="update-headroom-install" disabled>Update Headroom</button>
-                    <button type="button" class="updates-button" id="update-headroom-rollback" disabled>Rollback</button>
-                    <a href="https://github.com/headroomlabs-ai/headroom/releases" target="_blank" rel="noopener noreferrer">Releases</a>
-                </div>
-                <p id="update-headroom-error" class="updates-error"></p>
-            </section>
-            <section class="updates-library" aria-label="RTK library updates">
-                <h2>RTK</h2>
-                <p class="updates-versions"><span>Installed <strong id="update-rtk-current">Loading</strong></span><span>Latest <strong id="update-rtk-latest">Not checked</strong></span></p>
-                <div class="updates-actions">
-                    <button type="button" class="updates-button" id="update-rtk-install" disabled>Update RTK</button>
-                    <button type="button" class="updates-button" id="update-rtk-rollback" disabled>Rollback</button>
-                    <a href="https://github.com/rtk-ai/rtk/releases" target="_blank" rel="noopener noreferrer">Releases</a>
-                </div>
-                <p id="update-rtk-error" class="updates-error"></p>
-            </section>
-            <section class="updates-library" aria-label="Serena library updates">
-                <h2>Serena</h2>
-                <p class="updates-versions"><span>Installed <strong id="update-serena-current">Loading</strong></span><span>Latest <strong id="update-serena-latest">Not checked</strong></span></p>
-                <div class="updates-actions"><button type="button" class="updates-button" id="update-serena-install" disabled>Update Serena</button><button type="button" class="updates-button" id="update-serena-rollback" disabled>Rollback</button><a href="https://github.com/oraios/serena/releases" target="_blank" rel="noopener noreferrer">Releases</a></div>
-                <p id="update-serena-error" class="updates-error"></p>
-            </section>
-            <section class="updates-library" aria-label="Laya library updates">
-                <h2>Laya</h2>
-                <p class="updates-versions"><span>Installed <strong id="update-laya-current">Loading</strong></span><span>Latest <strong id="update-laya-latest">Not checked</strong></span></p>
-                <div class="updates-actions"><button type="button" class="updates-button" id="update-laya-install" disabled>Update Laya</button><button type="button" class="updates-button" id="update-laya-rollback" disabled>Rollback</button><a href="https://pypi.org/project/laya/" target="_blank" rel="noopener noreferrer">Releases</a></div>
-                <p id="update-laya-error" class="updates-error"></p>
-            </section>
-        </div>
-        <p id="updates-restart" class="updates-restart" hidden></p>
-        <p class="updates-muted">Checks and installs run only when you click. Progress is recorded locally; a failed request is never retried automatically.</p>
-        <p id="updates-log" class="updates-muted"></p>
-    </div>
-</details>
-
 <!-- Activity Feed -->
 <div class="feed-container">
     <div class="feed-header">
@@ -1839,7 +1868,10 @@ __REQUEST_PROXY_PANEL__
     </div>
     <div class="feed-area" id="feed" tabindex="0" role="log" aria-live="polite" aria-label="Live activity feed: recent token-saving events"></div>
 </div>
+</section>
 </main>
+<footer class="app-footer"><span>Codex Token Saver &middot; Local workspace</span><span>Estimated savings. Original content stays retrievable.</span></footer>
+</div>
 
 <script>
 function formatTokens(n, withUnit) {
@@ -1951,6 +1983,8 @@ function renderRtk(rtk) {
 }
 
 function updateDashboard(d) {
+    var healthPulse = document.getElementById('health-pulse');
+    if (healthPulse && healthPulse.dataset) delete healthPulse.dataset.pending;
     // Combined
     document.getElementById('combined').textContent = 'LOCAL COMPRESSION ACTIVITY';
 
@@ -2255,6 +2289,7 @@ var lastMsgTs = Date.now();
 function setConnState(state, title) {
     var dot = document.getElementById('health-pulse');
     if (!dot) return;
+    if (dot.dataset) delete dot.dataset.pending;
     dot.className = 'pulse-dot' + (state !== 'ok' ? ' health-' + state : '');
     dot.title = title;
 }
@@ -2286,6 +2321,7 @@ setInterval(function() {
 <script src="/static/proxy.js"></script>
 <script src="/static/components.js"></script>
 <script src="/static/activity.js"></script>
+<script src="/static/dashboard.js?v=20261016"></script>
 </body>
 </html>"""
 

@@ -1,5 +1,9 @@
 # Codex Token Saver dashboard
 
+The dashboard has five views: **Overview** for request and output savings, **Toolkit** for component preferences, **Activity** for recorded operations and hook coverage, **Updates** for checked runtime upgrades, and **Diagnostics** for the optional CLI proxy and live savings feed. Navigation links support direct bookmarks. Use the appearance button for dark or light mode; the choice is saved only in this browser. Refresh an existing dashboard tab after a UI upgrade; no laptop restart is needed for styling and navigation changes.
+
+Savings windows and current backend compression rates have separate scopes. Estimates from different layers are never added together. Negative local output savings mean net added output, including retrieval costs. Opening or navigating the dashboard does not change component settings or start model inference.
+
 Adapted from [Will-Luck/claude-tools-dashboard](https://github.com/Will-Luck/claude-tools-dashboard), MIT license, commit `289253de78116310d9e682e0680bd8db2a526f14`. Upstream LICENSE is retained. See the [root README](../README.md) for development setup and [Using the bundle](../docs/USING-BUNDLE.md) for the current component controls.
 
 Launch from PowerShell, hidden, without opening a browser:

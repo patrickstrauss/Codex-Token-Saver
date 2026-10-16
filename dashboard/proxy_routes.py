@@ -11,35 +11,30 @@ from request_metrics import request_windows
 
 PANEL_HTML = '''
 <section class="updates-panel" id="request-proxy" aria-labelledby="request-proxy-heading">
-    <div class="updates-body">
-        <h2 id="request-proxy-heading" style="font-size:16px;margin:0">Headroom request savings</h2>
-        <p id="request-proxy-status" role="status">Checking desktop connection...</p>
-        <label for="request-proxy-window">Window <select class="bundle-select" id="request-proxy-window"><option value="fifteen_minutes">Last 15 minutes</option><option value="today">Today</option><option value="seven_days">7 days</option><option value="lifetime">Lifetime</option></select></label>
-        <div style="font-size:30px;color:#67c9ff;font-weight:bold" id="request-proxy-saved">Unavailable</div>
-        <p class="updates-muted" id="request-proxy-scope">Estimated input tokens avoided across all tasks; individual-task attribution is unavailable.</p>
-        <p id="request-proxy-window-detail" class="updates-muted"></p>
-        <p id="request-proxy-coverage" class="updates-muted"></p>
-        <h3 style="font-size:15px;margin-bottom:8px">Compression effectiveness</h3>
-        <div style="display:flex;flex-wrap:wrap;gap:32px">
-            <div><strong id="request-proxy-active-rate" style="font-size:26px;color:#67c9ff">Unavailable</strong><br>Of content submitted for compression</div>
-            <div><strong id="request-proxy-whole-rate" style="font-size:26px;color:#67c9ff">Unavailable</strong><br>Of complete request input</div>
-        </div>
-        <p id="request-proxy-backend-scope" class="updates-muted"></p>
-        <p id="request-proxy-rate-note" class="updates-muted">The first rate covers eligible content and tool schemas; the second includes protected history and uses compression savings only. These are token estimates, not measured Codex quota savings.</p>
-        <p id="request-proxy-diagnostics" class="updates-muted"></p>
-        <p id="request-proxy-timing" class="updates-muted"></p>
-        <p id="request-proxy-counts" class="updates-muted"></p>
-        <p id="request-proxy-routing" class="updates-muted"></p>
-        <p id="request-proxy-backend" class="updates-muted"></p>
-        <p id="request-proxy-recorded" class="updates-muted"></p>
-        <div class="updates-actions">
-            <button type="button" id="request-proxy-enable" disabled>Enable request compression</button>
-            <button type="button" id="request-proxy-pause" disabled>Pause request compression</button>
-        </div>
-        <p id="request-proxy-error" class="updates-error" role="alert" hidden></p>
-        <p id="request-proxy-restart" class="updates-restart" hidden></p>
-        <p class="updates-muted">Request savings are measured separately from RTK and local file or command savings; the totals are not added together. These text estimates are not measured Codex quota savings. A connection can carry multiple model requests.</p>
+  <div class="updates-body">
+    <div class="request-heading">
+      <div class="request-title"><span class="tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-9 12h7l-1 8 10-13h-8l1-7Z"/></svg></span><div><h2 id="request-proxy-heading">Headroom request savings</h2><p id="request-proxy-status" role="status">Checking desktop connection...</p></div></div>
+      <label class="window-control" for="request-proxy-window">Window <select class="bundle-select" id="request-proxy-window"><option value="fifteen_minutes">Last 15 minutes</option><option value="today">Today</option><option value="seven_days">7 days</option><option value="lifetime">Lifetime</option></select></label>
     </div>
+    <div class="request-metrics" aria-label="Compression effectiveness">
+      <div class="request-total"><div id="request-proxy-saved">Unavailable</div><div class="metric-caption">Estimated input tokens avoided</div></div>
+      <div class="rate-metric"><span class="rate-scope">Current backend counters</span><strong id="request-proxy-active-rate">Unavailable</strong><span>Of content submitted for compression</span></div>
+      <div class="rate-metric"><span class="rate-scope">Current backend counters</span><strong id="request-proxy-whole-rate">Unavailable</strong><span>Of complete request input</span></div>
+    </div>
+    <p id="request-proxy-scope" class="updates-muted">Estimated input tokens avoided across all tasks; individual-task attribution is unavailable.</p>
+    <div class="request-footer"><p id="request-proxy-recorded" class="updates-muted"></p><div class="updates-actions"><button type="button" id="request-proxy-enable" disabled>Enable request compression</button><button type="button" id="request-proxy-pause" disabled>Pause request compression</button></div></div>
+    <p id="request-proxy-error" class="updates-error" role="alert" hidden></p>
+    <p id="request-proxy-restart" class="updates-restart" hidden></p>
+    <details class="metric-details"><summary>Coverage, connection &amp; measurement details</summary>
+      <p id="request-proxy-window-detail" class="updates-muted"></p>
+      <p id="request-proxy-coverage" class="updates-muted"></p>
+      <p id="request-proxy-backend-scope" class="updates-muted"></p>
+      <p id="request-proxy-rate-note" class="updates-muted">The first rate covers eligible content and tool schemas; the second includes protected history and uses compression savings only. These are token estimates, not measured Codex quota savings.</p>
+      <p id="request-proxy-diagnostics" class="updates-muted"></p><p id="request-proxy-timing" class="updates-muted"></p>
+      <p id="request-proxy-counts" class="updates-muted"></p><p id="request-proxy-routing" class="updates-muted"></p><p id="request-proxy-backend" class="updates-muted"></p>
+      <p class="updates-muted">Request savings are measured separately from RTK and local file or command savings; the totals are not added together. These text estimates are not measured Codex quota savings. A connection can carry multiple model requests.</p>
+    </details>
+  </div>
 </section>
 '''
 

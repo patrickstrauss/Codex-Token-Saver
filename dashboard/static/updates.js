@@ -5,7 +5,7 @@
     if (!panel) return;
     var csrf = document.querySelector('meta[name="bundle-update-token"]').content;
     var state = {busy: false, components: []};
-    var actionPending = false, readPending = false, sequence = 0, requestError = '';
+    var actionPending = false, readPending = false, sequence = 0, requestError = '', statusError = '';
     var components = ['headroom', 'rtk', 'serena', 'laya'];
     var names = {headroom: 'Headroom', rtk: 'RTK', serena: 'Serena', laya: 'Laya'};
     function el(id) { return document.getElementById(id); }
@@ -16,7 +16,7 @@
         el('updates-summary').textContent = busy ? 'Update in progress' : 'Bundle libraries';
         el('updates-message').textContent = state.message || 'Check manually when you want newer releases.';
         el('updates-stage').textContent = busy && state.stage ? state.stage.replace(/_/g, ' ') : '';
-        el('updates-error').textContent = state.error || requestError;
+        el('updates-error').textContent = state.error || requestError || statusError;
         el('updates-error').hidden = !el('updates-error').textContent;
         el('updates-checked').textContent = state.last_checked ? 'Last checked: ' + new Date(state.last_checked).toLocaleString() : 'No release check yet';
         el('updates-log').textContent = state.log === 'updates/last-operation.log'
@@ -47,8 +47,9 @@
             if (requestId !== sequence) return;
             if (!response.ok) throw new Error(data.error || 'Update status is unavailable.');
             state = data;
+            statusError = '';
         } catch (error) {
-            if (requestId === sequence) requestError = 'Update status is unavailable. Try reopening this panel.';
+            if (requestId === sequence) statusError = 'Update status is unavailable. Try reopening this panel.';
         } finally {
             readPending = false;
             render();
@@ -59,6 +60,7 @@
         actionPending = true;
         ++sequence; // An older GET must not overwrite this operation's status.
         requestError = '';
+        statusError = '';
         render();
         var payload = {action: action};
         if (component) payload.component = component;
