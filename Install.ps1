@@ -115,12 +115,15 @@ if (-not $CoreOnly) { $taskComponents += @('serena','laya') }
 foreach ($taskComponent in $taskComponents) {
     $taskVenv = Join-Path $taskRoot ($taskComponent + '\.venv')
     $taskReady = Join-Path $taskVenv 'team-runtime-ready.json'
-    if (Test-Path -LiteralPath $taskReady) { Write-Host "Preserving installed $taskComponent runtime."; continue }
+    # Bootstrap the native DLLs even when resuming an otherwise ready venv.
+    # No elevation, global PATH change or machine-wide redistributable install.
     if (-not (Test-Path -LiteralPath (Join-Path $taskVenv 'Scripts\python.exe'))) { Invoke-BundleUv @('venv','--python',$taskPython,$taskVenv) }
+    Invoke-BundleUv @('pip','install','--python',(Join-Path $taskVenv 'Scripts\python.exe'),'--require-hashes','--only-binary=:all:','--requirement','packaging/requirements-windows-runtime.txt')
+    if (Test-Path -LiteralPath $taskReady) { Write-Host "Preserving installed $taskComponent runtime."; continue }
     Write-Host "Installing $taskComponent dependencies..."
     # Serena's proxy-tools ships as a source archive. Seed its hash-locked build
     # tools before installation so no unpinned isolated build environment is used.
-    Invoke-BundleUv @('pip','sync','--python',(Join-Path $taskVenv 'Scripts\python.exe'),'--require-hashes','packaging/requirements-build.txt')
+    Invoke-BundleUv @('pip','sync','--python',(Join-Path $taskVenv 'Scripts\python.exe'),'--require-hashes','packaging/requirements-build.txt','packaging/requirements-windows-runtime.txt')
     Invoke-BundleUv @('pip','install','--python',(Join-Path $taskVenv 'Scripts\python.exe'),'--require-hashes','--no-build-isolation','--requirement',(Join-Path $taskRoot "packaging\requirements-$taskComponent.txt"))
     Invoke-BundleUv @('pip','check','--python',(Join-Path $taskVenv 'Scripts\python.exe'))
     '{"validated_dependencies":true}' | Set-Content -LiteralPath $taskReady -Encoding ascii

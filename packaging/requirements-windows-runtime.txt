@@ -1,0 +1,4 @@
+# Windows x64 / CPython 3.13. Private DLLs; retain the wheel's proprietary notices.
+# Source: https://pypi.org/project/msvc-runtime/14.44.35112/
+msvc-runtime==14.44.35112 \
+    --hash=sha256:d4f6cf106aaf235f2a90952f9ec7de49e9946323880d051abf9745a6d4bf60bf

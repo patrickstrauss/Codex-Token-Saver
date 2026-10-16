@@ -11,6 +11,8 @@ import tempfile
 
 def verify(root):
     sys.path.insert(0, str(root))
+    from windows_runtime import prepare_private_runtime
+    prepare_private_runtime(required=True)
     # Headroom holds its SQLite cache until this check process exits on Windows.
     with tempfile.TemporaryDirectory(prefix='token-saver-install-check-', ignore_cleanup_errors=True) as temporary:
         state = Path(temporary)

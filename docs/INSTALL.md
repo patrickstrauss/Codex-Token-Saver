@@ -7,6 +7,8 @@ and network access to GitHub, PyPI, npm, Python/Node download servers and Huggin
 Face. Administrator access, a global Python/Node install and OpenCodex are not
 required. Full installation includes a CPU routing model and several isolated
 Python environments; download size and RAM use depend on enabled components.
+The installer also downloads a hash-pinned Visual C++ runtime wheel into its
+private environments; it does not install a machine-wide redistributable.
 ARM64, macOS, Linux and multi-user machine-wide installs are not supported.
 CI coverage is listed in the release checklist; do not infer Windows 10/11
 qualification from a Windows Server CI run alone.

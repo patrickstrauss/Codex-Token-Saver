@@ -19,6 +19,7 @@ redistribute an installed directory as though it were entirely MIT-licensed.
 | Laya multilingual model | Apache-2.0; [pinned model card](https://huggingface.co/convaiinnovations/laya-multilingual/blob/e4e9ddf21a7b1903b7acffd8814ad4307bf63a67/README.md) |
 | uv | MIT or Apache-2.0; [source](https://github.com/astral-sh/uv) |
 | CPython | PSF and included notices; [source](https://github.com/python/cpython) |
+| Microsoft Visual C++ runtime (msvc-runtime wheel) | Proprietary Microsoft redistribution terms; [pinned wheel](https://pypi.org/project/msvc-runtime/14.44.35112/); license retained in each environment's distribution metadata. Downloaded privately at install time, not included in the source ZIP. |
 | Node.js | MIT and included third-party notices; [source](https://github.com/nodejs/node) |
 
 Serena remains a separate, unmodified process. Its license is not replaced by

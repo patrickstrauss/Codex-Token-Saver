@@ -26,6 +26,8 @@ class Classifier:
     def __init__(self, root):
         os.environ.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', HF_HUB_DISABLE_TELEMETRY='1',
                           TOKENIZERS_PARALLELISM='false', CUDA_VISIBLE_DEVICES='')
+        from windows_runtime import prepare_private_runtime
+        prepare_private_runtime()
         import torch
         torch.set_num_threads(2)
         torch.set_num_interop_threads(1)

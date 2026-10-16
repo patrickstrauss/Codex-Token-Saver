@@ -30,7 +30,7 @@ foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena'
         Where-Object { $_.Name -notin $taskRetired -and ($_.Extension -in @('.py','.ps1','.cs','.html','.yml') -or
             ($taskDirectory -eq 'serena' -and $_.Name -eq 'tool-schemas.json') -or
             ($taskDirectory -eq 'packaging' -and $_.Name -in @('dependencies.json','package.json','package-lock.json','laya-model.json',
-                'requirements-build.txt','requirements-headroom.txt','requirements-dashboard.txt','requirements-serena.txt','requirements-laya.txt'))) }
+                'requirements-build.txt','requirements-windows-runtime.txt','requirements-headroom.txt','requirements-dashboard.txt','requirements-serena.txt','requirements-laya.txt'))) }
 }
 $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'dashboard\static') -File -Recurse |
     Where-Object Extension -in @('.css','.js','.svg','.png','.ico','.woff2')

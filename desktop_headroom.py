@@ -24,6 +24,8 @@ from bundle_preferences import load_preferences
 from proxy_retrieval import read_proxy_original
 from runtime_selection import activate_headroom_runtime
 activate_headroom_runtime(Path(__file__).resolve().parent)
+from windows_runtime import prepare_private_runtime
+prepare_private_runtime()
 
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
