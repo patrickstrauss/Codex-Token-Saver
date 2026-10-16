@@ -19,6 +19,7 @@ from flask import Flask, Response, jsonify
 from update_routes import register_update_routes
 from proxy_routes import PANEL_HTML as REQUEST_PROXY_PANEL_HTML, register_proxy_routes
 from component_routes import register_component_routes
+from client_routes import register_client_routes
 from rtk_metrics import window_metrics
 
 load_dotenv(Path(__file__).with_name('.env'))
@@ -281,6 +282,7 @@ _HEADROOM_SKIP_LABELS = {
 
 _update_routes = register_update_routes(app, Path(__file__).resolve().parent.parent, PORT, _cached_versions)
 register_proxy_routes(app, Path(__file__).resolve().parent.parent, _update_routes)
+register_client_routes(app, Path(__file__).resolve().parent.parent, _update_routes)
 collect_components = register_component_routes(app, Path(__file__).resolve().parent.parent, _update_routes,
                                                observations=lambda: _collector.snapshot() or {},
                                                hook_activity=lambda **filters: collect_headroom_automation(**filters))
@@ -2320,6 +2322,7 @@ setInterval(function() {
 <script src="/static/updates.js"></script>
 <script src="/static/proxy.js"></script>
 <script src="/static/components.js"></script>
+<script src="/static/clients.js"></script>
 <script src="/static/activity.js"></script>
 <script src="/static/dashboard.js?v=20261016"></script>
 </body>

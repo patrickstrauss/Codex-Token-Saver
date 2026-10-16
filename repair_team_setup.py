@@ -15,6 +15,8 @@ from install_desktop_mcp import replace_checked
 
 def repair(root, config_home):
     root = Path(root).resolve()
+    from harness_clients import codex_enabled, registrations
+    native = codex_enabled(root)
     marker = root / 'team-install-source.json'
     try:
         source = json.loads(marker.read_text(encoding='utf-8-sig'))
@@ -68,11 +70,14 @@ def repair(root, config_home):
             created = True
         replace_checked(env_file, old or b'', desired)
         written = desired
-        path = Path(__file__).resolve().parent / 'packaging/configure_install.py'
-        spec = importlib.util.spec_from_file_location('team_repair_configuration', path)
-        configuration = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(configuration)
-        registered = configuration.configure(root, Path(config_home).resolve())
+        if native:
+            path = Path(__file__).resolve().parent / 'packaging/configure_install.py'
+            spec = importlib.util.spec_from_file_location('team_repair_configuration', path)
+            configuration = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(configuration)
+            registered = configuration.configure(root, Path(config_home).resolve())
+        else:
+            registered = {'codex': False, 'clients': registrations(root)}
     except BaseException:
         # Do not overwrite changes made by another process during the repair.
         if written is not None and env_file.exists() and env_file.read_bytes() == written:
@@ -83,8 +88,9 @@ def repair(root, config_home):
     overrides = [key for key, expected in (('RTK_DB_PATH', str(db)), ('RTK_BIN', str(binary)))
                  if os.environ.get(key) and os.environ[key] != expected]
     return {'repaired': True, 'backup': str(backup), 'recorded_commands': count,
-            'registration': registered, 'environment_overrides': overrides,
-            'next_step': 'Use Restart / repair dashboard in the tray, then reopen Codex and review hook trust.'}
+            'registration': registered, 'codex_integration': native, 'environment_overrides': overrides,
+            'next_step': ('Use Restart / repair dashboard in the tray, then reopen Codex and review hook trust.'
+                          if native else 'Use Restart / repair dashboard in the tray. Review client setup in Coding clients.')}
 
 
 if __name__ == '__main__':

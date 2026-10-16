@@ -3,6 +3,7 @@ param(
     [string]$InstallDirectory = (Join-Path $env:USERPROFILE 'CodexTokenSaver'),
     [switch]$CoreOnly,
     [switch]$SkipIntegration,
+    [ValidateSet('codex','standalone')][string]$Harness = 'codex',
     [switch]$Plan
 )
 $ErrorActionPreference = 'Stop'
@@ -30,7 +31,7 @@ foreach ($taskFile in $taskManifest.files) {
 }
 $taskPins = Get-Content -LiteralPath (Join-Path $taskPayload 'packaging\dependencies.json') -Raw | ConvertFrom-Json
 if ($Plan) {
-    [ordered]@{version=$taskManifest.version;destination=$taskRoot;components=$(if ($CoreOnly) {'Headroom, RTK, dashboard'} else {'Headroom, RTK, dashboard, Serena, Playwright CLI, ast-grep, Laya'});integration=(-not $SkipIntegration);routing='existing connection preserved';models=$(if ($CoreOnly) {'no model downloaded'} else {'pinned local Laya classifier'});verified_files=@($taskManifest.files).Count} | ConvertTo-Json
+    [ordered]@{version=$taskManifest.version;destination=$taskRoot;harness=$Harness;components=$(if ($CoreOnly) {'Headroom, RTK, dashboard'} else {'Headroom, RTK, dashboard, Serena, Playwright CLI, ast-grep, Laya'});integration=(-not $SkipIntegration);routing='existing connection preserved';models=$(if ($CoreOnly) {'no model downloaded'} else {'pinned local Laya classifier'});verified_files=@($taskManifest.files).Count} | ConvertTo-Json
     exit 0
 }
 $taskMarker = Join-Path $taskRoot 'team-install-source.json'
@@ -38,6 +39,12 @@ if ((Test-Path -LiteralPath $taskRoot) -and @(Get-ChildItem -LiteralPath $taskRo
     if (-not (Test-Path -LiteralPath $taskMarker)) { throw 'This folder contains an existing installation. Nothing was replaced. Use its library updater; source migration requires a reviewed backup.' }
     $taskExisting = Get-Content -LiteralPath $taskMarker -Raw | ConvertFrom-Json
     if ($taskExisting.package_sha256 -ine $taskManifestHash) { throw 'A different source release is already installed. This installer will not overwrite its runtime or settings.' }
+    $taskPriorResult = Join-Path $taskRoot 'team-install-result.json'
+    if (Test-Path -LiteralPath $taskPriorResult) {
+        $taskPrior = Get-Content -LiteralPath $taskPriorResult -Raw | ConvertFrom-Json
+        $taskPriorCodex = if ($taskPrior.PSObject.Properties.Name -contains 'codex_integration') { [bool]$taskPrior.codex_integration } else { $true }
+        if ($taskPriorCodex -ne ($Harness -eq 'codex')) { throw 'The existing installation has a different client mode. Preserve it; use Connect-Harness.ps1 for additional clients or the documented uninstall/reinstall procedure.' }
+    }
     foreach ($taskFile in $taskManifest.files) {
         $taskCurrent = Join-Path $taskRoot $taskFile.path
         if ((Test-Path -LiteralPath $taskCurrent) -and (Get-FileHash -LiteralPath $taskCurrent -Algorithm SHA256).Hash -ine $taskFile.sha256) { throw "Installed source was modified: $($taskFile.path). No files were replaced." }
@@ -133,15 +140,20 @@ if (-not $CoreOnly) {
 if ($LASTEXITCODE -ne 0) { throw 'Installed runtime smoke check failed. Codex settings were not changed.' }
 if (-not $SkipIntegration) {
     # Record intent before registration so a partially completed setup can be disabled.
-    [ordered]@{version=$taskManifest.version;completed=$false;integration=$true} | ConvertTo-Json |
+    [ordered]@{version=$taskManifest.version;completed=$false;integration=$true;codex_integration=($Harness -eq 'codex')} | ConvertTo-Json |
         Set-Content -LiteralPath (Join-Path $taskRoot 'team-install-result.json') -Encoding UTF8
-    & $taskHeadroomPython (Join-Path $taskRoot 'packaging\configure_install.py') $taskRoot
-    if ($LASTEXITCODE -ne 0) { throw 'Codex tool registration failed. See the backup and error above.' }
+    if ($Harness -eq 'codex') {
+        & $taskHeadroomPython (Join-Path $taskRoot 'packaging\configure_install.py') $taskRoot
+        if ($LASTEXITCODE -ne 0) { throw 'Codex tool registration failed. See the backup and error above.' }
+    }
     & (Join-Path $taskRoot 'Install-Startup.ps1')
     if (-not $?) { throw 'Startup registration failed. Dependencies are installed; rerun to retry.' }
     & (Join-Path $taskRoot 'scripts\Register-App.ps1') -Root $taskRoot -Version $taskManifest.version
 }
-[ordered]@{version=$taskManifest.version;completed_at=(Get-Date -Format o);core_only=[bool]$CoreOnly;integration=(-not $SkipIntegration);source_sha256=$taskManifestHash} | ConvertTo-Json |
+[ordered]@{version=$taskManifest.version;completed_at=(Get-Date -Format o);core_only=[bool]$CoreOnly;integration=(-not $SkipIntegration);codex_integration=($Harness -eq 'codex');source_sha256=$taskManifestHash} | ConvertTo-Json |
     Set-Content -LiteralPath (Join-Path $taskRoot 'team-install-result.json') -Encoding UTF8
 Write-Host "Installed and checked: $taskRoot"
-if (-not $SkipIntegration) { Write-Host 'Restart Codex, then open Codex Token Saver from the Start menu. Enable optional tools in its controls.' }
+if (-not $SkipIntegration) {
+    if ($Harness -eq 'codex') { Write-Host 'Restart Codex, then open Codex Token Saver from the Start menu. Enable optional tools in its controls.' }
+    else { Write-Host 'Open Codex Token Saver from the Start menu. Use its Coding clients panel or Connect-Harness.ps1 to configure your MCP client.' }
+}

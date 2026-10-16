@@ -502,7 +502,12 @@ class ExactRetrievalReceipt:
                         from fastapi import HTTPException, Request
                         from headroom.proxy.loopback_guard import require_loopback
                         try:
-                            require_loopback(Request(scope))
+                            request = Request(scope)
+                            # Some SDK versions permit an unknown ASGI peer.
+                            # A legacy-store fallback must fail closed instead.
+                            if request.client is None:
+                                raise HTTPException(status_code=404)
+                            require_loopback(request)
                         except HTTPException:
                             original = None
                         else:

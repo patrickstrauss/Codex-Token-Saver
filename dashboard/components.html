@@ -19,6 +19,18 @@
     <div class="component-heading"><div><p class="section-kicker">Workspace settings</p><h2 id="components-heading">Your toolkit</h2></div><span id="components-health" role="status">Checking components…</span></div>
     <p class="updates-muted">Choose the tools that work for you. Each switch saves your preference; its status shows what is ready to use.</p>
     <div id="components-list" class="component-grid"></div>
+    <section class="bundle-power" id="coding-clients" aria-labelledby="clients-heading">
+      <div><p class="section-kicker">Connect your editor or agent</p><h3 id="clients-heading">Coding clients</h3>
+        <p class="updates-muted">Share local file reading, code navigation and Laya routing with MCP clients. Your model, login and conversation history stay with each client. Component switches are shared across clients.</p>
+        <label for="client-choice">Client <select id="client-choice" class="bundle-select"></select></label>
+        <p id="client-path" class="updates-muted"></p>
+        <button type="button" class="updates-button" id="client-preview" disabled>Preview setup</button>
+        <p id="client-status" class="updates-muted" role="status">Reading client setup…</p>
+        <pre id="client-command" class="client-code" tabindex="0" aria-label="PowerShell setup command"></pre>
+        <details><summary>MCP configuration</summary><pre id="client-config" class="client-code" tabindex="0"></pre></details>
+        <p class="updates-muted">MCP setup does not install automatic command hooks or model request compression in other clients. Clients without MCP can use the explicit CLI tools. Manual registrations must also be removed manually before uninstalling.</p>
+      </div>
+    </section>
     <p id="components-error" class="updates-error" role="alert" hidden></p>
     <p id="components-notice" class="updates-muted" role="status" hidden></p>
     <div class="bundle-power" aria-labelledby="bundle-power-title">

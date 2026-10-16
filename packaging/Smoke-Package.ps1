@@ -75,8 +75,11 @@ try {
         $taskUserPath=[Environment]::GetEnvironmentVariable('Path','User')
         if ($taskUserPath -and $taskUserPath.IndexOf((Join-Path $taskInstall 'bin'),[StringComparison]::OrdinalIgnoreCase) -ge 0) { throw 'Uninstall left its user PATH entry.' }
     }
-    & (Join-Path $PackageDirectory 'Install.ps1') -InstallDirectory $taskInstall -SkipIntegration -CoreOnly:$CoreOnly
+    & (Join-Path $PackageDirectory 'Install.ps1') -InstallDirectory $taskInstall -SkipIntegration -Harness standalone -CoreOnly:$CoreOnly
     if (-not $?) { throw 'Clean reinstall after uninstall failed.' }
+    $taskClientEvidence = if ($EvidenceDirectory) { Join-Path $EvidenceDirectory 'coding-clients.json' } else { Join-Path $taskSandbox 'coding-clients.json' }
+    & (Join-Path $taskInstall 'headroom\.venv\Scripts\python.exe') (Join-Path $taskInstall 'packaging\verify_harness_clients.py') --root $taskInstall --codex-home $taskProfile --evidence $taskClientEvidence
+    if ($LASTEXITCODE -ne 0) { throw 'Standalone client setup, repair or removal checks failed.' }
 } finally { $env:CODEX_HOME = $taskPreviousCodex; $env:USERPROFILE = $taskPreviousProfile }
 if ($EvidenceDirectory) {
     [void](New-Item -ItemType Directory -Path $EvidenceDirectory -Force)

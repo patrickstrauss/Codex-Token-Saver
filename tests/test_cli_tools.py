@@ -12,6 +12,22 @@ import cli_tools
 from bundle_preferences import load_preferences
 
 
+def test_msvc_dependency_path_is_private_per_child_and_preserves_parent(tmp_path):
+    packaging = tmp_path / 'packaging'
+    packaging.mkdir()
+    (packaging / 'dependencies.json').write_text('{"python":"3.13.16"}')
+    runtime = tmp_path / 'tools/python/cpython-3.13.16-windows-x86_64-none'
+    runtime.mkdir(parents=True)
+    (runtime / 'vcruntime140.dll').touch()
+    original = {'Path':'C:\\Unrelated', 'KEEP':'value'}
+    child = cli_tools.child_environment(tmp_path, original)
+    assert child['PATH'].startswith(str(runtime))
+    assert child['PATH'].endswith('C:\\Unrelated') and child['KEEP'] == 'value'
+    assert original == {'Path':'C:\\Unrelated', 'KEEP':'value'}
+    (packaging / 'dependencies.json').write_text('{"python":"../../outside"}')
+    assert cli_tools.child_environment(tmp_path, original) == original
+
+
 def test_off_blocks_execution_and_records_no_arguments(tmp_path):
     result = cli_tools.run(tmp_path, 'ast_grep', ['run', '-p', 'secret()'])
     assert result == 126

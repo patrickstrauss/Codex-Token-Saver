@@ -4,7 +4,7 @@
     var links = Array.from(document.querySelectorAll('[data-view-link]'));
     var views = Array.from(document.querySelectorAll('[data-workspace-view]'));
     var titles = {
-        overview: ['Overview', 'A clear view of your Codex workspace.'],
+        overview: ['Overview', 'Local coding tools and measurements across your connected clients.'],
         toolkit: ['Your toolkit', 'Choose your tools. See what is ready and what needs attention.'],
         activity: ['Activity', 'Explore recorded operations and automatic hook coverage.'],
         updates: ['Library updates', 'Keep your bundle current, with compatibility checks and rollback.'],

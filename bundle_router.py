@@ -196,6 +196,9 @@ def run_command(argv, project, root, component=None, *, task_id=None):
     # Bound memory as well as response size. Never execute model-generated shell text.
     with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
         env = dict(os.environ, HEADROOM_EXACT='1', CTS_LAYA_INTERNAL='1')
+        if component == 'ast_grep':
+            from cli_tools import child_environment
+            env = child_environment(root, env)
         result = subprocess.run(argv, cwd=project, env=env, stdout=output, stderr=errors,
                                 timeout=45, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         output.seek(0); data = output.read(2 * 1024 * 1024 + 1)

@@ -216,7 +216,9 @@ def apply_changes(changes, backup):
 
 def disable(root, config_home, *, plan=False, operation_lock_held=False):
     root, config_home = Path(root).resolve(), Path(config_home).resolve()
-    assert_codex_closed()
+    from harness_clients import codex_enabled
+    if codex_enabled(root):
+        assert_codex_closed()
     if not root.is_dir():
         raise ValueError('The installation folder is missing; follow the deleted-installation recovery guide.')
     lock = nullcontext() if plan or operation_lock_held else routing_lock(root / 'updates/operation.lock')
@@ -225,6 +227,23 @@ def disable(root, config_home, *, plan=False, operation_lock_held=False):
 
 
 def _disable_locked(root, config_home, *, plan):
+    from harness_clients import codex_enabled, disconnect_all
+    disconnect_all(root, apply=False)
+    if not codex_enabled(root):
+        from bundle_preferences import DEFAULTS, set_preference
+        if plan:
+            return {'plan': True, 'clients': disconnect_all(root), 'restart_windows_required': True}
+        backup = root / 'backups' / ('disable-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ'))
+        backup.mkdir(parents=True)
+        for relative in ('settings/components.json', 'settings/extensions.json'):
+            original = read(root / relative)
+            if original is not None:
+                (backup / Path(relative).name).write_bytes(original)
+        disconnect_all(root, apply=True)
+        for component in DEFAULTS:
+            set_preference(root, component, False)
+        return {'integrations_disabled': True, 'backup': str(backup), 'restart_windows_required': True,
+                'processes_stopped': False, 'message': 'Owned MCP clients disconnected; component preferences disabled.'}
     changes = planned_changes(root, config_home)  # Validate every owned registration before any write.
     if plan:
         return {'plan': True, 'files_to_update': [str(path) for path, _, _ in changes], 'restart_windows_required': True}
@@ -263,6 +282,7 @@ def _disable_locked(root, config_home, *, plan):
         raise RuntimeError('Bundle or Codex configuration changed during route pause; integration changes were stopped. The pause remains in effect.')
     changes = planned_changes(root, config_home)
     apply_changes(changes, backup)
+    disconnect_all(root, apply=True)
     return {'integrations_disabled': True, 'backup': str(backup), 'restart_windows_required': True,
             'processes_stopped': False,
             'message': 'Owned Codex integrations are disabled. Disable startup, then restart Windows to stop existing workers.'}

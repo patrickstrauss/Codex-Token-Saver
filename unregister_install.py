@@ -8,14 +8,20 @@ from disable_bundle import disable_config, read, apply_changes
 
 def unregister(root, home):
     root, home = Path(root), Path(home)
+    from harness_clients import codex_enabled, disconnect_all
+    if not codex_enabled(root):
+        disconnect_all(root, apply=True)
+        return
     path = home / 'config.toml'
     before = read(path)
     if before is None:
+        disconnect_all(root, apply=True)
         return
     # Reuse the ownership checks. Unrecognized registrations must stop removal.
     disabled = disable_config(before, root)
     if disabled != before:
         raise RuntimeError('Disable owned integrations before removing registrations')
+    disconnect_all(root, apply=False)
     source = (before or b'').decode('utf-8-sig')
     document = tomlkit.parse(source)
     for name in ('headroom_desktop', 'bundle_serena', 'bundle_laya_router'):
@@ -28,6 +34,7 @@ def unregister(root, home):
         backup = root / 'backups' / ('unregister-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ'))
         backup.mkdir(parents=True)
         apply_changes([(path, before, after)], backup)
+    disconnect_all(root, apply=True)
 
 
 if __name__ == '__main__':

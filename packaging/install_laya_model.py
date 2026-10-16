@@ -6,6 +6,7 @@ import shutil
 import sys
 import subprocess
 import urllib.request
+from install_cli_tools import download_tls_context
 
 
 def install(root):
@@ -25,7 +26,7 @@ def install(root):
         url = 'https://huggingface.co/' + manifest['repository'] + '/resolve/' + manifest['revision'] + '/' + item['path']
         print('Downloading Laya ' + item['path'], flush=True)
         partial = path.with_suffix(path.suffix + '.partial')
-        with urllib.request.urlopen(url, timeout=60) as response, partial.open('wb') as stream:
+        with urllib.request.urlopen(url, timeout=60, context=download_tls_context()) as response, partial.open('wb') as stream:
             shutil.copyfileobj(response, stream)
         with partial.open('rb') as stream:
             if hashlib.file_digest(stream, 'sha256').hexdigest() != item['sha256']:

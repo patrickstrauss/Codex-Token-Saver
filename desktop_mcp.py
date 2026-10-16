@@ -36,7 +36,7 @@ INSTRUCTIONS = (
     'compress=false before precise edits, quotations, or completeness-sensitive decisions. '
     'For retrieval, pass the reference as content_hash, not id or hash. '
     'If these tools fail or are unavailable, continue with ordinary file tools. '
-    'All compression is local; these tools never route Codex requests or change its model.'
+    'All compression is local; these tools never route model requests or change the client model.'
 )
 server = Server('headroom-desktop', version='1.0.0', instructions=INSTRUCTIONS)
 backend = None

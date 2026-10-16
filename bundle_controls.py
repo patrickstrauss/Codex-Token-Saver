@@ -79,20 +79,28 @@ class BundleControls:
 
 
     def status(self, observations=None):
+        from harness_clients import codex_enabled, registrations
+        native = codex_enabled(self.root)
         observations = observations or {}
         new_activity = activity_snapshot(self.root)
         preferences = preference_status(self.root)
         values, settings_error = preferences['values'], preferences.get('error')
         try:
-            opencodex = self.opencodex()
+            opencodex = self.opencodex() if native else {}
         except Exception:
             opencodex = {'reason': 'OpenCodex status could not be verified.'}
         try:
-            proxy = self.proxy.status()
+            proxy = self.proxy.status() if native else {'enabled': False}
         except Exception:
             proxy = {'last_error': 'Request connection status could not be read.', 'enabled': None}
         try:
-            integrations = self.integrations.status()
+            if native:
+                integrations = self.integrations.status()
+            else:
+                clients = registrations(self.root)
+                integrations = {name: {'installed': (self.root / runtime / '.venv/Scripts/python.exe').is_file(),
+                    'configured': any('bundle_' + name in r['servers'] and r['status'] == 'configured' for r in clients), 'managed': True}
+                    for name, runtime in (('serena', 'serena'), ('laya_router', 'laya'))}
         except Exception:
             integrations = {}
         activity = {}
@@ -130,6 +138,10 @@ class BundleControls:
                 if data.get('data_status') == 'unavailable':
                     row['last_error'] = 'Local output records could not be read; activity is unknown.'
             elif name == 'headroom_requests':
+                if not native:
+                    row.update(state='unavailable', reason='Automatic request compression is qualified for Codex only. Other clients can use local MCP file and output tools.')
+                    rows.append(row)
+                    continue
                 row['available'] = proxy.get('installed') is True and proxy.get('validated') is True
                 row['last_use'] = proxy.get('savings', {}).get('last_recorded_at')
                 row['last_error'] = proxy.get('last_error')
@@ -226,6 +238,11 @@ class BundleControls:
             if requested and row['last_error'] and row['state'] == 'ready':
                 row['state'] = 'error'
             rows.append(row)
+        if not native:
+            for row in rows:
+                row['reason'] = row['reason'].replace('Codex task', 'client session').replace('Reload Codex', 'Reload your client').replace('until Codex restarts', 'until the client restarts')
+                if row['id'] == 'rtk':
+                    row['reason'] = 'Use RTK explicitly for supported commands. Automatic hooks are client-specific and are not installed by MCP setup.'
         selected = [row for row in rows if row['requested_enabled']]
         severe = (any(row['state'] in ('error', 'unavailable') for row in selected) or bool(settings_error or preferences.get('extension_error'))
                   or any(row['requested_enabled'] is None for row in rows))
@@ -239,6 +256,16 @@ class BundleControls:
     def set_enabled(self, component, enabled):
         if component not in LABELS or type(enabled) is not bool:
             raise ValueError('Choose a listed component and a boolean value.')
+        from harness_clients import codex_enabled
+        if not codex_enabled(self.root):
+            if component == 'headroom_requests':
+                raise ValueError('Automatic request compression is qualified for Codex only.')
+            if enabled:
+                row = next(row for row in self.status()['components'] if row['id'] == component)
+                if not row['available']:
+                    raise RuntimeError('Install and validate this runtime before enabling it.')
+            set_preference(self.root, component, enabled)
+            return {'component': component, 'enabled': enabled, 'restart_required': False}
         if component == 'headroom_requests':
             if self._managed_opencodex():
                 return self._extension().set_enabled(enabled)

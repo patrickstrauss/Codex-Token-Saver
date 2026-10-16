@@ -4,6 +4,11 @@ Every release must link a successful Windows package workflow for the exact comm
 and preserve its ZIP checksum, benchmark JSON, runtime inventory and test results.
 CI is a prerequisite, not a substitute for a human clean-desktop test.
 
+Client adapters are qualified separately from automatic compression and hooks.
+Before advertising live compatibility with an external client, record its version,
+stdio initialization/tool discovery, a real tool call, trust/reload behavior and
+disconnect/uninstall preservation. JSON format tests alone are insufficient.
+
 - [ ] Owner approves the root license, third-party notices and public visibility.
 - [ ] Scan the full Git history and release contents for credentials/private data.
 - [ ] Clean Windows CI: full install and CoreOnly install; no developer Python/Node required by installer.

@@ -75,6 +75,17 @@ class TeamRepairTests(unittest.TestCase):
             run.assert_not_called()
         self.assertEqual(self.env.read_bytes(), before)
 
+    def test_standalone_repair_never_registers_codex(self):
+        (self.root / 'team-install-result.json').write_text('{"codex_integration":false}')
+        before = self.config.read_bytes()
+        with patch.object(self.module.subprocess, 'run') as run:
+            run.return_value.returncode = 0
+            run.return_value.stdout = '{}'
+            result = self.module.repair(self.root, self.home)
+        self.assertFalse(result['codex_integration'])
+        self.assertEqual(before, self.config.read_bytes())
+        self.assertFalse((self.root / 'desktop-integration.json').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

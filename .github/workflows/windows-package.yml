@@ -49,6 +49,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Source upgrade tests failed.' }
           python -m unittest discover -s tests -p test_performance_benchmark.py
           if ($LASTEXITCODE -ne 0) { throw 'Benchmark tests failed.' }
+          python -m unittest discover -s tests -p test_harness_clients.py
+          if ($LASTEXITCODE -ne 0) { throw 'Coding client adapter tests failed.' }
       - name: Select package version
         id: version
         shell: pwsh

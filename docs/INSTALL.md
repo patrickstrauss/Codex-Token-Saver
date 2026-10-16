@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Windows x64, Windows PowerShell 5.1 or newer, an installed Codex desktop app,
+Windows x64, Windows PowerShell 5.1 or newer, a coding client,
 and network access to GitHub, PyPI, npm, Python/Node download servers and Hugging
 Face. Administrator access, a global Python/Node install and OpenCodex are not
 required. Full installation includes a CPU routing model and several isolated
@@ -10,6 +10,11 @@ Python environments; download size and RAM use depend on enabled components.
 ARM64, macOS, Linux and multi-user machine-wide installs are not supported.
 CI coverage is listed in the release checklist; do not infer Windows 10/11
 qualification from a Windows Server CI run alone.
+
+The default installer configures Codex. To use another MCP client without Codex,
+run `Install.ps1 -Harness standalone`, then follow [Coding clients](CODING-CLIENTS.md).
+This mode registers Windows startup and the app while leaving Codex settings
+untouched. Existing Codex users can add MCP clients with `Connect-Harness.ps1`.
 
 ## Install a release
 

@@ -1,8 +1,9 @@
 # Codex Token Saver
 
 A Windows tray app that puts local coding tools, compression controls and honest
-activity measurements alongside Codex. Use native Codex with your existing account
-and model. OpenCodex is not required.
+activity measurements alongside coding agents. Use native Codex with your existing
+account and model, or connect Claude Code, Gemini CLI, OpenCode, Cursor, VS Code,
+Cline, Kilo and other stdio MCP clients. OpenCodex is not required.
 
 **Preview software.** Clean-install CI and benchmark evidence are provided with
 builds. A stable release requires the desktop/reboot checks in the
@@ -28,6 +29,12 @@ CoreOnly installs, recovery and limitations. Choose **Uninstall** in Windows
 Installed apps or run **Uninstall-Token-Saver.cmd**. It restores owned integrations
 and preserves local data in a dated backup. A restart can be required to release
 active workers; it never forces Codex or Windows to close.
+
+For other agents, run `Install.ps1 -Harness standalone` and open **Toolkit >
+Coding clients**. Existing Codex installations can add clients without reinstalling.
+See [client setup and capability limits](docs/CODING-CLIENTS.md). Local MCP tools
+are shared; other clients' automatic hooks and model-request compression are not
+installed. External authenticated sessions still require live qualification.
 
 ## Included tools
 

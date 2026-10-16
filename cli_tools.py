@@ -51,6 +51,24 @@ def command(root, component):
     raise ValueError('Unknown CLI component.')
 
 
+def child_environment(root, environ=None):
+    """Resolve the MSVC CLI's DLLs from our existing private Python runtime."""
+    root = Path(root).resolve()
+    environment = dict(os.environ if environ is None else environ)
+    try:
+        version = json.loads((root / 'packaging/dependencies.json').read_bytes())['python']
+        if not isinstance(version, str) or not re.fullmatch(r'\d+\.\d+\.\d+', version):
+            raise ValueError('Invalid managed Python version.')
+        runtime = root / ('tools/python/cpython-' + version + '-windows-x86_64-none')
+        if runtime.resolve().is_relative_to(root) and (runtime / 'vcruntime140.dll').is_file():
+            old_path = next((v for k, v in environment.items() if k.lower() == 'path'), '')
+            environment = {k: v for k, v in environment.items() if k.lower() != 'path'}
+            environment['PATH'] = str(runtime) + (os.pathsep + old_path if old_path else '')
+    except (OSError, ValueError, KeyError, TypeError):
+        pass  # Legacy installations may rely on an already installed VC runtime.
+    return environment
+
+
 def runtime_status(root):
     try:
         node, packages, digest = runtime_paths(root)
@@ -254,7 +272,7 @@ def run(root, component, args):
             print('Codex Token Saver: ' + FAILURES[error], file=sys.stderr)
             observed('failed', error)
             return 1
-    environment = dict(os.environ)
+    environment = child_environment(root)
     environment['PLAYWRIGHT_BROWSERS_PATH'] = str(Path(root) / 'tools/playwright-browsers')
     try:
         argv = [*command(root, component), *args]

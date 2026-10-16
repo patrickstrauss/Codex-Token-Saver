@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -11,10 +12,20 @@ import urllib.request
 import zipfile
 
 
+def download_tls_context():
+    # Fresh Windows profiles may not yet have every public root in their OS
+    # certificate store. Add the already hash-locked public CA bundle; retain
+    # Windows/enterprise trust, hostname verification and CERT_REQUIRED.
+    import certifi
+    context = ssl.create_default_context()
+    context.load_verify_locations(cafile=certifi.where())
+    return context
+
+
 def install(root):
     root = Path(root).resolve()
     sys.path.insert(0, str(root))
-    from cli_tools import runtime_paths, command, runtime_status
+    from cli_tools import runtime_paths, command, runtime_status, child_environment
     node, packages, digest = runtime_paths(root)
     pins = json.loads((root / 'packaging/dependencies.json').read_bytes())
     expected = json.loads((root / 'packaging/package.json').read_bytes())['dependencies']
@@ -31,7 +42,7 @@ def install(root):
         if not archive.exists():
             print('Downloading pinned Node ' + pin['version'], flush=True)
             partial = archive.with_suffix('.partial')
-            with urllib.request.urlopen(pin['url'], timeout=60) as response, partial.open('wb') as stream:
+            with urllib.request.urlopen(pin['url'], timeout=60, context=download_tls_context()) as response, partial.open('wb') as stream:
                 shutil.copyfileobj(response, stream)
             if hashlib.sha256(partial.read_bytes()).hexdigest() != pin['sha256']:
                 raise ValueError('Node archive checksum mismatch.')
@@ -75,7 +86,8 @@ def install(root):
                         '--userconfig=' + str(empty_config), '--globalconfig=' + str(global_config)],
                        cwd=packages, env=environment, check=True, timeout=600)
     for name, package in (('playwright_cli', '@playwright/cli'), ('ast_grep', '@ast-grep/cli')):
-        version = subprocess.check_output([*command(root, name), '--version'], text=True, timeout=30).strip()
+        version = subprocess.check_output([*command(root, name), '--version'], text=True, timeout=30,
+                                          env=child_environment(root)).strip()
         if expected[package] not in version:
             raise ValueError('Unexpected installed version: ' + name + ' ' + version)
         print(name + ': ' + version, flush=True)
@@ -84,7 +96,8 @@ def install(root):
         fixture = Path(temp) / 'example.js'
         fixture.write_text('console.log(answer);\n// console.log(comment);\nconst text="console.log(string)";\n')
         output = subprocess.check_output([*command(root, 'ast_grep'), 'run', '--lang', 'javascript',
-                                         '--pattern', 'console.log($A)', '--json=compact', str(fixture)], text=True, timeout=30)
+                                         '--pattern', 'console.log($A)', '--json=compact', str(fixture)], text=True, timeout=30,
+                                         env=child_environment(root))
         matches = json.loads(output)
         if len(matches) != 1 or matches[0]['text'] != 'console.log(answer)':
             raise ValueError('Structural search qualification failed.')
