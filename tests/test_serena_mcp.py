@@ -1,6 +1,7 @@
 """Runtime selection must stay local; navigation must not expose write tools."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -31,6 +32,27 @@ class SerenaLauncherTests(unittest.TestCase):
             self.assertNotIn("--project-from-cwd", spec[0])
             self.assertNotIn("--project", spec[0])
             self.assertIn("--enable-web-dashboard", spec[0])
+
+    def test_javascript_backend_receives_private_node_without_global_changes(self):
+        module = self.module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            python = root / 'serena/.venv/Scripts/python.exe'
+            python.parent.mkdir(parents=True)
+            python.touch()
+            (root / 'packaging').mkdir()
+            (root / 'packaging/dependencies.json').write_text('{"node":{"version":"24.21.0"}}')
+            (root / 'packaging/package-lock.json').write_text('{}')
+            node = root / 'tools/node-v24.21.0-win-x64'
+            node.mkdir(parents=True)
+            for name in ('node.exe', 'npm.cmd'):
+                (node / name).touch()
+            original = {'Path': 'caller-path', 'PYTHONPATH': 'foreign'}
+            _, env = module.launch_spec(root, environ=original)
+            self.assertEqual(env['PATH'], str(node) + os.pathsep + 'caller-path')
+            self.assertNotIn('Path', env)
+            self.assertNotIn('PYTHONPATH', env)
+            self.assertEqual(original, {'Path': 'caller-path', 'PYTHONPATH': 'foreign'})
 
     def test_manifest_can_select_an_isolated_updated_runtime(self):
         module = self.module()

@@ -82,6 +82,17 @@ def launch_spec(root: Path = ROOT, *, environ=None, python_path: Path | None = N
     env = dict(os.environ if environ is None else environ)
     for key in ('PYTHONPATH', 'PYTHONHOME'):
         env.pop(key, None)
+    # JavaScript/TypeScript navigation needs Node and npm. Use the full
+    # bundle's verified distribution instead of requiring a global install.
+    try:
+        from cli_tools import runtime_paths
+        node, _, _ = runtime_paths(root)
+        if node.resolve().is_relative_to(root) and all((node / name).is_file() for name in ('node.exe', 'npm.cmd')):
+            previous = next((value for key, value in env.items() if key.lower() == 'path'), '')
+            env = {key: value for key, value in env.items() if key.lower() != 'path'}
+            env['PATH'] = str(node) + (os.pathsep + previous if previous else '')
+    except (OSError, ValueError, KeyError, TypeError):
+        pass  # Older installations can continue using their existing Node.
     env["SERENA_HOME"] = str(root / "serena/state")
     env["PYTHONUTF8"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
