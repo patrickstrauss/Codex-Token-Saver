@@ -31,7 +31,7 @@ yourself only after checking that you no longer need its private contents.
 Release CI scans all Git refs and the built source package using a hash-pinned
 Gitleaks executable. Public evidence contains rule/location metadata, never
 credential values or source snippets. Temporary scanner files are removed after
-the scan. `.gitleaks.toml` limits two reviewed exceptions to exact SHA-256 source
+the scan. `packaging/secret-scanner.toml` limits two reviewed exceptions to exact SHA-256 source
 fingerprints in one offline witness; a negative control proves new credential-like
 values in that file are still detected. Historical exceptions remain tied to exact
 committed locations. Pattern scanners can miss secrets; review contents and history

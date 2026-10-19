@@ -19,7 +19,7 @@ try {
     if ($Mode -eq 'Directory') { $taskArguments = @('dir', $taskTarget) }
     $taskPrivateReport = Join-Path $taskFolder 'findings.json'
     $taskArguments += @('--redact=100', '--no-banner', '--report-format=json', '--report-path', $taskPrivateReport)
-    $taskConfig = Join-Path $PSScriptRoot '..\.gitleaks.toml'
+    $taskConfig = Join-Path $PSScriptRoot 'secret-scanner.toml'
     if (Test-Path -LiteralPath $taskConfig) { $taskArguments += @('--config', $taskConfig) }
     # Never send source snippets or credentials to CI output or release evidence.
     $taskPreviousErrorPreference = $ErrorActionPreference

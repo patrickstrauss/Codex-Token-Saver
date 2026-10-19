@@ -64,6 +64,10 @@ class ReleaseAuditTests(unittest.TestCase):
         self.assertIn('required_document', self.checks(self.make_zip(
             payload={k: v for k, v in self.payload.items() if k != 'CONTRIBUTING.md'})))
 
+    def test_installer_incompatible_hidden_root_file_is_refused(self):
+        result = self.make_zip(payload={**self.payload, '.hidden-policy.toml': b'title = "Example"'})
+        self.assertIn('installer_path_contract', self.checks(result))
+
     def test_broken_document_path_and_fragment_are_refused(self):
         for link, check in (('absent.md', 'missing_document_link'),
                             ('docs/INSTALL.md#missing', 'missing_document_anchor')):

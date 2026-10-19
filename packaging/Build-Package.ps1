@@ -19,7 +19,7 @@ $taskRetired = @('local_summaries.py','local_summary_engine.py','local_summary_m
 $taskFiles = @(Get-ChildItem -LiteralPath $taskRepo -File | Where-Object {
     $_.Extension -in @('.py','.ps1','.ico') -and $_.Name -notin $taskRetired
 })
-foreach ($taskDoc in @('README.md','LICENSE','CONTRIBUTING.md','.gitleaks.toml','THIRD-PARTY-NOTICES.md','SECURITY.md','LIBRARY-UPDATES.md','DESKTOP-REQUEST-PROXY.md','INSTALL-PLAN.md','HEADROOM-COMPARISON.md','dashboard\LICENSE','native\README.md')) {
+foreach ($taskDoc in @('README.md','LICENSE','CONTRIBUTING.md','THIRD-PARTY-NOTICES.md','SECURITY.md','LIBRARY-UPDATES.md','DESKTOP-REQUEST-PROXY.md','INSTALL-PLAN.md','HEADROOM-COMPARISON.md','dashboard\LICENSE','native\README.md')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo $taskDoc)
 }
 foreach ($taskLauncher in @('Repair-Team-Setup.cmd','Setup-Request-Compression.cmd','Disable-Token-Saver.cmd','Uninstall-Token-Saver.cmd','Get-Token-Saver-Diagnostics.cmd')) {
@@ -29,7 +29,7 @@ foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena'
     $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo $taskDirectory) -File |
         Where-Object { $_.Name -notin $taskRetired -and ($_.Extension -in @('.py','.ps1','.cs','.html','.yml') -or
             ($taskDirectory -eq 'serena' -and $_.Name -eq 'tool-schemas.json') -or
-            ($taskDirectory -eq 'packaging' -and $_.Name -in @('dependencies.json','package.json','package-lock.json','laya-model.json',
+            ($taskDirectory -eq 'packaging' -and $_.Name -in @('dependencies.json','package.json','package-lock.json','laya-model.json','secret-scanner.toml',
                 'requirements-build.txt','requirements-windows-runtime.txt','requirements-headroom.txt','requirements-dashboard.txt','requirements-serena.txt','requirements-laya.txt'))) }
 }
 $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'dashboard\static') -File -Recurse |

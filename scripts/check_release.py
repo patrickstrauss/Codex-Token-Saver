@@ -124,6 +124,8 @@ def audit(package):
             for name in sorted(REQUIRED - payload.keys()):
                 issues.append({'file': name, 'check': 'required_document'})
             for name, raw in files.items():
+                if name.startswith('payload/') and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_./-]+', name[len('payload/'):]):
+                    issues.append({'file': name, 'check': 'installer_path_contract'})
                 parts = {part.casefold() for part in PurePosixPath(name).parts}
                 leaf = PurePosixPath(name).name.casefold()
                 suffix = PurePosixPath(name).suffix.casefold()
