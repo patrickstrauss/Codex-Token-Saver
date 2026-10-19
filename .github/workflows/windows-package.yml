@@ -57,6 +57,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Release artifact audit tests failed.' }
           python -m unittest discover -s tests -p test_codex_context_benchmark.py
           if ($LASTEXITCODE -ne 0) { throw 'Opt-in context benchmark safety tests failed.' }
+          python -m unittest discover -s tests -p test_codex_e2e_benchmark.py
+          if ($LASTEXITCODE -ne 0) { throw 'Opt-in coding benchmark safety tests failed.' }
           .\packaging\Test-SecretScan.ps1
           if (-not $?) { throw 'Secret scanner negative control failed.' }
       - name: Select package version

@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "scope": "Validation calls excluded from the frozen ten-call coding study",
+  "cli_version": "codex-cli 0.163.0-alpha.10.2",
+  "samples": [
+    {
+      "purpose": "native model context readiness; no tool task",
+      "usage": {
+        "input_tokens": 20951,
+        "cached_input_tokens": 0,
+        "output_tokens": 31
+      },
+      "valid_coding_baseline": false
+    },
+    {
+      "purpose": "initial coding validation: bundle",
+      "usage": {
+        "input_tokens": 85802,
+        "cached_input_tokens": 60928,
+        "output_tokens": 213,
+        "reasoning_output_tokens": 0
+      },
+      "valid_coding_baseline": false,
+      "strict_check_passed": true
+    },
+    {
+      "purpose": "initial coding validation: native",
+      "usage": {
+        "input_tokens": 75794,
+        "cached_input_tokens": 50944,
+        "output_tokens": 205,
+        "reasoning_output_tokens": 7
+      },
+      "valid_coding_baseline": false,
+      "strict_check_passed": false
+    },
+    {
+      "purpose": "native shell diagnostic",
+      "usage": {
+        "input_tokens": 28014,
+        "cached_input_tokens": 23936,
+        "output_tokens": 99
+      },
+      "valid_coding_baseline": false
+    },
+    {
+      "purpose": "explicit shell configuration diagnostic; restricted-token sandbox refusal",
+      "usage": {
+        "input_tokens": 27954,
+        "cached_input_tokens": 23808,
+        "output_tokens": 102
+      },
+      "valid_coding_baseline": false
+    }
+  ],
+  "cli_invocations": 5,
+  "total_reported_input_tokens": 238515,
+  "total_reported_output_tokens": 650,
+  "notes": [
+    "The prior CLI 0.117.0 failure is preserved separately in native-context-pilot.json.",
+    "The initial restricted-token sandbox did not provide a valid native tool-using baseline.",
+    "The final frozen study explicitly selected the same full-access mode in both temporary profiles.",
+    "No raw diagnostics, credentials, private history or encrypted data are included.",
+    "No measured-task manual retries; internal network retries are not measured."
+  ]
+}

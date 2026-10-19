@@ -59,12 +59,18 @@ selection. See [using the bundle](docs/USING-BUNDLE.md),
 The [reproducible offline benchmark](docs/BENCHMARK.md) compares native file/command
 output with individual bundle tools. The [sample results](docs/benchmarks/offline-windows.md)
 include reductions, latency overhead, a small-file expansion and full-retrieval
-costs. Raw JSON is included. This is not an end-to-end Codex A/B result.
+costs. Raw JSON is included.
+
+The [five-pair tool-using Codex study](docs/benchmarks/coding-windows.md) measured
+19.3% more input tokens and 35.8% longer runtime with explicit bundle tools on
+small synthetic tasks. Both arms passed 4/5 strict checks. This negative result
+does not measure automatic request compression or RTK hooks, and does not establish
+equivalent task quality or account quota savings.
 
 Savings depend on workload. Local counts are estimates, layers can overlap, and
 retrieval can erase savings. Never add RTK/local/request estimates together or
-present them as measured ChatGPT quota savings. An end-to-end A/B protocol is
-documented; its model-quality/quota results have not been measured.
+present them as measured ChatGPT quota savings. The [methodology](docs/BENCHMARK.md)
+includes reproducible runners, failed diagnostic pilots and the remaining limits.
 
 The Headroom request counter shows a rolling **last 24 hours**, across local
 midnight. It uses the token-only event ledger, never substitutes lifetime totals,

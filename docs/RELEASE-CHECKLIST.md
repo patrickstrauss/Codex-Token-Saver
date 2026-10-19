@@ -48,6 +48,9 @@ Windows 11 VM work is **paused**. Do not recreate the VM as part of release auto
 - [ ] Live external-client support: record exact client version, authenticated tool call,
   trust/reload behavior and disconnect/uninstall preservation. Shared MCP tests do not
   install or log into those clients.
-- [ ] End-to-end coding quality/usage: finish the
-  [paired study](BENCHMARK.md#native-codex-ab-study-not-yet-measured).
-  A failed pilot or local avoided-token estimate does not establish quota savings.
+- [x] Publish five paired native Codex / explicit-tool coding tasks, including
+  failures, usage, timing, frozen fixtures and tool adoption. See the
+  [paired study](BENCHMARK.md#tool-using-native-codex-study).
+- [ ] Establish broader task-quality equivalence and automatic-stack benefits.
+  The small study found overhead, with 4/5 strict checks passed in each arm.
+  Neither it nor local avoided-token estimates establish quota savings.
