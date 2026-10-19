@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "measured_at": "2026-10-19T11:10:27.799562+00:00",
+  "scope": "Synthetic log diagnosis: raw context versus local Headroom context; tools not selected by model",
+  "model": "gpt-6.1-sol",
+  "reasoning_effort": "low",
+  "samples": [
+    {
+      "passed": false,
+      "usage": null,
+      "unexpected_tool_calls": 0,
+      "answer_correct": false,
+      "runtime_failed": true,
+      "fixture": "log-1",
+      "arm": "native",
+      "return_code": 1,
+      "wall_seconds": 66.646,
+      "context_sha256": "b42d802cff21acd37611fd7cfa67e262658ce7103eff027961d6c05940c0bb04",
+      "context_tokens": 4807
+    }
+  ],
+  "passed": false,
+  "stopped_reason": "Native CLI/auth/model request failed or did not report usage; no retries made",
+  "daily_auth_file_unchanged": true,
+  "cli_invocations": 1,
+  "automatic_network_retries_measured": false,
+  "profile": "Temporary native-provider profile; ephemeral fresh sessions",
+  "limitations": [
+    "Five synthetic log fixtures are not a representative end-to-end coding benchmark.",
+    "Does not measure RTK, Laya routing, Serena, structural search, browser work or request compression.",
+    "Cached input is reported separately; input token counts are not quota or billing savings.",
+    "No model grading call is used; answers must exactly match preregistered fixture fields."
+  ],
+  "cli_version": "0.117.0"
+}

@@ -123,6 +123,20 @@ explicitly available CDP endpoint.
 
 Current validation covers format contracts, preservation, conflict refusal,
 rollback, multiple-client removal, launcher isolation and dashboard security.
+The shared MCP SDK test initializes each of the nine serializers above, discovers
+Headroom tools and performs an exact file read. It also discovers Laya and Serena
+tools. Temporary state is used; no model call or client login is performed.
+
+Reproduce with the installed Headroom Python from a complete installation:
+
+```powershell
+& "$env:USERPROFILE\CodexTokenSaver\headroom\.venv\Scripts\python.exe" scripts\verify_harness_protocol.py --root . --output mcp-protocol.json
+```
+
+For a source checkout, point `--root` at an installation containing
+`headroom/tokenizer-cache`. CI ships this report with each candidate. The daily
+profile is not modified. See [qualification status](RELEASE-STATUS.md).
+
 Live authenticated sessions in external clients remain unverified until tested
 with those installed clients. No end-to-end savings claim is inferred from MCP
 registration or operation counts.

@@ -4,10 +4,10 @@ Generated from synthetic fixtures; no Codex/model requests were made.
 
 | Case | Native output tokens | Bundle output tokens | Reduction | Added median latency | Net after full retrieval |
 |---|---:|---:|---:|---:|---:|
-| records.json | 3,758 | 1,475 | 60.8% | 8.369 ms | -1592 |
-| worker.log | 4,997 | 316 | 93.7% | 7.787 ms | -435 |
-| small.txt | 10 | 140 | -1300.0% | 5.246 ms | -130 |
-| git diff (RTK) | 70 | 70 | 0.0% | 98.523 ms | Not measured |
+| records.json | 3,758 | 1,476 | 60.7% | 16.124 ms | -1594 |
+| worker.log | 4,997 | 3,311 | 33.7% | 18.599 ms | -3429 |
+| small.txt | 10 | 143 | -1330.0% | 10.277 ms | -133 |
+| git diff (RTK) | 70 | 70 | 0.0% | 340.741 ms | Not measured |
 
 Token estimates use the installed local tokenizer. Cases are separate comparisons and must not be added together.
 

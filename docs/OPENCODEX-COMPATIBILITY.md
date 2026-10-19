@@ -5,8 +5,9 @@ They are **not installed or release-qualified**. The live connection, model, rea
 and credentials have not been changed by development. Start with
 [installation and restart steps](OPENCODEX-INTEGRATION.md).
 
-The approved [design](superpowers/specs/2026-09-27-opencodex-compatibility-design.md)
-keeps OpenCodex responsible for routing, credentials, catalog, voice and subagents.
+The optional integration keeps OpenCodex responsible for routing, credentials,
+catalog, voice and subagents. Native Codex is the default supported connection;
+OpenCodex is not required for normal installation or use.
 Token Saver supplies local tools and a transform-only Headroom service.
 
 Codex → OpenCodex history reconstruction → copy eligible tool text → local Headroom

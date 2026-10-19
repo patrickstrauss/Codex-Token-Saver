@@ -87,6 +87,8 @@ if ($EvidenceDirectory) {
     Copy-Item -LiteralPath (Join-Path $taskSandbox 'lifecycle-result.json') -Destination $EvidenceDirectory
     & $taskPython (Join-Path $taskInstall 'packaging\make_inventory.py') --root $taskInstall --output (Join-Path $EvidenceDirectory 'runtime-inventory.json')
     if ($LASTEXITCODE -ne 0) { throw 'Runtime inventory failed.' }
+    & $taskPython (Join-Path $taskInstall 'scripts\verify_harness_protocol.py') --root $taskInstall --output (Join-Path $EvidenceDirectory 'mcp-protocol.json')
+    if ($LASTEXITCODE -ne 0) { throw 'Shared MCP protocol qualification failed.' }
 }
 Write-Output 'PASS: source upgrade, injected rollback, owned integration removal, uninstall preview, backup-preserving uninstall and clean reinstall.'
 Write-Output "PASS: fresh RTK history, dashboard readiness, artifact repair, runtime checks, compression quality benchmark, repeated install, and isolated Codex settings preservation. Evidence: $taskSandbox"

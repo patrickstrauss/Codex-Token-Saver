@@ -8,6 +8,7 @@ Cline, Kilo and other stdio MCP clients. OpenCodex is not required.
 **Preview software.** Clean-install CI and benchmark evidence are provided with
 builds. A stable release requires the desktop/reboot checks in the
 [release checklist](docs/RELEASE-CHECKLIST.md). No fixed token or quota reduction is promised.
+See [qualification status and evidence](docs/RELEASE-STATUS.md) before installing a candidate.
 
 ## Install
 

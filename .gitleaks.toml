@@ -1,0 +1,14 @@
+title = "Token Saver release scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Two reviewed SHA-256 source fingerprints in the offline OpenCodex witness; not credentials"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(^|[/\\])docs[/\\]opencodex[/\\]offline-witness\.json$''']
+regexes = ['''^(3706ed72f75ba69485360dafc747612eab350e656f9251eb6fc790fd6699c4c4|2805a229d2fa45970248e988465920f6a9b8a2f1b181062205ceb4feb1416de5)$''']

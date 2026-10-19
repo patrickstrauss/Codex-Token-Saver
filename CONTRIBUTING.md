@@ -16,3 +16,29 @@ package on a clean Windows runner. The [release checklist](docs/RELEASE-CHECKLIS
 defines the acceptance gates. Download hashes, runtime constraints and upstream
 licenses need review when dependency pins change. Keep public benchmark fixtures
 deterministic and report regressions/overheads as well as reductions.
+
+Release-tooling tests that use only the Python standard library:
+
+```powershell
+python -m unittest tests.test_release_audit tests.test_codex_context_benchmark tests.test_harness_clients tests.test_source_upgrade tests.test_performance_benchmark tests.test_storage_cleanup
+```
+
+Server-protocol checks use the installed Headroom Python and
+`scripts/verify_harness_protocol.py`; see [client setup](docs/CODING-CLIENTS.md).
+The native context benchmark defaults to a plan with no model calls. Read
+[benchmark limits](docs/BENCHMARK.md) before opting in with `--run`.
+
+Before releasing, build to a new version/output directory and audit the source ZIP:
+
+```powershell
+.\packaging\Build-Package.ps1 -Version local-preview -OutputDirectory .scratch\release-check
+python scripts\check_release.py --package .scratch\release-check\Codex-Token-Saver-local-preview-windows-x64.zip --output .scratch\release-check\package-audit.json
+.\packaging\Check-Secrets.ps1 -ReportPath .scratch\release-check\security-history.json
+.\packaging\Check-Secrets.ps1 -Mode Directory -Target .scratch\release-check\Codex-Token-Saver-local-preview-windows-x64 -ReportPath .scratch\release-check\security-package.json
+.\packaging\Test-SecretScan.ps1
+```
+
+Do not share full scanner findings or source snippets publicly. CI publishes
+redacted reports and provenance; an explicitly requested release remains a draft
+until owner review. Check [release status](docs/RELEASE-STATUS.md) before making
+stable-release or live-client compatibility claims.

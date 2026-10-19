@@ -33,8 +33,44 @@ and makes zero model requests. Never add the per-tool estimates together.
 
 The [checked-in sample](benchmarks/offline-windows.md) includes raw data. It is one
 machine's synthetic workload, not an expected percentage for everyone's work.
-CI publishes a fresh measurement from each clean install. No measured end-to-end
-Codex quota or answer-quality claim is currently made.
+CI publishes a fresh measurement and runtime inventory from each clean install.
+The checked-in 19 October sample used Headroom 0.37.0, tiktoken 0.14.0, Python
+3.13.14 and Windows build 26200 x64. It is an existing-install sample, not a
+claim that these are the candidate's dependency versions. Log compression and
+latency vary with dependency/configuration changes; use a candidate's attached
+JSON and inventory when evaluating that candidate. No measured end-to-end Codex
+quota or answer-quality claim is currently made.
+
+## Opt-in native context pilot
+
+`scripts/benchmark_codex_context.py` generates five deterministic log-diagnosis
+fixtures with preregistered answers. It defaults to a plan with zero model calls:
+
+```powershell
+python scripts\benchmark_codex_context.py --output context-plan.json
+```
+
+An explicitly budgeted run needs `--run --installed PATH --codex PATH_TO_NATIVE_EXE
+--model MODEL --output context-result.json`. Use the installed Headroom Python.
+`--pairs 1` makes at most two CLI invocations for a pilot. `--token-budget` stops
+between tasks using reported input/output usage; it cannot cap one task or measure
+internal network retries. The CLI must support `exec --ephemeral --json
+--output-schema`. See the [official noninteractive CLI guide](https://developers.openai.com/codex/noninteractive/).
+
+The runner copies an existing native ChatGPT login into a temporary OS profile,
+keeps global configuration/authentication unchanged, uses fresh ephemeral sessions
+and removes the temporary profile afterward. It never publishes credentials,
+prompts or raw CLI diagnostics. Do not run it on an untrusted host. Local Headroom
+compression is offline; model diagnosis uses the native provider. No paid calls
+are part of CI. Treat its exact-answer rubric as a small context experiment, not
+a whole-bundle coding benchmark or test of autonomous tool selection.
+
+The [19 October pilot report](benchmarks/native-context-pilot.json) records one
+failed native CLI invocation (CLI 0.117.0, requested `gpt-6.1-sol`). It reported no
+usage or valid answer; the treatment arm was not run. The failure is unclassified,
+the daily auth file remained unchanged and no manual retry was made. This is not
+evidence of model availability, equivalent answer quality, or token/quota savings.
+No global authentication, routing or CLI installation was changed to repair the pilot.
 
 ## Native Codex A/B study (not yet measured)
 
