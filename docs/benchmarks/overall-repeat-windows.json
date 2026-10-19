@@ -1,0 +1,522 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-10-19T13:58:02.036265+00:00",
+  "scope": "Five paired coding tasks: native vs explicit tools plus automatic request compression and reviewed hook",
+  "metadata": {
+    "configured_model": "gpt-6.1-sol",
+    "reasoning_effort": "low",
+    "codex_version": "codex-cli 0.163.0-alpha.10.2",
+    "os": "Windows",
+    "os_version": "10.0.26200",
+    "architecture": "AMD64",
+    "bundle_source_sha256": {
+      "bundle_router_mcp.py": "4dddd2ef7482bd9a95705b298905dd619aa2df35b3a70bb8a4c86c8b110f1d05",
+      "desktop_mcp.py": "c32ce420880c6917ac1a97386dcdba2fa3677d34e0b0b43c99b5d1033ed58468",
+      "serena_mcp.py": "3d6027cd05b493cc5bc33640a3274c6ebbf25915cd818c63d7f27a60f26a41ef",
+      "laya_dispatch.py": "50df7c5d58c7da90ee13349c72352599fb63f08dfb508f40832802c9496cd6c7",
+      "bundle_router.py": "505ce0e5c5687d473776d989b8e946cf4ff2d3b244d675324a6b00b9b69bdfd7",
+      "desktop_headroom.py": "18d5fe715412781e6d8bef7e6d046181cd6837e6604e8a66f31401c1aa8cddd4",
+      "desktop_proxy.py": "493b7f4cf798f0940c33ded747aee76955ef77f69430bf0c09f3615b474717f6",
+      "proxy_runtime.py": "d92472e5b495f7991a9d86e0a392f9f893f480daf8d36f0a17c518a66978a2eb",
+      "Headroom-PreToolUse.ps1": "c6919d4708e1d675123a539bff4737162fba346d7bbcb580ad50ef00df013a4d",
+      "bin/rtk.exe": "d5c40d422188f6fbbdeb5cf4b471eb9979da94776bce534bba2c523887dd4e93"
+    },
+    "components_on": [
+      "ast_grep",
+      "headroom_local",
+      "laya_router",
+      "playwright_cli",
+      "rtk",
+      "serena"
+    ],
+    "runner_sha256": "9ada61bc1f6d1f5272d6a85404616e9750cf4813f25ca382a4e2fd86a8951691",
+    "fixture_generator_sha256": "6364878edbe56c8e2bd9cd23f446836672ecb518c300f5eb479e6f2b57ae7412",
+    "stack_helper_sha256": "17627c65ce8eca03b3d164f595e83dfe6945c0a8536e4f4bbe715e0458f03647",
+    "seed": 20261020,
+    "manifest_sha256": "759c6d7033e09e82dbe69b0468c42625262814baa3802a036983bc9e292578b2",
+    "automatic_compression": true,
+    "automatic_hook": true,
+    "configuration": "full",
+    "sandbox_mode": "danger-full-access",
+    "bundle_versions": {
+      "headroom": "0.40.0",
+      "serena": "2.0.0",
+      "laya": "0.4.6",
+      "rtk": "rtk 1.0.0",
+      "ast-grep": "ast-grep 0.50.0"
+    }
+  },
+  "samples": [
+    {
+      "case": "log-diagnosis",
+      "arm": "bundle",
+      "usage": {
+        "input_tokens": 62630,
+        "cached_input_tokens": 44672,
+        "output_tokens": 227,
+        "reasoning_output_tokens": 0
+      },
+      "runtime_failed": false,
+      "error_events": 0,
+      "command_failures": 0,
+      "tool_counts": {
+        "command_execution": 2,
+        "mcp_tool_call": 1
+      },
+      "bundle_calls": [
+        {
+          "server": "headroom_desktop",
+          "tool": "headroom_read_file",
+          "failed": false
+        }
+      ],
+      "quality": {
+        "immutable_files_preserved": true,
+        "altered_fixture_files": [],
+        "answer_correct": true,
+        "passed": true
+      },
+      "return_code": 0,
+      "timed_out": false,
+      "wall_seconds": 18.256,
+      "failure_category": null,
+      "changed_source_sha256": {},
+      "automatic_activity": {
+        "relay_connections": {
+          "optimized": 1,
+          "direct": 7,
+          "failed": 1,
+          "active": 0
+        },
+        "hook": {
+          "observed": true,
+          "events": {
+            "skipped": 2
+          },
+          "coverage_complete": true
+        },
+        "backend_version": "0.40.0"
+      },
+      "passed": true
+    },
+    {
+      "case": "log-diagnosis",
+      "arm": "native",
+      "usage": {
+        "input_tokens": 43571,
+        "cached_input_tokens": 27904,
+        "output_tokens": 144,
+        "reasoning_output_tokens": 0
+      },
+      "runtime_failed": false,
+      "error_events": 0,
+      "command_failures": 0,
+      "tool_counts": {
+        "command_execution": 2
+      },
+      "bundle_calls": [],
+      "quality": {
+        "immutable_files_preserved": true,
+        "altered_fixture_files": [],
+        "answer_correct": true,
+        "passed": true
+      },
+      "return_code": 0,
+      "timed_out": false,
+      "wall_seconds": 12.178,
+      "failure_category": null,
+      "changed_source_sha256": {},
+      "passed": true
+    },
+    {
+      "case": "symbol-tracing",
+      "arm": "native",
+      "usage": {
+        "input_tokens": 40574,
+        "cached_input_tokens": 26496,
+        "output_tokens": 137,
+        "reasoning_output_tokens": 0
+      },
+      "runtime_failed": false,
+      "error_events": 0,
+      "command_failures": 0,
+      "tool_counts": {
+        "command_execution": 2
+      },
+      "bundle_calls": [],
+      "quality": {
+        "immutable_files_preserved": true,
+        "altered_fixture_files": [],
+        "answer_correct": true,
+        "passed": true
+      },
+      "return_code": 0,
+      "timed_out": false,
+      "wall_seconds": 13.956,
+      "failure_category": null,
+      "changed_source_sha256": {},
+      "passed": true
+    },
+    {
+      "case": "symbol-tracing",
+      "arm": "bundle",
+      "usage": {
+        "input_tokens": 106424,
+        "cached_input_tokens": 73216,
+        "output_tokens": 288,
+        "reasoning_output_tokens": 0
+      },
+      "runtime_failed": false,
+      "error_events": 0,
+      "command_failures": 0,
+      "tool_counts": {
+        "mcp_tool_call": 3,
+        "command_execution": 1
+      },
+      "bundle_calls": [
+        {
+          "server": "bundle_serena",
+          "tool": "activate_project",
+          "failed": false
+        },
+        {
+          "server": "bundle_serena",
+          "tool": "find_symbol",
+          "failed": false
+        },
+        {
+          "server": "headroom_desktop",
+          "tool": "headroom_retrieve",
+          "failed": false
+        }
+      ],
+      "quality": {
+        "immutable_files_preserved": true,
+        "altered_fixture_files": [],
+        "answer_correct": true,
+        "passed": true
+      },
+      "return_code": 0,
+      "timed_out": false,
+      "wall_seconds": 25.385,
+      "failure_category": null,
+      "changed_source_sha256": {},
+      "automatic_activity": {
+        "relay_connections": {
+          "optimized": 1,
+          "direct": 9,
+          "failed": 1,
+          "active": 0
+        },
+        "hook": {
+          "observed": true,
+          "events": {
+            "rewritten": 1
+          },
+          "coverage_complete": true
+        },
+        "backend_version": "0.40.0"
+      },
+      "passed": true
+    },
+    {
+      "case": "structural-audit",
+      "arm": "native",
+      "usage": {
+        "input_tokens": 40549,
+        "cached_input_tokens": 26496,
+        "output_tokens": 104,
+        "reasoning_output_tokens": 0
+      },
+      "runtime_failed": false,
+      "error_events": 0,
+      "command_failures": 0,
+      "tool_counts": {
+        "command_execution": 2
+      },
+      "bundle_calls": [],
+      "quality": {
+        "immutable_files_preserved": true,
+        "altered_fixture_files": [],
+        "answer_correct": true,
+        "passed": true
+      },
+      "return_code": 0,
+      "timed_out": false,
+      "wall_seconds": 12.69,
+      "failure_category": null,
+      "changed_source_sha256": {},
+      "passed": true
+    },
+    {
+      "case": "structural-audit",
+      "arm": "bundle",
+      "usage": {
+        "input_tokens": 46825,
+        "cached_input_tokens": 29312,
+        "output_tokens": 194,
+        "reasoning_output_tokens": 0
+      },
+      "runtime_failed": false,
+      "error_events": 0,
+      "command_failures": 0,
+      "tool_counts": {
+        "command_execution": 1,
+        "mcp_tool_call": 1
+      },
+      "bundle_calls": [
+        {
+          "server": "bundle_laya_router",
+          "tool": "bundle_query",
+          "failed": false
+        }
+      ],
+      "quality": {
+        "immutable_files_preserved": true,
+        "altered_fixture_files": [],
+        "answer_correct": true,
+        "passed": true
+      },
+      "return_code": 0,
+      "timed_out": false,
+      "wall_seconds": 18.433,
+      "failure_category": null,
+      "changed_source_sha256": {},
+      "automatic_activity": {
+        "relay_connections": {
+          "optimized": 1,
+          "direct": 6,
+          "failed": 1,
+          "active": 0
+        },
+        "hook": {
+          "observed": true,
+          "events": {
+            "skipped": 1
+          },
+          "coverage_complete": true
+        },
+        "backend_version": "0.40.0"
+      },
+      "passed": true
+    },
+    {
+      "case": "tested-code-fix",
+      "arm": "native",
+      "usage": {
+        "input_tokens": 41782,
+        "cached_input_tokens": 26624,
+        "output_tokens": 1264,
+        "reasoning_output_tokens": 366
+      },
+      "runtime_failed": false,
+      "error_events": 0,
+      "command_failures": 0,
+      "tool_counts": {
+        "command_execution": 2,
+        "file_change": 1
+      },
+      "bundle_calls": [],
+      "quality": {
+        "immutable_files_preserved": true,
+        "altered_fixture_files": [],
+        "hidden_tests_passed": true,
+        "answer_correct": true,
+        "passed": true
+      },
+      "return_code": 0,
+      "timed_out": false,
+      "wall_seconds": 39.131,
+      "failure_category": null,
+      "changed_source_sha256": {
+        "retries.py": "349e4c2fccbdec67802196820632334c53ecdbb7ff0d211fdd0e230e87d885eb"
+      },
+      "passed": true
+    },
+    {
+      "case": "tested-code-fix",
+      "arm": "bundle",
+      "usage": {
+        "input_tokens": 87662,
+        "cached_input_tokens": 70656,
+        "output_tokens": 1705,
+        "reasoning_output_tokens": 447
+      },
+      "runtime_failed": false,
+      "error_events": 0,
+      "command_failures": 0,
+      "tool_counts": {
+        "command_execution": 3,
+        "mcp_tool_call": 2,
+        "file_change": 2
+      },
+      "bundle_calls": [
+        {
+          "server": "headroom_desktop",
+          "tool": "headroom_retrieve",
+          "failed": true
+        },
+        {
+          "server": "headroom_desktop",
+          "tool": "headroom_retrieve",
+          "failed": false
+        }
+      ],
+      "quality": {
+        "immutable_files_preserved": true,
+        "altered_fixture_files": [],
+        "hidden_tests_passed": true,
+        "answer_correct": true,
+        "passed": true
+      },
+      "return_code": 0,
+      "timed_out": false,
+      "wall_seconds": 60.333,
+      "failure_category": null,
+      "changed_source_sha256": {
+        "retries.py": "0d0a584d8c9cab64db2f4191216fca1263c3d836b1bcfc295a8729b6a3e74016"
+      },
+      "automatic_activity": {
+        "relay_connections": {
+          "optimized": 1,
+          "direct": 9,
+          "failed": 1,
+          "active": 0
+        },
+        "hook": {
+          "observed": true,
+          "events": {
+            "skipped": 3
+          },
+          "coverage_complete": true
+        },
+        "backend_version": "0.40.0"
+      },
+      "passed": true
+    },
+    {
+      "case": "patch-review",
+      "arm": "native",
+      "usage": {
+        "input_tokens": 26917,
+        "cached_input_tokens": 13184,
+        "output_tokens": 105,
+        "reasoning_output_tokens": 0
+      },
+      "runtime_failed": false,
+      "error_events": 0,
+      "command_failures": 0,
+      "tool_counts": {
+        "command_execution": 1
+      },
+      "bundle_calls": [],
+      "quality": {
+        "immutable_files_preserved": true,
+        "altered_fixture_files": [],
+        "answer_correct": true,
+        "passed": true
+      },
+      "return_code": 0,
+      "timed_out": false,
+      "wall_seconds": 9.183,
+      "failure_category": null,
+      "changed_source_sha256": {},
+      "passed": true
+    },
+    {
+      "case": "patch-review",
+      "arm": "bundle",
+      "usage": {
+        "input_tokens": 56960,
+        "cached_input_tokens": 41216,
+        "output_tokens": 208,
+        "reasoning_output_tokens": 0
+      },
+      "runtime_failed": false,
+      "error_events": 0,
+      "command_failures": 0,
+      "tool_counts": {
+        "command_execution": 1,
+        "mcp_tool_call": 1
+      },
+      "bundle_calls": [
+        {
+          "server": "headroom_desktop",
+          "tool": "headroom_retrieve",
+          "failed": false
+        }
+      ],
+      "quality": {
+        "immutable_files_preserved": true,
+        "altered_fixture_files": [],
+        "answer_correct": true,
+        "passed": true
+      },
+      "return_code": 0,
+      "timed_out": false,
+      "wall_seconds": 20.209,
+      "failure_category": null,
+      "changed_source_sha256": {},
+      "automatic_activity": {
+        "relay_connections": {
+          "optimized": 1,
+          "direct": 7,
+          "failed": 1,
+          "active": 0
+        },
+        "hook": {
+          "observed": true,
+          "events": {
+            "rewritten": 1
+          },
+          "coverage_complete": true
+        },
+        "backend_version": "0.40.0"
+      },
+      "passed": true
+    }
+  ],
+  "manual_retries": 0,
+  "automatic_network_retries_measured": false,
+  "daily_profile_unchanged": true,
+  "limitations": [
+    "Five synthetic paired tasks; no statistical generalization.",
+    "Full configured coding stack; browser tasks and external clients excluded.",
+    "Provider prefix caches and shared workers are not flushed; cache tokens reported separately.",
+    "Reported tokens are not measured weekly quota or billing savings.",
+    "Bundle events are tagged diagnostic; installed workers may update diagnostic/runtime aggregates.",
+    "Token budget is checked between CLI tasks, not a cap on one task or internal retries.",
+    "Uses an isolated production relay and the existing warm Headroom backend; no worker restart or global route change."
+  ],
+  "summary": {
+    "arms": {
+      "native": {
+        "attempts": 5,
+        "passed": 5,
+        "usage_samples": 5,
+        "wall_seconds": 87.138,
+        "input_tokens": 193393,
+        "cached_input_tokens": 120704,
+        "output_tokens": 1754,
+        "uncached_input_tokens": 72689
+      },
+      "bundle": {
+        "attempts": 5,
+        "passed": 5,
+        "usage_samples": 5,
+        "wall_seconds": 142.616,
+        "input_tokens": 360501,
+        "cached_input_tokens": 259072,
+        "output_tokens": 2622,
+        "uncached_input_tokens": 101429
+      }
+    },
+    "input_reduction_percent": -86.41,
+    "quota_savings_measured": false,
+    "billing_savings_measured": false,
+    "bundle_calls": 8,
+    "bundle_call_failures": 1
+  },
+  "complete": true,
+  "passed": true
+}

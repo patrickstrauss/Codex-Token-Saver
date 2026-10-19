@@ -1,6 +1,7 @@
 """Opt-in paired, tool-using Codex coding benchmark; no VM or daily profile changes."""
 import argparse
 from collections import Counter
+from contextlib import ExitStack
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts.benchmark_e2e_fixtures import ORACLE, cases, grade, manifest, prepare, schema
+from scripts.benchmark_stack import full_configuration
 
 COMMON_GUIDANCE = '''Work only in the task workspace. Do not inspect parent directories, user data,
 credentials or other projects. Use available tools to investigate; do not guess.
@@ -66,15 +68,30 @@ print(json.dumps({'headroom':selected_runtime(root)['version'],
     return versions
 
 
-def study_manifest(seed):
+def study_cases(configuration='explicit'):
+    data = cases()
+    if configuration == 'full':
+        for case in data:
+            if case['id'] == 'symbol-tracing':
+                case['prompt'] += (' Return implementation and validation as unqualified function names, '
+                                   'and source as a project-relative file path using forward slashes.')
+    return data
+
+
+def study_manifest(seed, configuration='explicit'):
     data = manifest(seed)
+    for item, case in zip(data['cases'], study_cases(configuration)):
+        item['prompt'] = case['prompt']
     rng = random.Random(seed)
     for case in data['cases']:
         case['order'] = rng.sample(['native', 'bundle'], 2)
-    data.update(oracle_sha256=hashlib.sha256(ORACLE.encode()).hexdigest(),
+    data.update(configuration=configuration, oracle_sha256=hashlib.sha256(ORACLE.encode()).hexdigest(),
                 native_guidance=COMMON_GUIDANCE, bundle_guidance=COMMON_GUIDANCE + BUNDLE_GUIDANCE,
                 excluded=['automatic request proxy', 'automatic command hook', 'browser tasks',
                           'external harnesses', 'account quota/billing measurement'])
+    if configuration == 'full':
+        data['scope'] = 'Five paired coding tasks: native vs explicit tools plus automatic request compression and reviewed hook'
+        data['excluded'] = ['browser tasks', 'external harnesses', 'account quota/billing measurement']
     return data
 
 
@@ -227,22 +244,28 @@ def run(args, frozen):
         component_flags.update(data['components'])
     if any(component_flags.get(key) is not True for key in ('headroom_local', 'serena', 'ast_grep', 'rtk', 'laya_router')):
         raise ValueError('Required bundle components must already be On; no switches changed')
-    source_files = {name: hashlib.sha256((installed / name).read_bytes()).hexdigest()
-                    for name in (*SERVERS.values(), 'laya_dispatch.py', 'bundle_router.py', 'desktop_headroom.py')}
+    source_names = [*SERVERS.values(), 'laya_dispatch.py', 'bundle_router.py', 'desktop_headroom.py']
+    if args.configuration == 'full':
+        source_names += ['desktop_proxy.py', 'proxy_runtime.py', 'Headroom-PreToolUse.ps1', 'bin/rtk.exe']
+    source_files = {name: hashlib.sha256((installed / name).read_bytes()).hexdigest() for name in source_names}
     metadata = {'configured_model': args.model, 'reasoning_effort': 'low', 'codex_version': version,
                 'os': platform.system(), 'os_version': platform.version(), 'architecture': platform.machine(),
                 'bundle_source_sha256': source_files, 'components_on': sorted(key for key, value in component_flags.items() if value),
                 'runner_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                 'fixture_generator_sha256': hashlib.sha256((ROOT / 'scripts/benchmark_e2e_fixtures.py').read_bytes()).hexdigest(),
+                'stack_helper_sha256': hashlib.sha256((ROOT / 'scripts/benchmark_stack.py').read_bytes()).hexdigest(),
                 'seed': args.seed, 'manifest_sha256': fingerprint(frozen),
-                'automatic_compression': False, 'automatic_hook': False,
+                'automatic_compression': args.configuration == 'full', 'automatic_hook': args.configuration == 'full',
+                'configuration': args.configuration,
                 'sandbox_mode': args.sandbox, 'bundle_versions': runtime_versions(installed)}
     auth_home = Path(os.environ.get('CODEX_HOME', str(Path.home() / '.codex')))
     auth_file = auth_home / 'auth.json'
     auth = json.loads(auth_file.read_bytes())
     if auth.get('OPENAI_API_KEY') or not auth.get('tokens'):
         raise ValueError('An existing native ChatGPT login is required; no login reset performed')
-    originals = {path: path.read_bytes() for path in (auth_file, auth_home / 'config.toml') if path.exists()}
+    originals = {path: path.read_bytes() for path in (auth_file, auth_home / 'config.toml', auth_home / 'hooks.json',
+                 installed / 'settings/components.json', installed / 'settings/extensions.json',
+                 installed / 'proxy/settings.json') if path.exists()}
     if args.output.exists():
         if not args.resume:
             raise ValueError('Output exists; use --resume to continue without repeating completed samples')
@@ -260,6 +283,9 @@ def run(args, frozen):
                       'Reported tokens are not measured weekly quota or billing savings.',
                       'Bundle events are tagged diagnostic; installed workers may update diagnostic/runtime aggregates.',
                       'Token budget is checked between CLI tasks, not a cap on one task or internal retries.']}
+        if args.configuration == 'full':
+            report['limitations'][1] = 'Full configured coding stack; browser tasks and external clients excluded.'
+            report['limitations'].append('Uses an isolated production relay and the existing warm Headroom backend; no worker restart or global route change.')
     if not args.resume:
         args.output.with_suffix('.manifest.json').write_text(json.dumps(frozen, indent=2) + '\n', encoding='utf-8')
     finished = {(row['case'], row['arm']) for row in report['samples']}
@@ -268,7 +294,7 @@ def run(args, frozen):
         raise ValueError('Invalid or duplicate checkpoint samples')
     ran_pairs = 0
     try:
-        for case, frozen_case in zip(cases(), frozen['cases']):
+        for case, frozen_case in zip(study_cases(args.configuration), frozen['cases']):
             if all((case['id'], arm) in finished for arm in frozen_case['order']):
                 continue
             if ran_pairs >= args.max_pairs:
@@ -281,7 +307,7 @@ def run(args, frozen):
                 if spent >= args.token_budget:
                     report['stopped_reason'] = 'Reported token stop threshold reached before next task'
                     return report
-                with tempfile.TemporaryDirectory(prefix='token-saver-e2e-') as temporary:
+                with tempfile.TemporaryDirectory(prefix='token-saver-e2e-') as temporary, ExitStack() as sessions:
                     folder = Path(temporary)
                     profile, state, workspace = folder / 'profile', folder / 'tool-state', folder / 'workspace'
                     profile.mkdir(); state.mkdir()
@@ -295,6 +321,12 @@ def run(args, frozen):
                     command = [str(executable), 'exec', '--ephemeral', '--json', '--color', 'never',
                                '--sandbox', args.sandbox, '--skip-git-repo-check', '--cd', str(workspace),
                                '--output-schema', str(schema_file), '-']
+                    observation = None
+                    if args.configuration == 'full' and arm == 'bundle':
+                        observation = sessions.enter_context(full_configuration(installed, state, profile, env))
+                        # Only the exact reviewed production hook in this temporary profile.
+                        # No trust is persisted or inherited from the user's other hooks.
+                        command.insert(2, '--dangerously-bypass-hook-trust')
                     started = perf_counter()
                     code, stdout, stderr, timed_out = invoke(command, case['prompt'], env, args.task_timeout)
                     elapsed = round(perf_counter() - started, 3)
@@ -307,6 +339,8 @@ def run(args, frozen):
                                failure_category=failure_category(stdout + stderr) if code or timed_out or not quality['passed'] else None,
                                changed_source_sha256={name: hashlib.sha256((workspace / name).read_bytes()).hexdigest()
                                                       for name in case.get('editable', []) if (workspace / name).is_file()})
+                    if observation is not None:
+                        row['automatic_activity'] = observation(stdout)
                     row['passed'] = code == 0 and not timed_out and not parsed['runtime_failed'] and parsed['usage'] is not None and quality['passed'] and sum(parsed['tool_counts'].values()) > 0
                     report['samples'].append(row)
                     report['daily_profile_unchanged'] = all(path.read_bytes() == content for path, content in originals.items())
@@ -330,6 +364,7 @@ def main():
     parser.add_argument('--installed', type=Path)
     parser.add_argument('--codex', type=Path)
     parser.add_argument('--model', default='gpt-6.1-sol')
+    parser.add_argument('--configuration', choices=('explicit', 'full'), default='explicit')
     parser.add_argument('--seed', type=int, default=20261019)
     parser.add_argument('--max-pairs', type=int, choices=range(1, 6), default=5)
     parser.add_argument('--token-budget', type=int, default=1500000)
@@ -338,7 +373,7 @@ def main():
                         help='Same mode for both arms; full access is opt-in for trusted synthetic tasks only')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    frozen = study_manifest(args.seed)
+    frozen = study_manifest(args.seed, args.configuration)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if not args.run:
         args.output.write_text(json.dumps(frozen, indent=2) + '\n', encoding='utf-8')

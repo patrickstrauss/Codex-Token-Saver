@@ -56,16 +56,30 @@ selection. See [using the bundle](docs/USING-BUNDLE.md),
 
 ## Does it help?
 
-The [reproducible offline benchmark](docs/BENCHMARK.md) compares native file/command
-output with individual bundle tools. The [sample results](docs/benchmarks/offline-windows.md)
-include reductions, latency overhead, a small-file expansion and full-retrieval
-costs. Raw JSON is included.
+**The current full configuration increased token usage in the completed coding benchmark.**
+Across two repetitions of five synthetic tasks, native and bundle each passed all
+10 attempts. Explicit tools, automatic Headroom request compression and the reviewed
+command hook were enabled in the bundle arm.
 
-The [five-pair tool-using Codex study](docs/benchmarks/coding-windows.md) measured
-19.3% more input tokens and 35.8% longer runtime with explicit bundle tools on
-small synthetic tasks. Both arms passed 4/5 strict checks. This negative result
-does not measure automatic request compression or RTK hooks, and does not establish
-equivalent task quality or account quota savings.
+| Overall measurement | Native Codex | With bundle | Bundle change |
+|---|---:|---:|---:|
+| Input + output tokens, including cached input | 404,141 | 690,526 | **+70.9%** |
+| Uncached input + output tokens | 175,533 | 221,534 | **+26.2%** |
+| Passed attempts | 10/10 | 10/10 | |
+
+The current configuration **fails its token-reduction objective on this workload**.
+These are repeated small tasks on one laptop, not ten independent real-world
+workloads. No account quota or billing savings were measured. See the
+[overall effectiveness report](docs/benchmarks/effectiveness-windows.md), raw data,
+frozen tasks and [per-run charts](docs/benchmarks/overall-windows.md).
+
+The earlier [explicit-tool pilot](docs/benchmarks/coding-windows.md) is separate:
+it also found overhead, but excluded automatic paths and passed only 4/5 strict
+checks per arm. It is not pooled with the full-configuration results.
+
+The [offline benchmark](docs/benchmarks/offline-windows.md) measures individual
+tool output, including reductions, latency, a small-file expansion and retrieval
+costs. Those local reductions do not establish a net end-to-end benefit.
 
 Savings depend on workload. Local counts are estimates, layers can overlap, and
 retrieval can erase savings. Never add RTK/local/request estimates together or

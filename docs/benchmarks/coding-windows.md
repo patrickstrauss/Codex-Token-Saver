@@ -1,4 +1,4 @@
-# Native Codex / Token Saver coding study
+# Native Codex / Token Saver: explicit-tool pilot
 
 Run started 2026-10-19T13:23:36.931578+00:00. Five synthetic paired tasks on one Windows laptop.
 Requested model: `gpt-6.1-sol`; reasoning: `low`;
@@ -6,7 +6,11 @@ CLI: `codex-cli 0.163.0-alpha.10.2`; Windows: `10.0.26200` (AMD64).
 
 [Raw results](coding-windows.json) · [Frozen tasks, hashes and rubric](coding-windows.manifest.json)
 
+Configuration: **Explicit-tool pilot**.
+
 ## Results
+
+![Explicit-tool pilot: reported model input, runtime and strict-check counts](coding-windows.png)
 
 | Task | Native grade | Bundle grade | Native input | Bundle input | Native seconds | Bundle seconds |
 |---|---|---|---:|---:|---:|---:|
@@ -33,6 +37,10 @@ No weekly quota or billing reduction was measured.
 
 The bundle made 3 MCP calls; 0 reported failures.
 Native commands remain available in both arms. Tool availability does not imply a call to every component.
+
+Uncached input change: **+54.32%**.
+Wall time change: **+35.81%**.
+Cache mix differs between arms; these percentages are not interchangeable with cost or quota.
 
 - `symbol-tracing` / native: failed checks: answer_correct.
 - `symbol-tracing` / bundle: failed checks: answer_correct.

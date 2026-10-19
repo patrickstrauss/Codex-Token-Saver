@@ -35,7 +35,7 @@ foreach ($taskDirectory in @('native','scripts','packaging','dashboard','serena'
 $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'dashboard\static') -File -Recurse |
     Where-Object Extension -in @('.css','.js','.svg','.png','.ico','.woff2')
 $taskFiles += Get-ChildItem -LiteralPath (Join-Path $taskRepo 'docs\benchmarks') -File |
-    Where-Object Extension -in @('.md','.json')
+    Where-Object Extension -in @('.md','.json','.png')
 foreach ($taskDoc in @('INSTALL.md','CODING-CLIENTS.md','BENCHMARK.md','RELEASE-CHECKLIST.md','RELEASE-STATUS.md','TEAM-INSTALL.md','USING-BUNDLE.md','CLI-TOOLS.md','LAYA-ROUTER.md','SERENA-INTEGRATION.md','SERENA-TESTING.md','CONTROL-UI-VALIDATION.md','PERFORMANCE-CHECK.md','PROCESS-RECOVERY.md','NATIVE-CODEX.md','OPENCODEX-INTEGRATION.md','OPENCODEX-COMPATIBILITY.md')) {
     $taskFiles += Get-Item -LiteralPath (Join-Path $taskRepo ('docs\' + $taskDoc))
 }

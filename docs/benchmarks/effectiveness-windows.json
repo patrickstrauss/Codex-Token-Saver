@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "studies": [
+    {
+      "report": "overall-windows.json",
+      "sha256_utf8_lf": "08204e5c50cf3bbe6a21db722647d4c8d46b33940dffb94b2a4964fc70e3edd1",
+      "manifest": "overall-windows.manifest.json",
+      "manifest_sha256": "c6d846c8ec61061af74bfa6dff5d0bbf472455737e2b374c08bc9f22e6351b9d",
+      "seed": 20261019
+    },
+    {
+      "report": "overall-repeat-windows.json",
+      "sha256_utf8_lf": "e898263c0179e493b8612a423fcd9f9d1993ba0edd5e0f946484c5fea81321d0",
+      "manifest": "overall-repeat-windows.manifest.json",
+      "manifest_sha256": "759c6d7033e09e82dbe69b0468c42625262814baa3802a036983bc9e292578b2",
+      "seed": 20261020
+    }
+  ],
+  "repetitions": 2,
+  "distinct_tasks": 5,
+  "paired_attempts": 10,
+  "summary": {
+    "arms": {
+      "native": {
+        "attempts": 10,
+        "passed": 10,
+        "usage_samples": 10,
+        "wall_seconds": 167.904,
+        "input_tokens": 400705,
+        "cached_input_tokens": 228608,
+        "output_tokens": 3436,
+        "uncached_input_tokens": 172097,
+        "input_plus_output_tokens": 404141,
+        "uncached_input_plus_output_tokens": 175533
+      },
+      "bundle": {
+        "attempts": 10,
+        "passed": 10,
+        "usage_samples": 10,
+        "wall_seconds": 292.659,
+        "input_tokens": 685590,
+        "cached_input_tokens": 468992,
+        "output_tokens": 4936,
+        "uncached_input_tokens": 216598,
+        "input_plus_output_tokens": 690526,
+        "uncached_input_plus_output_tokens": 221534
+      }
+    },
+    "input_reduction_percent": null,
+    "quota_savings_measured": false,
+    "billing_savings_measured": false,
+    "bundle_calls": 15,
+    "bundle_call_failures": 1
+  },
+  "change_percent": {
+    "input_tokens": 71.1,
+    "uncached_input_tokens": 25.86,
+    "output_tokens": 43.66,
+    "input_plus_output_tokens": 70.86,
+    "uncached_input_plus_output_tokens": 26.21,
+    "wall_seconds": 74.3
+  },
+  "all_quality_checks_passed": true,
+  "token_direction": "increased",
+  "token_saving_demonstrated": false,
+  "limits": [
+    "Repeated synthetic tasks on one laptop, not independent real-world workloads.",
+    "Reported CLI usage; no account quota or billing savings measured.",
+    "Warm workers and provider caches not flushed; no causal component attribution."
+  ]
+}

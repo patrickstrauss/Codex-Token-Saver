@@ -33,14 +33,17 @@ not qualify model-based routing. Use the full installation for routed explicit t
 - **External clients need live qualification.** All nine serializers and shared
   server protocols are tested; authenticated client UI/trust behavior is unverified.
   See [client setup](CODING-CLIENTS.md).
-- **End-to-end benefit is not established.** The completed five-pair explicit-tool
-  study found 19.3% more input and 35.8% longer runtime; both arms passed 4/5 strict
-  checks. Automatic compression/hooks and external clients were excluded. This
-  does not establish equivalent quality or quota savings. See [benchmark scope](BENCHMARK.md).
+- **The current configuration failed its token-reduction objective in testing.**
+  Two full-configuration repetitions of five tasks passed 10/10 attempts per arm,
+  but the bundle used 70.9% more input-plus-output tokens and 26.2% more uncached
+  input-plus-output tokens. Automatic compression and the reviewed hook were
+  enabled. Browser tasks and external clients remain excluded. This does not
+  establish results for larger workloads or account quota savings. See the
+  [overall evidence](benchmarks/effectiveness-windows.md) and [methodology](BENCHMARK.md).
 - **Packages are unsigned.** Checksums do not establish publisher identity.
-- **Public publication requires owner review.** Creating a draft does not publish
-  the repository/release. Review the [checklist](RELEASE-CHECKLIST.md), notices and
-  candidate evidence before changing visibility.
+- **The owner made the repository public.** Preview/stable release publication
+  still requires review of the [checklist](RELEASE-CHECKLIST.md), notices and exact
+  candidate evidence. A public repository does not qualify a release.
 
 These release-tooling changes require no laptop restart, authentication reset or
 model-route change. Installation/runtime updates have their own documented

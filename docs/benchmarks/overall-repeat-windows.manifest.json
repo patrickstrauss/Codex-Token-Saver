@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "seed": 20261020,
+  "model_calls": 0,
+  "scope": "Five paired coding tasks: native vs explicit tools plus automatic request compression and reviewed hook",
+  "cases": [
+    {
+      "id": "log-diagnosis",
+      "prompt": "Diagnose the failed job in logs/worker.log. Report its component, error code and the remedy exactly as recorded.",
+      "files_sha256": {
+        "README.md": "57043f8e3199ca6c427a77d25586b28e52ab1c600f39dcaeb699f130baa9f198",
+        "logs/worker.log": "d1f8aa30c5a02307252d0d8cbe5e4ad280aad6594ad93cb531226244cc650e2e"
+      },
+      "mutations_sha256": {},
+      "expected": {
+        "component": "storage",
+        "code": "E_QUEUE_FULL",
+        "remedy": "queue_capacity:512"
+      },
+      "editable": [],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "remedy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "component",
+          "code",
+          "remedy"
+        ],
+        "additionalProperties": false
+      },
+      "order": [
+        "bundle",
+        "native"
+      ]
+    },
+    {
+      "id": "symbol-tracing",
+      "prompt": "Trace shop.service.checkout: identify the source function actually used for invoice computation (not the unused legacy name), its source file, and the validation function called before it. Return implementation and validation as unqualified function names, and source as a project-relative file path using forward slashes.",
+      "files_sha256": {
+        "shop/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "shop/legacy.py": "144abb536420b252d8fff9eea5f611f261a28519a69a4430f358e49a3b23d176",
+        "shop/pricing.py": "3a7466a49c68a977505baf338994f1561d6fa81cef29fa7d195d133699743645",
+        "shop/report_0.py": "f3b48444dd666fa340e37b01ff2630ef993ca42e8fdea7030463d5d8b1a1fcf6",
+        "shop/report_1.py": "6db0977d658da51509dda6a5c711385c28d088b56d8860fa6bd32827fa5a8bd6",
+        "shop/report_2.py": "9540aeed4a93f46a42d413956055dec8ef6f91641ba5301ebec89e85c86dfd89",
+        "shop/report_3.py": "f7ad67bde5fc742833e3c24d65a4db38416295146bdf8886d512f7fd5341c9f9",
+        "shop/report_4.py": "edb52fd9637751311c4b286b95e56568fda6b6ae4c9cf1df8fde587949f1e48f",
+        "shop/report_5.py": "f859f70c6abc3517eb15eb2c518d75c61266b0ce65e2f4fa2988660f46ba94e8",
+        "shop/service.py": "59d41a7d3dbcc56d7a5ea7affa0293d1379bb25eac550dc082e573ad0b27591a",
+        "shop/validation.py": "c1ffd770088eadcdabb37dffc1075cae3eee89a39d39b230392d097e7c81013c"
+      },
+      "mutations_sha256": {},
+      "expected": {
+        "implementation": "compute_total",
+        "source": "shop/pricing.py",
+        "validation": "validate_prices"
+      },
+      "editable": [],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "implementation": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "validation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "implementation",
+          "source",
+          "validation"
+        ],
+        "additionalProperties": false
+      },
+      "order": [
+        "native",
+        "bundle"
+      ]
+    },
+    {
+      "id": "structural-audit",
+      "prompt": "Inspect routes/. List all first string arguments of actual JavaScript calls to registry.register_route, sorted alphabetically and joined with commas. Exclude comments, string examples and calls on other receivers. Return the list in routes.",
+      "files_sha256": {
+        "routes/archive.js": "f81327af9799ad90db5ad2fca5fc2ec26b957fd541e9955a05527508c31c6813",
+        "routes/decoys.js": "d03c969956110115330b3b8e8d990678263ac1d002ab79cbcf3394f3be8370ef",
+        "routes/private.js": "95a89ff849cc4bc46d09aef3bb9d6107ebe21eb7545b7f04ebd132991a015838",
+        "routes/public.js": "be6af07a7b9c467cb84150e37e829b1d48595d1b92ebed78e99750aea05dcfc0",
+        "routes/utility_0.js": "935a2e64ee4892d389b65c034b4664ce0a802c7617794bd7278306bff64f648d",
+        "routes/utility_1.js": "e8e853e5954863fe9710fbe76394904ae559ab3454536ea2c5d12b5bc2f2bba0",
+        "routes/utility_2.js": "b361082ef1d9be3ff28bd095cc8f801edc1cccbd55830c193d7a3fb944a9823e",
+        "routes/utility_3.js": "69d2319ad580f8899032756a32f2c7bf141be0038d3a7fefbc195cd7aeb9b620",
+        "routes/utility_4.js": "fe752eac0ba2846a6d973e46d2dd4ee3be0820214a6662d551fcacf54227bf59",
+        "routes/utility_5.js": "277ba92c94b4f7a7e79faf65c25d3e910b2a0e2f9a54bc435e6dff1fd5b4b481"
+      },
+      "mutations_sha256": {},
+      "expected": {
+        "routes": "catalog,health,invoice,refund"
+      },
+      "editable": [],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "routes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "routes"
+        ],
+        "additionalProperties": false
+      },
+      "order": [
+        "native",
+        "bundle"
+      ]
+    },
+    {
+      "id": "tested-code-fix",
+      "prompt": "Fix only retries.py. retry_delay uses 1-based attempts: return min(cap, base * 2**(attempt-1)). attempt must be an integer >=1, excluding bool. base and cap must be finite nonnegative int/float values, excluding bool. Raise ValueError for invalid inputs. Keep the signature/defaults, pass test_retries.py and verify edge cases. Do not alter the tests.",
+      "files_sha256": {
+        "retries.py": "fc8f3bfc0baf92349f96985644f84f434e19f0c608a3abca207b9b0e7229f38a",
+        "test_retries.py": "38a484f2b9c9aa931fd5e198ae357231ad51ca18f213638ff6416a9bbf39f1ee"
+      },
+      "mutations_sha256": {},
+      "expected": null,
+      "editable": [
+        "retries.py"
+      ],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "additionalProperties": false
+      },
+      "order": [
+        "native",
+        "bundle"
+      ]
+    },
+    {
+      "id": "patch-review",
+      "prompt": "Review the uncommitted Git patch. Report old_timeout, new_timeout, old_retries and new_retries as strings, and flag whether automatic retries were disabled (yes/no). Inspect the actual diff, not only file statistics.",
+      "files_sha256": {
+        "README.md": "5ec96e15f5a7d2bade1c1a894439c37f329bc3446faf2226223b997154459066",
+        "settings.ini": "6ef09dbc644d9ee1a09d849b6122d1b212c9ece337923f947b930e43dcefe49d"
+      },
+      "mutations_sha256": {
+        "README.md": "a85f3258796ab7eacde6e7b0f4f34c7477df270dd3b8caee0193facbc4e185a8",
+        "settings.ini": "39a9b95bc95791fae2149461b3858ac884103b0fb2c69e39d0f788b99de0ff0e"
+      },
+      "expected": {
+        "old_timeout": "30",
+        "new_timeout": "60",
+        "old_retries": "3",
+        "new_retries": "0",
+        "retries_disabled": "yes"
+      },
+      "editable": [],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "old_timeout": {
+            "type": "string"
+          },
+          "new_timeout": {
+            "type": "string"
+          },
+          "old_retries": {
+            "type": "string"
+          },
+          "new_retries": {
+            "type": "string"
+          },
+          "retries_disabled": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "old_timeout",
+          "new_timeout",
+          "old_retries",
+          "new_retries",
+          "retries_disabled"
+        ],
+        "additionalProperties": false
+      },
+      "order": [
+        "native",
+        "bundle"
+      ]
+    }
+  ],
+  "configuration": "full",
+  "oracle_sha256": "2b43682cbae2d1121103cd47e782b7cd02a23d52dcde01d68207da28039d1b82",
+  "native_guidance": "Work only in the task workspace. Do not inspect parent directories, user data,\ncredentials or other projects. Use available tools to investigate; do not guess.\nDo not use the internet, install packages, change providers or spawn subagents.\nPrefer bounded output. Only change files explicitly authorized by the task.\nReturn the requested JSON. The evaluator independently checks files and answers.\n",
+  "bundle_guidance": "Work only in the task workspace. Do not inspect parent directories, user data,\ncredentials or other projects. Use available tools to investigate; do not guess.\nDo not use the internet, install packages, change providers or spawn subagents.\nPrefer bounded output. Only change files explicitly authorized by the task.\nReturn the requested JSON. The evaluator independently checks files and answers.\nThe enabled Token Saver tools are available. Prefer Headroom for large file\nreads and exact retrieval when needed; Serena for named definitions/references;\nLaya bundle_query with pattern+language for structural syntax. Explicit bundle\ncalls consult Laya; respect disabled tools. Prefer Laya for bundle Git reports.\nUse native tools when a bundle operation is unhelpful or blocked. Do not repeat\nqueries merely to exercise a tool. Use exact source before editing.\n",
+  "excluded": [
+    "browser tasks",
+    "external harnesses",
+    "account quota/billing measurement"
+  ]
+}

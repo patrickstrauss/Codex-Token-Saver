@@ -74,6 +74,42 @@ No global authentication, routing or CLI installation was changed to repair the 
 
 ## Tool-using native Codex study
 
+### Overall effectiveness with automatic paths enabled
+
+The [combined effectiveness report](benchmarks/effectiveness-windows.md) is the
+primary end-to-end result. Two repetitions of five frozen synthetic tasks produced
+10 paired attempts, not ten independent workloads. Native and bundle each passed
+all 10 attempts, including the independent hidden code-fix oracle.
+
+The bundle used **71.10% more input**, **25.86% more uncached input**, **70.86% more
+input plus output**, and **26.21% more uncached input plus output**. Runtime was
+74.30% longer. The current configuration fails its token-reduction objective on
+this workload. No account quota or billing reduction was measured.
+
+Both full runs use the same tasks, prompts, source hashes, model, reasoning and
+permissions. Only the randomized arm-order seed changes. Every attempt is included;
+there are no manual retries within either frozen study. See
+[run 1 and its chart](benchmarks/overall-windows.md),
+[run 2 and its chart](benchmarks/overall-repeat-windows.md), and the linked raw JSON
+and manifests. The aggregator verifies compatible manifests/source metadata,
+rejects duplicate study seeds and recomputes totals from every attempt.
+
+Treatment enables the three explicit MCP gateways, automatic Headroom request
+compression and the exact reviewed production command hook. Each bundle run uses
+a separate temporary production relay on loopback and the already-running warm
+Headroom backend. Own relay counters and hook events are attributed to benchmark
+chats; the shared dashboard savings ledger is not used for net token calculations.
+A routed connection does not prove positive compression. Relay failure counters
+can include abrupt client WebSocket shutdown; they do not prove failed model
+tasks or network retries. No component-level cause of overhead is established.
+
+The full-study symbol prompt explicitly specifies unqualified function names and
+a project-relative forward-slash path before freezing either run. This resolves
+an exact-output ambiguity in the earlier pilot. That pilot uses different prompts
+and configuration and is therefore excluded from the aggregate.
+
+### Earlier explicit-tool pilot
+
 The [19 October results](benchmarks/coding-windows.md),
 [raw JSON](benchmarks/coding-windows.json) and
 [frozen manifest](benchmarks/coding-windows.manifest.json) cover five paired tasks:
@@ -96,7 +132,8 @@ structural search. Headroom and RTK were available but no direct call to either
 was recorded in the measured pairs. Native command fallback remained available.
 Their automatic paths were disabled; this study cannot evaluate their savings.
 Registering tools does not make Codex select every tool. On these short tasks,
-registration/context and startup costs outweighed any measured benefit.
+the complete configuration showed overhead. These data do not isolate whether
+registration, startup, tool choice or another component caused it.
 
 Hardware: Intel Core Ultra 7 258V, 8 cores/logical processors, 31.5 GiB usable RAM,
 Windows build 26200 x64. Requested model `gpt-6.1-sol`, low reasoning, desktop CLI
@@ -111,7 +148,7 @@ startup. Total input includes cached input; output is reported separately.
 Generate the task plan first; this makes zero model calls:
 
 ```powershell
-python scripts\benchmark_codex_e2e.py --output coding-plan.json
+python scripts\benchmark_codex_e2e.py --configuration full --output coding-plan.json
 ```
 
 Use the installed Headroom Python and an explicit compatible native Codex executable
@@ -119,10 +156,25 @@ for a budgeted run. These arguments refer to your chosen installation/executable
 do not paste placeholder paths literally:
 
 ```powershell
-python scripts\benchmark_codex_e2e.py --run --installed PATH --codex PATH_TO_NATIVE_EXE --model gpt-6.1-sol --token-budget 1500000 --max-pairs 1 --output coding-result.json
-python scripts\benchmark_codex_e2e.py --run --resume --installed PATH --codex PATH_TO_NATIVE_EXE --model gpt-6.1-sol --token-budget 1500000 --max-pairs 5 --output coding-result.json
-python scripts\publish_codex_e2e.py coding-result.json coding-result.md --manifest-name coding-result.manifest.json
+python scripts\benchmark_codex_e2e.py --run --configuration full --seed 20261019 --installed PATH --codex PATH_TO_NATIVE_EXE --model gpt-6.1-sol --token-budget 1500000 --max-pairs 1 --output coding-result.json
+python scripts\benchmark_codex_e2e.py --run --resume --configuration full --seed 20261019 --installed PATH --codex PATH_TO_NATIVE_EXE --model gpt-6.1-sol --token-budget 1500000 --max-pairs 5 --output coding-result.json
+python scripts\publish_codex_e2e.py coding-result.json coding-result.md --manifest-name coding-result.manifest.json --chart-name coding-result.png
+.\scripts\Plot-CodexBenchmark.ps1 -InputJson coding-result.json -OutputPng coding-result.png
 ```
+
+Use seed `20261020` and a separate output filename for the second repetition.
+Do not retry completed attempts or edit tasks after seeing results. Combine only
+compatible full runs with `scripts/summarize_codex_effectiveness.py`:
+
+```powershell
+python scripts\summarize_codex_effectiveness.py docs\benchmarks\overall-windows.json docs\benchmarks\overall-repeat-windows.json --output docs\benchmarks\effectiveness-windows.json --markdown docs\benchmarks\effectiveness-windows.md
+```
+
+Charts use Windows/.NET built-in charting; no plotting package is installed.
+`--configuration explicit` remains available for new explicit-only experiments.
+The historical pilot's exact runner is preserved in commit `85630e5`; later runner
+changes add full-stack support and the prompt clarification. Source hashes in
+each report identify its actual runner, fixtures and installed components.
 
 Default execution uses `workspace-write`. The measured Windows run explicitly used
 `--sandbox danger-full-access` in **both** arms because this CLI's unelevated
@@ -134,8 +186,10 @@ VM testing remains paused. No laptop restart is required for these scripts.
 The runner copies an existing native ChatGPT login into a temporary OS profile,
 removes it after each call, checks the original auth/config are unchanged, and
 uses fresh ephemeral chats and separate identical Git fixtures. Native has no
-bundle MCP/proxy/hook. Treatment adds the three production MCP gateways and
-documented tool guidance. Plugins, connected apps and subagents are off in both.
+bundle MCP/proxy/hook. Full treatment adds the production MCP gateways, documented
+guidance, temporary relay and reviewed hook. Only that exact hook bypasses trust
+in temporary CLI profiles; daily hook trust is unchanged. Plugins, connected apps
+and subagents are off in both.
 Enabled host tools are required; the runner never turns them on automatically.
 Local bundle calls are tagged diagnostic; shared runtime aggregates can still
 change. Temporary directories are not a VM or an authentication security boundary.
@@ -157,16 +211,19 @@ never run in CI; CI only checks fixtures, grading, privacy and report consistenc
 
 The older CLI 0.117.0 context pilot above remains a failed, unclassified attempt.
 With the current desktop CLI, five further validation invocations preceded the
-ten measured invocations. Their [sanitized accounting](benchmarks/coding-pilots.json)
+ten explicit-tool invocations and twenty full-configuration invocations. Their
+[sanitized accounting](benchmarks/coding-pilots.json)
 is separate: they consumed 238,515 reported input and 650 output tokens, including
 the failed native sandbox checks. They are not hidden retries or savings samples.
 No global authentication, routing or CLI installation was changed.
 
 This study supports improving selective tool exposure/startup costs before
 claiming general efficiency. A broader preregistered study should use larger
-repositories, an explicit semantic grading rubric, browser tasks and separately
-controlled automatic compression/hooks. Keep those results distinct from this
-small configuration and from offline per-tool avoided-token estimates.
+repositories, a semantic grading rubric, browser tasks and component ablations
+that isolate lean tool exposure and automatic-only configurations. No additional
+live model calls are required to regenerate the published aggregate or charts.
+Keep future results distinct from this small repeated workload and offline
+per-tool avoided-token estimates.
 
 Account weekly percentages are coarse, shared across chats and affected by
 caching/model policy. They are not a reliable per-task token meter. Do not convert

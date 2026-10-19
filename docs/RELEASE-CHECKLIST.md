@@ -29,7 +29,8 @@ The workflow enforces these checks; a previous green run does not qualify a newe
 ## Manual gates before a stable public release
 
 - [x] Owner selects MIT for original project code. Third-party licenses remain separate.
-- [ ] Owner reviews notices, release contents and public repository/release visibility.
+- [x] Owner made the repository public.
+- [ ] Owner reviews notices, release contents and release publication.
 - [ ] Clean Windows 11 x64 standard-user VM: download/extract/install, trust hook, open tray/dashboard and use tools.
 - [ ] VM reboot/login: singleton tray/dashboard/proxy ownership, normal native Codex connectivity.
 - [ ] VM uninstall while active asks for close/restart; after restart it completes and native Codex resumes.
@@ -48,9 +49,11 @@ Windows 11 VM work is **paused**. Do not recreate the VM as part of release auto
 - [ ] Live external-client support: record exact client version, authenticated tool call,
   trust/reload behavior and disconnect/uninstall preservation. Shared MCP tests do not
   install or log into those clients.
-- [x] Publish five paired native Codex / explicit-tool coding tasks, including
-  failures, usage, timing, frozen fixtures and tool adoption. See the
+- [x] Publish the explicit-tool pilot and two full-configuration repetitions of
+  five paired coding tasks, including all attempts, usage, timing, frozen fixtures,
+  tool adoption and automatic-path observations. See the
   [paired study](BENCHMARK.md#tool-using-native-codex-study).
-- [ ] Establish broader task-quality equivalence and automatic-stack benefits.
-  The small study found overhead, with 4/5 strict checks passed in each arm.
-  Neither it nor local avoided-token estimates establish quota savings.
+- [ ] Demonstrate net token reduction at preserved quality on a broader workload.
+  The full configuration passed 10/10 repeated attempts per arm but increased
+  total and uncached token counts. It currently fails the token-saving goal on
+  this workload. Local avoided-token estimates do not establish quota savings.
